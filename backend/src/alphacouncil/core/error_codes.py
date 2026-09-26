@@ -49,6 +49,14 @@ class ErrorCode(StrEnum):
     DECISION_COUNTER_EVIDENCE_REQUIRED = "DECISION_COUNTER_EVIDENCE_REQUIRED"
     DECISION_APPEND_ONLY = "DECISION_APPEND_ONLY"
     DECISION_CLIENT_SUPPLIED_ID = "DECISION_CLIENT_SUPPLIED_ID"
+    # Added 2026-09-26 with J1. The schema enforces that kill_criteria is a JSON
+    # array; it cannot enforce that the array is non-empty, because an empty one
+    # satisfies `json_valid(...) AND json_type(...) = 'array'`. So "no falsifiable
+    # condition" is refused in the domain, and it needs its own code for the same
+    # reason the counter-evidence does: "how often does a user record a decision
+    # with nothing that could ever falsify it" has to stay answerable.
+    DECISION_KILL_CRITERIA_REQUIRED = "DECISION_KILL_CRITERIA_REQUIRED"
+    DECISION_TEXT_TOO_LONG = "DECISION_TEXT_TOO_LONG"
 
     # -- WATCHLIST_* : the instrument pool (D1) ----------------------------
     # A separate namespace from DECISION_* because the two rules look alike and

@@ -95,12 +95,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   frontend:
-    name: Frontend (typecheck, lint, build)
+    name: Frontend (typecheck, lint, test, build)
     runs-on: ubuntu-latest
     # This job exists because the frontend had no check at all until it did.
     # Everything else in this file ran against `backend/`, so a green CI on a
     # commit that broke the frontend said nothing about the frontend — the
     # exact shape of "a check that never ran, reported as passing".
+    #
+    # The step list here must stay in step with the `frontend-*` gates in
+    # `backend/scripts/dev.py`, so that `make check` and CI verify the same set.
     defaults:
       run:
         working-directory: frontend
@@ -124,6 +127,30 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+
+  static-checks:
+    name: Static checks (S-01..S-12)
+    runs-on: ubuntu-latest
+    # Added 2026-09-26, when all twelve rules ran for the first time. Until then
+    # this job could not exist honestly: S-07/S-08/S-09 skipped while there was
+    # no frontend, and a skipped rule is not a passing rule (T-19). The rules
+    # were implemented and enforced by `make check` locally while CI — the thing
+    # everyone trusts — knew nothing about them.
+    #
+    # `--strict` because `python -m checks` alone exits 0 for "it ran"; this
+    # needs the other signal, that nothing was found.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install project
+        working-directory: ${{ env.WORKING_DIR }}
+        run: pip install -e ".[dev]"
+      - name: Run static checks
+        working-directory: ${{ env.WORKING_DIR }}
+        run: python -m checks --strict
 
   docs-check:
     name: Required files present
@@ -156,7 +183,7 @@ jobs:
   ci:
     name: CI gate
     if: always()
-    needs: [lint, typecheck, test, secret-scan, frontend, docs-check]
+    needs: [lint, typecheck, test, secret-scan, frontend, static-checks, docs-check]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any required job failed

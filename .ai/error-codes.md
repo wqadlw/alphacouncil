@@ -110,6 +110,18 @@ class DataFetchError(RuntimeError): ...
 | `DECISION_COUNTER_EVIDENCE_REQUIRED` | error | **反面证据必填未填** |
 | `DECISION_APPEND_ONLY` | error | 试图 UPDATE / DELETE 决策记录（**触发器抛出**） |
 | `DECISION_CLIENT_SUPPLIED_ID` | error | 客户端试图传入主键（**禁止伪造"结果之前"**） |
+| `DECISION_KILL_CRITERIA_REQUIRED` | error | **失效条件为空**，或谓词形状不合法（2026-09-26 随 J1 新增） |
+| `DECISION_TEXT_TOO_LONG` | error | 理由 / 反面证据超过 2000 字（2026-09-26 随 J1 新增） |
+
+> **为什么 `DECISION_KILL_CRITERIA_REQUIRED` 需要独立一条**：schema 只能强制
+> `kill_criteria` 是 **JSON 数组**，**空数组同样通过**。而"没有任何可证伪条件"正是
+> 这个产品存在的意义要防的事，所以在领域层拦。独立成码的理由与反面证据相同 ——
+> 「用户多久会记下一条无法被证伪的决策」这个问题必须可统计。
+>
+> **它为什么不做成 schema 约束**：SQLite 无法给已存在的表加 CHECK，要加就得**重建
+> `decisions` 表并重建它的 append-only 触发器**。而宪法规则 21 要求的是失效条件的
+> **形式**必须结构化（schema 已强制），**没有**要求最少条数。所以这一条停在领域层，
+> 而不是为了一个规格未写明的规则去动表结构。
 
 ### 2.5 `AGENT_*`
 

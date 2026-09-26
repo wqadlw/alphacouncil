@@ -25,9 +25,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parents[1]
+FRONTEND = BACKEND.parent / "frontend"
 
 # Replaced with the resolved interpreter before the command is run.
 _PY = "{py}"
+# Replaced with the resolved `npm` executable. Resolved at run time rather than
+# written as a bare `npm` because on Windows the launcher is `npm.cmd`, and
+# CreateProcess does not apply PATHEXT — a bare `npm` in argv is a
+# FileNotFoundError, not a missing-tool message.
+_NPM = "{npm}"
 
 
 @dataclass(frozen=True)
@@ -39,6 +45,10 @@ class Gate:
     argv: tuple[str, ...] = ()
     implemented: bool = True
     why_not: str = ""
+    #: Working directory. `None` means the backend package, which is where every
+    #: Python gate runs from. The frontend gates pass `FRONTEND` instead, because
+    #: that is where `package.json` is.
+    cwd: Path | None = None
 
 
 GATES: dict[str, Gate] = {
@@ -83,13 +93,65 @@ GATES: dict[str, Gate] = {
         implemented=False,
         why_not="24 checks specified, 0 written",
     ),
+    # ---------------------------------------------------------------------
+    # Frontend. These four exist because they did not, and CI has run them
+    # since 2026-09-26 — so `check` claimed to run "every gate CI runs" while a
+    # broken frontend passed locally. That is the same defect CI's `frontend`
+    # job was added to fix, one layer down: a check that never ran, reported as
+    # passing. Keep this list in step with `.github/workflows/ci.yml`.
+    # ---------------------------------------------------------------------
+    "frontend-typecheck": Gate(
+        "frontend-typecheck",
+        "tsc -b (app / node / test projects)",
+        (_NPM, "run", "typecheck"),
+        cwd=FRONTEND,
+    ),
+    "frontend-lint": Gate(
+        "frontend-lint",
+        "oxlint",
+        (_NPM, "run", "lint"),
+        cwd=FRONTEND,
+    ),
+    "frontend-test": Gate(
+        "frontend-test",
+        "vitest run",
+        (_NPM, "test"),
+        cwd=FRONTEND,
+    ),
+    "frontend-build": Gate(
+        "frontend-build",
+        "vite build (production bundle)",
+        (_NPM, "run", "build"),
+        cwd=FRONTEND,
+    ),
 }
 
 # `check` is the CI gate set: everything, including the not-yet-written ones, so
 # the run cannot claim to be complete while gates are missing.
-CHECK: tuple[str, ...] = ("lint", "typecheck", "licenses", "check-static", "test")
-# `check-lite` is the daily driver: only the gates that actually exist.
-CHECK_LITE: tuple[str, ...] = ("lint", "typecheck", "licenses", "test")
+CHECK: tuple[str, ...] = (
+    "lint",
+    "typecheck",
+    "licenses",
+    "check-static",
+    "test",
+    "frontend-typecheck",
+    "frontend-lint",
+    "frontend-test",
+    "frontend-build",
+)
+# `check-lite` is the daily driver: only the gates that actually exist. The four
+# frontend gates are in here too — they take about four seconds together, and a
+# gate that only runs in CI is a gate that runs after the commit that broke it.
+CHECK_LITE: tuple[str, ...] = (
+    "lint",
+    "typecheck",
+    "licenses",
+    "test",
+    "frontend-typecheck",
+    "frontend-lint",
+    "frontend-test",
+    "frontend-build",
+)
 
 
 def _say(message: str = "") -> None:
@@ -114,13 +176,54 @@ def _venv_python() -> str:
     return sys.executable
 
 
+def _resolve(argv: tuple[str, ...], python: str) -> list[str] | None:
+    """Substitute the placeholders, or return ``None`` if a tool is missing.
+
+    ``None`` rather than an exception: "npm is not installed" is a fact the run
+    should report as a failed gate, not a traceback that buries the other eight
+    results. A gate that cannot run has not passed (T-19).
+    """
+    resolved: list[str] = []
+    for part in argv:
+        if part == _PY:
+            resolved.append(python)
+        elif part == _NPM:
+            npm = shutil.which("npm")
+            if npm is None:
+                return None
+            resolved.append(npm)
+        else:
+            resolved.append(part)
+    return resolved
+
+
 def _run(gate: Gate, python: str) -> bool:
     """Run one gate, streaming its output, and report whether it passed."""
-    argv = [python if part == _PY else part for part in gate.argv]
+    argv = _resolve(gate.argv, python)
+
+    # The banner shows the command that will actually run — resolved paths, not
+    # placeholders — because the resolved path is the thing worth being able to
+    # copy out of the log and re-run.
     _say(f"\n{'=' * 72}")
-    _say(f"  {gate.name}: {' '.join(argv)}")
+    _say(f"  {gate.name}: {' '.join(argv if argv is not None else gate.argv)}")
     _say(f"{'=' * 72}")
-    completed = subprocess.run(argv, cwd=BACKEND, check=False)
+
+    if argv is None:
+        _say("  cannot run: `npm` is not on PATH.")
+        _say("  The frontend gates need Node. Install it, or accept that the")
+        _say("  frontend is unverified — which is what a green run would claim.")
+        return False
+
+    cwd = gate.cwd or BACKEND
+    # A frontend gate with no `node_modules` fails with "tsc: not found", which
+    # reads like a broken repository rather than an uninstalled dependency. Say
+    # which one it is.
+    if gate.cwd is not None and not (cwd / "node_modules").is_dir():
+        _say(f"  cannot run: {cwd.name}/node_modules is missing.")
+        _say("  Run `npm install` in frontend/ first.")
+        return False
+
+    completed = subprocess.run(argv, cwd=cwd, check=False)
     return completed.returncode == 0
 
 

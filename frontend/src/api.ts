@@ -73,6 +73,59 @@ export interface InstrumentDetail {
   name: string | null
   follow: FollowState
   history: WatchlistEvent[]
+  /**
+   * Every decision recorded about this instrument, oldest first.
+   *
+   * Untruncated, and in write order — the same reason the watchlist log is.
+   * "What have I believed about this company, and in what order did I change my
+   * mind" only reads as an answer if nothing is missing from it.
+   */
+  decisions: Decision[]
+}
+
+/** What was decided. Mirrors the `decisions_action_check` constraint. */
+export type DecisionAction = 'buy' | 'add' | 'hold' | 'trim' | 'exit'
+
+/** Mirrors `ComparisonOperator` in `domain/decision.py`. Symbols, not words. */
+export type ComparisonOperator = '<' | '<=' | '>' | '>=' | '==' | '!='
+
+/**
+ * One falsifiable condition — a predicate, never a sentence.
+ *
+ * ADR-0017 #5: "营收同比转负就重评" as prose cannot be evaluated, so nothing
+ * can watch it and it can never come and find you. Structured, it can be
+ * evaluated the moment the figure lands, which is what makes product highlight
+ * ③ (data-driven confrontation) possible at all.
+ */
+export interface KillCriterion {
+  metric: string
+  operator: ComparisonOperator
+  threshold: number
+  /** Point-in-time cutoff (YYYY-MM-DD), not a deadline. */
+  as_of: string
+}
+
+export interface Decision {
+  /** The moment it was written, UTC with milliseconds. Server-generated. */
+  id: string
+  market: string
+  code: string
+  display: string
+  action: DecisionAction
+  rationale: string
+  counter_evidence: string
+  kill_criteria: KillCriterion[]
+  thesis_id: string | null
+}
+
+export interface DecisionInput {
+  ticker: string
+  market?: string
+  action: DecisionAction
+  rationale: string
+  counter_evidence: string
+  kill_criteria: KillCriterion[]
+  thesis_id?: string | null
 }
 
 /** The four states a fetch can be in (constitution 4.6). Never collapsed. */
@@ -119,6 +172,25 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * FastAPI's own validation body: `{detail: [{loc, msg, type}, ...]}`.
+ *
+ * Worth decoding rather than replacing with "输入不完整", because the predicate
+ * editor produces these: a threshold sent as text, a date typed as `2026-13-01`.
+ * The server already knows which field is wrong and says so; throwing that away
+ * and telling the reader to check everything is how a form becomes a guessing
+ * game.
+ */
+function describeValidation(detail: unknown): string | null {
+  if (!Array.isArray(detail) || detail.length === 0) return null
+  const first = detail[0] as { loc?: unknown; msg?: unknown }
+  const field = Array.isArray(first.loc) ? first.loc[first.loc.length - 1] : null
+  const message = typeof first.msg === 'string' ? first.msg : null
+  if (!field && !message) return null
+  const where = field === null ? '请求' : `字段「${String(field)}」`
+  return `${where}被服务器拒绝：${message ?? '格式不符合要求'}`
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },
@@ -140,9 +212,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       {
         code: 'REQUEST_REJECTED',
         message:
-          response.status === 422
-            ? '输入不完整 — 标的代码与理由都必须填写。'
-            : `请求被拒绝（HTTP ${response.status}）`,
+          (body && typeof body === 'object' ? describeValidation(body.detail) : null) ??
+          `请求被拒绝（HTTP ${response.status}）`,
       },
       response.status,
     )
@@ -220,4 +291,38 @@ export function getQuote(market: string, code: string): Promise<QuoteResult> {
   return request<QuoteResult>(
     `/api/v1/instruments/${encodeURIComponent(market)}/${encodeURIComponent(code)}/quote`,
   )
+}
+
+/**
+ * Record a decision. There is no update and no delete, on purpose.
+ *
+ * The three required fields are required because of what the row is *for*:
+ * `rationale` is the sentence you will be held to, `counter_evidence` is the
+ * only field that can resist confirmation bias, and `kill_criteria` is what
+ * lets the data come and find you. The server enforces all three — this
+ * function does not re-check them, because a second copy of a rule is a second
+ * chance to disagree with it.
+ *
+ * `id` is deliberately absent from the request. It is the write moment, it is
+ * generated server-side, and the schema rejects any body that names it
+ * (ADR-0011, and check S-06).
+ */
+export function recordDecision(input: DecisionInput): Promise<Decision> {
+  return request<Decision>('/api/v1/decisions', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+/**
+ * The most recent decisions across every instrument, newest first.
+ *
+ * Not used by the instrument page — that page gets its own decisions with the
+ * instrument itself, untruncated. This is for the "what have I been doing
+ * lately" view (T1), which does not exist yet; it is here because the endpoint
+ * is, and leaving a working endpoint unwrapped invites the next person to write
+ * a second `fetch`.
+ */
+export function listRecentDecisions(limit = 50): Promise<Decision[]> {
+  return request<Decision[]>(`/api/v1/decisions?limit=${limit}`)
 }

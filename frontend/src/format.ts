@@ -74,3 +74,53 @@ export const EVENT_LABEL: Record<string, string> = {
   reason_revised: '修改理由',
   removed: '不再关注',
 }
+
+/** The five actions, in the words a reader would use for their own trade. */
+export const ACTION_LABEL: Record<string, string> = {
+  buy: '买入',
+  add: '加仓',
+  hold: '持有',
+  trim: '减仓',
+  exit: '清仓',
+}
+
+/**
+ * Operators as words, because the predicate is meant to read as a sentence.
+ *
+ * `domain/decision.py` chose symbols over words (`lt` / `gt`) for the *stored*
+ * form, on the grounds that `<` is what a person types in a screener. That
+ * reasoning is about input; this is about reading it back months later, and
+ * "gross_margin 小于 0.55" is the sentence that was intended.
+ */
+export const OPERATOR_LABEL: Record<string, string> = {
+  '<': '小于',
+  '<=': '不大于',
+  '>': '大于',
+  '>=': '不小于',
+  '==': '等于',
+  '!=': '不等于',
+}
+
+/**
+ * A calendar date, rendered as written.
+ *
+ * **Not** through `new Date(...)`. `as_of` is a date, not an instant — it is the
+ * point-in-time cutoff for a financial figure — and passing it through the
+ * timezone machinery would let a reader in UTC-5 see 2026-12-30 for a cutoff
+ * they wrote as 2026-12-31. A date that moves when you travel is not a date.
+ */
+export function formatDay(iso: string | null): string {
+  if (!iso) return '—'
+  return /^\d{4}-\d{2}-\d{2}/.test(iso) ? iso.slice(0, 10) : iso
+}
+
+/** One predicate as a sentence: "截至 2026-12-31，gross_margin 小于 0.55". */
+export function formatPredicate(criterion: {
+  metric: string
+  operator: string
+  threshold: number
+  as_of: string
+}): string {
+  const word = OPERATOR_LABEL[criterion.operator] ?? criterion.operator
+  return `截至 ${formatDay(criterion.as_of)}，${criterion.metric} ${word} ${criterion.threshold}`
+}

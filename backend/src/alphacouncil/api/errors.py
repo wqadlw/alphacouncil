@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from alphacouncil.core.error_codes import ErrorCode
+from alphacouncil.domain.decision import DecisionError
 from alphacouncil.domain.instrument import InstrumentError
 from alphacouncil.domain.watchlist import WatchlistError
 
@@ -78,6 +79,8 @@ def domain_failure(exc: Exception) -> Failure:
     return Failure(status=status, body=envelope(name, str(exc)))
 
 
-#: Registered against both bases so one handler covers every coded failure from
-#: either layer. A tuple because FastAPI wants one registration per class.
-CODED_ERRORS: tuple[type[Exception], ...] = (InstrumentError, WatchlistError)
+#: Registered against every base so one handler covers each layer's coded
+#: failures. A tuple because FastAPI wants one registration per class. Every base
+#: subclasses ``ValueError``, and Starlette picks the most specific handler, so
+#: the plain ``ValueError`` handler still catches everything else.
+CODED_ERRORS: tuple[type[Exception], ...] = (InstrumentError, WatchlistError, DecisionError)

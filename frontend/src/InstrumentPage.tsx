@@ -22,6 +22,7 @@ import {
   type Tone,
 } from './format'
 import { POOL_HREF } from './routing'
+import DecisionSection from './DecisionSection'
 
 const TONE_CLASS: Record<Tone, string> = {
   up: 'text-up',
@@ -156,9 +157,10 @@ export default function InstrumentPage({ market, code }: Props) {
           )}
         </div>
         <p className="mt-1 text-ink-soft">
-          这一页只回答三个问题：<span className="text-ink">现在是什么样</span>、
+          这一页只回答四个问题：<span className="text-ink">现在是什么样</span>、
           <span className="text-ink">我为什么关注它</span>、
-          <span className="text-ink">我对它做过什么</span>。
+          <span className="text-ink">我对它做过什么</span>、
+          <span className="text-ink">我对它下过什么判断</span>。
         </p>
       </header>
 
@@ -271,6 +273,13 @@ export default function InstrumentPage({ market, code }: Props) {
               </div>
             )}
           </section>
+
+          <DecisionSection
+            market={market}
+            code={code}
+            decisions={detail.decisions}
+            onRecorded={() => void refresh()}
+          />
 
           <NotBuiltYet />
         </>
@@ -428,10 +437,14 @@ function TimelineRow({ event }: { event: WatchlistEvent }) {
 /**
  * What this page does not have, stated rather than left to look like an error.
  *
- * The product definition puts knowledge cards and decision records on this page,
- * and neither exists in the backend yet. An empty section that looks like a
- * loading failure would be worse than saying so: the reader would assume a bug
+ * The product definition puts knowledge cards and the full decision loop on this
+ * page, and neither exists in the backend yet. An empty section that looks like
+ * a loading failure would be worse than saying so: the reader would assume a bug
  * instead of a gap, and would not know which one to report.
+ *
+ * This list is a moving target and is meant to be edited as features land — the
+ * first version of it said decision recording did not exist, which stopped being
+ * true when J1 shipped.
  */
 function NotBuiltYet() {
   return (
@@ -440,14 +453,25 @@ function NotBuiltYet() {
       <p className="mt-2 text-ink-soft">
         这一页最终要同时装下三层：<span className="text-ink">数据</span>、
         <span className="text-ink">知识卡片</span>、<span className="text-ink">决策记录</span>。
-        现在只有第一层和关注日志。
+        第一层和决策的<strong className="text-ink">记录</strong>已经有了，
+        决策的<strong className="text-ink">对质</strong>还没有。
       </p>
       <ul className="mt-2 text-[13px] text-ink-faint">
         <li className="mark border-l-2 border-l-rule py-1">
           知识卡片（K1–K4）—— 还没有建表，所以这里既没有卡片，也没有复习队列。
         </li>
         <li className="mark border-l-2 border-l-rule py-1">
-          决策登记（J1–J5）—— 还没有建表，所以「我对它下过什么判断」暂时无从显示。
+          持仓（D2）—— 没有成本与数量，所以上面那个止损计算器要你自己填亏损比例，
+          而不是从持仓里读。
+        </li>
+        <li className="mark border-l-2 border-l-rule py-1">
+          对质与四象限（J3）—— 决策质量与结果是两件事，把它们分开打分的界面还没有。
+        </li>
+        <li className="mark border-l-2 border-l-rule py-1">
+          重复检测（J4）—— 「这句话你说过 3 次」还没有实现，因为「怎样算同一句话」还没定义。
+        </li>
+        <li className="mark border-l-2 border-l-rule py-1">
+          教训转卡（J5）—— 教训还不能变成复习卡片，所以「不再重犯」暂时还不是日程。
         </li>
       </ul>
       <p className="mt-2 text-[12px] text-ink-faint">

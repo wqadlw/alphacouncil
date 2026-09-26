@@ -39,6 +39,8 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
 from alphacouncil.api.deps import DatabaseConnection, MarketData
+from alphacouncil.api.routes.decisions import DecisionRead
+from alphacouncil.api.routes.decisions import to_read as decision_to_read
 from alphacouncil.domain.instrument import TickerAmbiguousError, parse_ticker
 from alphacouncil.domain.watchlist import WatchlistEventKind
 from alphacouncil.models.market import (
@@ -48,6 +50,7 @@ from alphacouncil.models.market import (
     RealtimeQuote,
     Symbol,
 )
+from alphacouncil.storage.repositories import decisions as decision_repository
 from alphacouncil.storage.repositories import instruments as instrument_repository
 from alphacouncil.storage.repositories import watchlist as watchlist_repository
 
@@ -181,6 +184,14 @@ class InstrumentDetailRead(BaseModel):
         default_factory=list,
         description="The full log, oldest first. Never truncated.",
     )
+    decisions: list[DecisionRead] = Field(
+        default_factory=list,
+        description=(
+            "Every decision recorded about this instrument, oldest first, never "
+            "truncated. Read in order it is the record of a judgement changing; "
+            "read newest-first it is a list of unrelated trades."
+        ),
+    )
 
 
 def _resolve_path(
@@ -234,6 +245,7 @@ def detail(
     symbol, row = _resolve_path(connection, market, code)
     events = watchlist_repository.history(connection, symbol)
     newest = events[-1] if events else None
+    decisions = decision_repository.for_symbol(connection, symbol)
 
     if newest is None:
         status = FollowStatus.NEVER
@@ -265,6 +277,7 @@ def detail(
             )
             for event in events
         ],
+        decisions=[decision_to_read(recorded) for recorded in decisions],
     )
 
 

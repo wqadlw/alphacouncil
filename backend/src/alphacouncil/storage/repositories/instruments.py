@@ -23,7 +23,7 @@ from alphacouncil.core.time import utc_millis
 from alphacouncil.domain.instrument import AssetTypeConflictError
 from alphacouncil.models.market import AssetType, Market, Symbol
 
-__all__ = ["InstrumentRow", "ensure", "get"]
+__all__ = ["InstrumentRow", "adopt_stored_type", "ensure", "get"]
 
 _SELECT_ONE = (
     "SELECT market, code, asset_type, name, created_at FROM instruments "
@@ -47,6 +47,31 @@ def get(connection: sqlite3.Connection, symbol: Symbol) -> InstrumentRow | None:
     """Read the stored row, or ``None`` when the instrument is unknown."""
     row = connection.execute(_SELECT_ONE, (symbol.market.value, symbol.code)).fetchone()
     return None if row is None else _to_row(row)
+
+
+def adopt_stored_type(connection: sqlite3.Connection, symbol: Symbol) -> Symbol:
+    """Return ``symbol`` carrying the stored asset type, when there is one.
+
+    The asset type is never inferred from the code — a prefix says nothing
+    reliable about what the thing is — so for an instrument already on file the
+    stored value is the only correct one, and the parse default (``stock``) is
+    wrong for every ETF and index.
+
+    This matters more than it looks. ``ensure`` raises
+    :class:`~alphacouncil.domain.instrument.AssetTypeConflictError` when a
+    caller asserts a type that disagrees with the stored one, and that check is
+    right — but without this helper a *correct* request would trip it: a user
+    recording a decision about an ETF would be told they had contradicted
+    themselves about an instrument they never re-declared. Adopting the stored
+    type first is what makes the conflict check fire only on a real conflict.
+
+    An unknown instrument is returned unchanged: there is nothing to adopt, and
+    the parse default stands.
+    """
+    row = get(connection, symbol)
+    if row is None or row.asset_type is symbol.asset_type:
+        return symbol
+    return symbol.model_copy(update={"asset_type": row.asset_type})
 
 
 def ensure(
