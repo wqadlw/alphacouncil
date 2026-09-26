@@ -94,6 +94,37 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  frontend:
+    name: Frontend (typecheck, lint, build)
+    runs-on: ubuntu-latest
+    # This job exists because the frontend had no check at all until it did.
+    # Everything else in this file ran against `backend/`, so a green CI on a
+    # commit that broke the frontend said nothing about the frontend — the
+    # exact shape of "a check that never ran, reported as passing".
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # `npm ci` rather than `npm install`: it installs the lockfile verbatim
+      # and fails if package.json and the lockfile disagree, which is the
+      # disagreement worth failing on.
+      - name: Install dependencies
+        run: npm ci
+      - name: Type check
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+
   docs-check:
     name: Required files present
     runs-on: ubuntu-latest
@@ -125,15 +156,20 @@ jobs:
   ci:
     name: CI gate
     if: always()
-    needs: [lint, typecheck, test, secret-scan, docs-check]
+    needs: [lint, typecheck, test, secret-scan, frontend, docs-check]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any required job failed
         run: |
           results='${{ toJSON(needs) }}'
           echo "$results"
-          if echo "$results" | grep -q '"result": "failure"'; then
-            echo "::error::one or more required jobs failed"
+          # `cancelled` and `skipped` fail too, not just `failure`. A required
+          # job that never ran has not verified anything, and reporting that as
+          # a pass is the failure mode this gate exists to prevent — the same
+          # reason the rest of this repository refuses to render an empty state
+          # where a failure belongs.
+          if echo "$results" | grep -qE '"result": "(failure|cancelled|skipped)"'; then
+            echo "::error::one or more required jobs did not pass"
             exit 1
           fi
           echo "All required jobs passed."
