@@ -95,15 +95,28 @@ Results are fused with **Reciprocal Rank Fusion**, re-ranked with a cross-encode
 ## Quick start
 
 ```bash
-git clone https://github.com/OWNER/alphacouncil.git
-cd alphacouncil
-cp .env.example .env          # fill in your API keys
-make install                  # create venv + install deps
-make test                     # run the test suite
-make dev                      # start backend + frontend
+git clone https://github.com/wqadlw/alphacouncil.git
+cd alphacouncil/backend
+python -m venv .venv && . .venv/Scripts/activate   # Windows; bin/activate on Unix
+pip install -e ".[dev]"
+
+python scripts/dev.py check   # lint + typecheck + tests + static checks
+python -m alphacouncil        # API on http://127.0.0.1:8000
+```
+
+The frontend is a separate dev server:
+
+```bash
+cd frontend
+npm install
+npm run dev                   # http://127.0.0.1:5173, proxies /api to :8000
 ```
 
 Requires Python 3.12+ and Node 20+.
+
+> **On `make`:** the `Makefile` is only a thin wrapper. The real entry point is
+> `backend/scripts/dev.py` — `make` is not installed everywhere this project is
+> developed, and a gate that cannot be run is not a gate.
 
 ## Project structure
 
@@ -113,18 +126,20 @@ alphacouncil/
 │   ├── constitution.md   # Non-negotiable project rules
 │   ├── agents/           # Role definitions (architect/dev/tester/reviewer)
 │   ├── specs/            # Spec-driven feature specs
-│   └── logs/             # Append-only review and change ledgers
+│   ├── logs/             # Append-only change ledger
+│   └── regressions/      # Defect records, with mutation-check evidence
 ├── backend/
+│   ├── checks/           # 12 static checks (AST-level anti-patterns)
+│   ├── scripts/dev.py    # Single command entry point
 │   ├── src/alphacouncil/
-│   │   ├── agents/       # Agent implementations
-│   │   ├── retrieval/    # Four-way retrieval, fusion, re-ranking
-│   │   ├── graph/        # LangGraph state graph
-│   │   ├── tools/        # Tool registry
-│   │   ├── models/       # Pydantic domain models
-│   │   ├── api/          # FastAPI routes
-│   │   └── core/         # Config, logging, observability
-│   └── tests/            # unit / integration / eval
-├── frontend/             # Next.js application
+│   │   ├── api/          # FastAPI routes and the error envelope
+│   │   ├── core/         # Config, logging, error codes, clock
+│   │   ├── domain/       # Business rules: ticker parsing, watchlist
+│   │   ├── models/       # Pydantic contracts
+│   │   ├── providers/    # Market data: three sources, routing, cache
+│   │   └── storage/      # SQLite, migrations, repositories, constraints
+│   └── tests/            # unit / integration
+├── frontend/             # Vite + React + TypeScript
 ├── docs/                 # Architecture docs and ADRs
 └── deploy/               # Docker Compose
 ```
