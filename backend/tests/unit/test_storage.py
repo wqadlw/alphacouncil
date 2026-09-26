@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -477,3 +478,83 @@ class TestTheConnectionOpener:
         finally:
             connection.close()
         assert not Path(":memory:").exists()
+
+
+class TestTheConnectionSurvivesAnotherThread:
+    """The regression guard for a defect that reached a user's screen.
+
+    On 2026-09-26, ``GET /api/v1/instruments/{market}/{code}/quote`` answered
+    **500 roughly half the time**, with
+
+        sqlite3.ProgrammingError: SQLite objects created in a thread can only
+        be used in that same thread.
+
+    thrown from ``connection.close()`` in ``api/deps.py``. FastAPI runs a sync
+    generator dependency through ``contextmanager_in_threadpool``, and
+    ``__enter__`` and ``__exit__`` are not guaranteed to land on the same
+    worker — so the connection was opened on one thread and closed on another.
+
+    **Why these tests exist when the API tests did not catch it.** ``TestClient``
+    runs the whole request on one thread, so the cross-thread path is never
+    taken. No amount of API-level testing would have found this; it took a real
+    browser against a real uvicorn. The behaviour is therefore pinned at the
+    level where it actually happens — the connection itself — rather than
+    somewhere it would be inferred.
+    """
+
+    def test_a_connection_opened_here_can_be_used_and_closed_elsewhere(
+        self, tmp_path: Path
+    ) -> None:
+        connection = db.connect(tmp_path / "cross-thread.db")
+        connection.execute("CREATE TABLE probe (value INTEGER)")
+        connection.execute("INSERT INTO probe VALUES (7)")
+
+        failures: list[BaseException] = []
+
+        def other_thread() -> None:
+            try:
+                row = connection.execute("SELECT value FROM probe").fetchone()
+                assert row["value"] == 7
+                connection.close()
+            except BaseException as exc:
+                # Collected and re-raised on the test thread by the assertion
+                # below. Catching it here rather than letting it escape is what
+                # makes the failure *assertable*: an exception that dies inside
+                # a thread prints a traceback and leaves the test green.
+                failures.append(exc)
+
+        thread = threading.Thread(target=other_thread)
+        thread.start()
+        thread.join()
+
+        assert failures == [], (
+            "a connection must survive being handled by a second thread — "
+            "FastAPI's threadpool does exactly this, and refusing it returns 500"
+        )
+
+    def test_a_transaction_works_across_the_handover(self, tmp_path: Path) -> None:
+        """Not just ``close()``. A write path touches the connection more, and
+        the failing request was a read-only endpoint that still had to resolve
+        the instrument first."""
+        connection = db.connect(tmp_path / "cross-thread-tx.db")
+        connection.execute("CREATE TABLE probe (value INTEGER)")
+
+        failures: list[BaseException] = []
+
+        def other_thread() -> None:
+            try:
+                with db.transaction(connection):
+                    connection.execute("INSERT INTO probe VALUES (1)")
+                    connection.execute("INSERT INTO probe VALUES (2)")
+                assert connection.execute("SELECT count(*) FROM probe").fetchone()[0] == 2
+                connection.close()
+            except BaseException as exc:
+                # Same reason as the test above: the failure has to travel back
+                # to the test thread to be assertable.
+                failures.append(exc)
+
+        thread = threading.Thread(target=other_thread)
+        thread.start()
+        thread.join()
+
+        assert failures == []

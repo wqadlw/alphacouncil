@@ -13,6 +13,17 @@ pool or a module-level singleton — buys throughput this product does not need
 while adding a class of bug (a connection shared across event-loop threads) that
 stays invisible until it does not.
 
+⚠️ **That reasoning was right about the hazard and wrong about where it comes
+from.** The per-request connection is not shared *between* requests, but it still
+crosses threads *within* one: FastAPI runs a sync generator dependency through
+``contextmanager_in_threadpool``, and ``__enter__`` / ``__exit__`` are not
+guaranteed to land on the same worker. ``GET .../quote`` was therefore returning
+500 about half the time from ``connection.close()`` — observed 2026-09-26, and
+invisible to ``TestClient``, which runs everything on one thread. The fix is
+``check_same_thread=False`` in :func:`alphacouncil.storage.db._open`, where the
+full reasoning is written down. **A per-request connection is still the right
+design; it just is not the thread-safety guarantee this paragraph once implied.**
+
 The router is a singleton for the opposite reason. Its health state — which
 source answered 403 and for how long it is left alone — is only meaningful if it
 accumulates across requests. A router rebuilt per request would forget every

@@ -92,10 +92,43 @@ def _open(path: Path | str, pragmas: tuple[str, ...]) -> sqlite3.Connection:
 
     ``PRAGMA journal_mode`` and ``PRAGMA foreign_keys`` are no-ops inside a
     transaction, so they are applied before any statement can open one.
+
+    ``check_same_thread=False`` is load-bearing and needs its reason written
+    down, because it disables a tripwire. The failure it prevents was observed
+    in real use on 2026-09-26: ``GET /instruments/{market}/{code}/quote``
+    returned **500 about half the time**, with
+
+        sqlite3.ProgrammingError: SQLite objects created in a thread can only
+        be used in that same thread.
+
+    raised from ``connection.close()`` in ``api/deps.py``. The cause is not a
+    shared connection — it is the opposite. FastAPI runs sync dependencies
+    through a threadpool via ``contextmanager_in_threadpool``, and a generator
+    dependency's ``__enter__`` and ``__exit__`` **are not guaranteed to land on
+    the same worker**: the connection was created on one thread and closed on
+    another. ``TestClient`` runs everything on one thread, so no test could see
+    it, and it is intermittent by nature — which is the worst shape a defect can
+    have.
+
+    Turning the check off is safe *here* for three reasons, and only because of
+    all three:
+
+    1. **No connection is shared between requests.** ``api/deps.py`` opens one
+       per request; there is no pool and no module-level singleton.
+    2. **The threads that touch one connection are sequential, not concurrent.**
+       Create, use, close — never two at once.
+    3. **SQLite is compiled in serialized threading mode by default**, so even
+       concurrent use from several threads is safe at the C level.
+
+    What this flag gives up: if a future change introduces a genuinely shared
+    connection, the driver will no longer say so. The constraint therefore lives
+    in this docstring and in ``api/deps.py`` rather than in the driver, and
+    ``tests/unit/test_storage.py`` pins the cross-thread behaviour so removing
+    the flag fails the build instead of failing a user's click.
     """
     if isinstance(path, Path):
         path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(path, isolation_level=None)
+    connection = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
     connection.row_factory = sqlite3.Row
     for statement in pragmas:
         connection.execute(statement)
