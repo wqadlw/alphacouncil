@@ -1,0 +1,71 @@
+name: Feature request
+description: Propose a new capability or a change in behaviour
+title: "[feat] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This project is **spec-driven**: features begin as a specification, not as
+        code. Use this template to describe the problem; if accepted, a spec will
+        be written under `.ai/specs/` before implementation starts.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: |
+        Describe the problem, not the solution. "I cannot tell whether a claim is
+        supported" is a problem; "add a citations panel" is a solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: How do you work around it today?
+      description: |
+        If there is no workaround, say so. If there is one, it tells us how much
+        the problem actually hurts.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach (optional)
+      description: If you have a design in mind, sketch it. Note any alternatives you rejected.
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: How would we know it works?
+      description: |
+        Give verifiable criteria. "Faster" is not verifiable; "P95 retrieval
+        latency below 1s on the evaluation set" is.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Estimated scope
+      options:
+        - Small — a single file or module
+        - Medium — one layer, new tests required
+        - Large — spans layers, needs a spec and a plan
+        - Unsure
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and specs for prior discussion
+          required: true
+        - label: This is not a request to add a new dependency
+          required: true

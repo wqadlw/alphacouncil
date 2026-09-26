@@ -1,0 +1,58 @@
+# AlphaCouncil — local infrastructure
+#
+# Starts the backing services only. The API itself runs on the host
+# (`make run`) so that code changes take effect without a rebuild.
+#
+#   docker compose -f deploy/docker-compose.yml up -d
+#   docker compose -f deploy/docker-compose.yml down
+#
+# Langfuse is intentionally NOT defined here: a self-hosted Langfuse needs
+# Postgres, ClickHouse, Redis and S3-compatible storage, which would dominate
+# this file. Use Langfuse Cloud (free tier) by setting LANGFUSE_HOST in `.env`,
+# or follow the official compose file at https://github.com/langfuse/langfuse.
+
+name: alphacouncil
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: alphacouncil-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"   # REST
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: alphacouncil-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: alphacouncil
+      POSTGRES_PASSWORD: alphacouncil
+      POSTGRES_DB: alphacouncil
+      # Deterministic collation keeps Text-to-SQL ordering stable across hosts.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U alphacouncil -d alphacouncil"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  qdrant_data:
+    name: alphacouncil_qdrant_data
+  postgres_data:
+    name: alphacouncil_postgres_data

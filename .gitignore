@@ -1,0 +1,85 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- Testing / coverage ----
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# ---- Type checking / linting caches ----
+.mypy_cache/
+.dmypy.json
+.ruff_cache/
+.pre-commit-cache/
+
+# ---- Environment / secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- Node / frontend ----
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+.pnpm-store/
+
+# ---- Data / artifacts (never commit local data or indexes) ----
+data/
+*.sqlite
+*.sqlite3
+*.db
+indexes/
+qdrant_storage/
+*.parquet
+*.csv
+!tests/**/fixtures/*.csv
+
+# ---- Observability / logs ----
+logs/
+*.log
+langfuse/
+
+# ---- Editors / OS ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ---- Exceptions: `.ai/` directories that share a name with an artefact pattern ----
+# `logs/` and `data/` above are meant for *runtime* output. Two directories under
+# `.ai/` carry the same names but are source, and were being silently excluded:
+#
+#   .ai/logs/        the change ledger — "the development process is itself a
+#                    deliverable" (constitution 10.4). Losing it on a fresh clone
+#                    removes the record of how the project was built.
+#   .ai/checks/data/ the runtime-scan rule directory (constitution 12 requires
+#                    `.ai/checks/` to be split into `data/` and `static/`).
+#
+# A later rule overrides an earlier one, so these must stay at the end.
+!.ai/logs/
+!.ai/checks/data/

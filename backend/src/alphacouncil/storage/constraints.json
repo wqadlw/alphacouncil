@@ -1,0 +1,87 @@
+{
+  "$comment": [
+    "CHECK 约束的外置清单（ADR-0016 / 宪法 5.4.2）。",
+    "",
+    "为什么需要它：SQLite 的 CHECK 必须内联在 CREATE TABLE 里，所以真正的实现仍在",
+    "migrations/*.sql。这份清单的作用是**声明**，而 tests/unit/test_storage.py 会把它",
+    "与真实迁移后的 schema 做**双向**比对 —— 清单列了但库里没有、库里有但清单没登记，",
+    "都会让测试失败。这样「迁移里漏掉一条约束」就不再是静默的。",
+    "",
+    "只登记名字不做文本比对：表达式文本经过 SQLite 规范化后与源文件不完全一致，",
+    "比对文本会引入脆弱的空白/引号差异。约束**是否真的生效**由行为测试证明",
+    "（每个类别至少一个「必须被拒绝」的用例），这比比对字符串强。",
+    "",
+    "⚠️ 2026-09-26：本文件此前**根本不是合法 JSON** —— 第 8、12 行有未转义的 ASCII",
+    "双引号，任何 json.loads 都会抛错。也就是说它从未被任何程序读过，",
+    "「清单与 schema 双向比对」这句话此前只是注释。现已修复，并由上面那个测试兑现。",
+    "",
+    "类别来源（六类，两个宪法章节）：",
+    "  identity / enum / json / length / conditional_required  ← 宪法 5.4.2 的五类",
+    "  required                                                ← 宪法 5.4.3 的必填规则",
+    "",
+    "为什么把 required 单列而不是并进 conditional_required：宪法 5.4.2 第 5 类被明确定义为",
+    "`A OR B IS NOT NULL` 写法（一个字段的存在性取决于另一个字段），而 5.4.3 的必填规则是",
+    "无条件的（`length(trim(x)) > 0`，字段本身已 NOT NULL）。两者形状不同、依据的章节不同，",
+    "混为一类会让「条件必填」这个名字失去意义。",
+    "",
+    "identity 与 required 的边界（测试按形状区分，两个方向都会被拦住）：",
+    "  identity = 值的形式约束：规范化时间戳（strftime 往返）、定宽数字码（GLOB）、",
+    "             或「给了就不能是空白」（`x IS NULL OR length(trim(x)) > 0`）",
+    "  required = 必填且非空白：`length(trim(x)) > 0`，**没有 NULL 分支**，",
+    "             因为字段本身 NOT NULL，空白是唯一的非法值"
+  ],
+  "categories": [
+    "identity",
+    "enum",
+    "json",
+    "length",
+    "conditional_required",
+    "required"
+  ],
+  "tables": {
+    "instruments": {
+      "append_only": false,
+      "constraints": {
+        "instruments_market_check": "enum",
+        "instruments_code_check": "identity",
+        "instruments_asset_type_check": "enum",
+        "instruments_name_check": "identity",
+        "instruments_name_provenance_check": "conditional_required",
+        "instruments_created_at_check": "identity"
+      }
+    },
+    "watchlist_events": {
+      "append_only": true,
+      "constraints": {
+        "watchlist_events_kind_check": "enum",
+        "watchlist_events_reason_required_check": "conditional_required",
+        "watchlist_events_reason_not_blank_check": "identity",
+        "watchlist_events_reason_length_check": "length",
+        "watchlist_events_supersedes_check": "conditional_required",
+        "watchlist_events_occurred_at_check": "identity"
+      }
+    },
+    "decisions": {
+      "append_only": true,
+      "constraints": {
+        "decisions_id_check": "identity",
+        "decisions_action_check": "enum",
+        "decisions_rationale_required_check": "required",
+        "decisions_counter_evidence_required_check": "required",
+        "decisions_rationale_length_check": "length",
+        "decisions_counter_evidence_length_check": "length",
+        "decisions_kill_criteria_json_check": "json"
+      }
+    },
+    "audit_log": {
+      "append_only": true,
+      "constraints": {
+        "audit_log_id_check": "identity",
+        "audit_log_actor_check": "enum",
+        "audit_log_action_not_blank_check": "required",
+        "audit_log_target_check": "conditional_required",
+        "audit_log_detail_length_check": "length"
+      }
+    }
+  }
+}

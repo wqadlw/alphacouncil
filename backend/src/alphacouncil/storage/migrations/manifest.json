@@ -1,0 +1,22 @@
+{
+  "$comment": [
+    "迁移清单。迁移器（storage/migrate.py）按这里的顺序执行，不靠扫描目录猜顺序 ——",
+    "文件名排序在版本号跨过 9 之后会出错（00010 排在 0009 前面），而清单是显式的。",
+    "",
+    "destructive_down: true 表示回滚会丢用户数据。迁移器在未显式传 --allow-destructive",
+    "时拒绝执行它（ADR-0012 规则 2：确实不可逆时必须显式声明，而不是假装可逆）。",
+    "",
+    "本文件与 .sql 文件由 tests/unit/test_storage.py 交叉校验：清单里列的文件必须存在，",
+    "目录里的 .sql 文件必须在清单里登记 —— 否则一个写好的迁移可能永远不会被执行。"
+  ],
+  "migrations": [
+    {
+      "version": 1,
+      "name": "initial",
+      "up": "0001_initial.up.sql",
+      "down": "0001_initial.down.sql",
+      "destructive_down": true,
+      "down_note": "删除 decisions / audit_log 的全部内容。要退回请从 VACUUM INTO 快照恢复，不要跑 down.sql。"
+    }
+  ]
+}

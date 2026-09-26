@@ -1,0 +1,195 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "alphacouncil"
+version = "0.1.0"
+description = "A practice-oriented knowledge management system for stock market investors"
+# ⚠️ These two paths must stay inside `backend/`: hatchling rejects a readme or
+# licence outside the project directory ("Readme path must be within the project
+# directory"). The previous `../README.md` made `pip install -e .` fail outright
+# — it had simply never been run. See .ai/logs/changes/2026-09-26-s1-data-layer.md
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+authors = [{ name = "AlphaCouncil contributors" }]
+keywords = ["investment", "knowledge-management", "spaced-repetition", "decision-journal", "sqlite"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+
+dependencies = [
+    # web
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    # config & validation
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    # logging
+    "structlog>=24.4",
+    # http — market data is fetched with the standard library + httpx, no SDKs
+    "httpx>=0.27",
+    # spaced repetition — the mechanism that makes "never repeat a mistake"
+    # a schedule rather than a slogan.
+    # ⚠️ The distribution name is `fsrs`, NOT `py-fsrs`: the latter does not
+    # exist on PyPI (verified 2026-09-26). 6.3.2 implements FSRS v6.
+    "fsrs>=6.0",
+    # storage
+    "sqlalchemy>=2.0",
+    "aiosqlite>=0.20",
+]
+
+# ⚠️ Removed on 2026-09-26, deliberately, with the reason recorded:
+#   llama-index-core, qdrant-client  — retrieval stack replaced by SQLite FTS5
+#   akshare                          — measured as rate-limited and key-dependent
+#   lightrag-hku                     — same retrieval stack
+#   pandas                           — not needed; the standard library suffices for OHLCV
+# Do not re-add without an ADR. See .ai/memory/decisions.md.
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "respx>=0.21",
+    "httpx2>=2.0",  # required by starlette's TestClient
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pre-commit>=4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/OWNER/alphacouncil"
+Issues = "https://github.com/OWNER/alphacouncil/issues"
+
+[project.scripts]
+alphacouncil = "alphacouncil.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/alphacouncil"]
+
+# ---------------------------------------------------------------------------
+# Ruff
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# `checks` is the static-check package (`.ai/checks/static/`). Listing it here
+# keeps isort treating its imports as first-party.
+src = ["src", "tests", "checks"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "TID",  # flake8-tidy-imports
+    "RUF",  # ruff-specific
+    "ASYNC",
+    "S",    # flake8-bandit (security)
+    "T20",  # flake8-print (no print statements)
+    "ANN",  # flake8-annotations (type annotations)
+    "PTH",  # flake8-use-pathlib
+    "RET",  # flake8-return
+    "ARG",  # flake8-unused-arguments
+]
+ignore = [
+    "ANN401",  # allow Any in **kwargs of framework integrations
+    "S101",    # allow assert in tests (per-file override below)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",   # assert is the assertion mechanism
+    "ANN201",
+    "ANN401",
+    "ARG001",
+    "ARG002",
+    "S105",   # a hard-coded "password" in a fixture is the point of the fixture
+    "S106",
+    "RUF001", # fixtures carry Chinese UI strings on purpose
+    "RUF002",
+]
+"src/alphacouncil/__main__.py" = ["T201"]  # CLI entry point may print
+# Developer tooling: printing is the interface, and the subprocess argv is
+# built from constants in this repo, never from user input.
+"scripts/**" = ["T201", "S603", "S607"]
+# The static-check package is developer tooling too, and its `fix` strings are
+# prose shown to a human — Chinese, so the ambiguous-character rules do not
+# apply. Its stdout/stderr split is specified in `.ai/error-codes.md` §1.1.
+"checks/**" = ["T201", "RUF001", "RUF002"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["alphacouncil"]
+
+# ---------------------------------------------------------------------------
+# mypy
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+warn_unreachable = true
+warn_unused_ignores = true
+disallow_untyped_decorators = true
+no_implicit_reexport = true
+show_error_codes = true
+# `checks/` is included so the rules that guard the product are themselves
+# type-checked. A rule module is code, and untested, untyped tooling is how a
+# guard silently stops guarding.
+files = ["src", "tests", "checks"]
+
+[[tool.mypy.overrides]]
+module = ["respx.*"]
+ignore_missing_imports = true
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+# `backend/` on sys.path so tests can `import checks` (the static-check package)
+# without a `sys.path` hack in every test module.
+pythonpath = ["."]
+asyncio_mode = "auto"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+]
+markers = [
+    "unit: unit tests, no external dependencies",
+    "integration: integration tests, may use containers or mocks",
+    "live: hits the real network — never run in CI",
+]
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["src/alphacouncil"]
+branch = true
+omit = ["*/__main__.py"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

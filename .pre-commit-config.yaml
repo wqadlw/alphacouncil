@@ -1,0 +1,56 @@
+# Pre-commit hooks — the first quality gate.
+# Install with:  pre-commit install
+# Run manually:  pre-commit run --all-files
+#
+# Per .ai/constitution.md §4, code that fails these hooks must not be committed.
+
+default_language_version:
+  python: python3.12
+
+repos:
+  # ---- generic hygiene -----------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=512"]
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-json
+      - id: check-toml
+      - id: check-yaml
+        args: ["--allow-multiple-documents"]
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: ["--markdown-linebreak-ext=md"]
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+      - id: no-commit-to-branch
+        args: ["--branch=main"]
+
+  # ---- ruff: lint + format ------------------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix"]
+      - id: ruff-format
+
+  # ---- mypy: static types -------------------------------------------------
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        files: ^backend/(src|tests)/
+        args: ["--config-file=backend/pyproject.toml"]
+        additional_dependencies:
+          - pydantic>=2.9
+          - pydantic-settings>=2.6
+          - types-requests
+
+  # ---- secret scanning ----------------------------------------------------
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
