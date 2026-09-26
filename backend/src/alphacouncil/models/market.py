@@ -22,7 +22,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from alphacouncil.core.error_codes import ErrorCode
 
@@ -151,9 +151,18 @@ class RealtimeQuote(_FrozenModel):
     source: str = Field(min_length=1)
     fetched_at: datetime
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def change_pct(self) -> float:
-        """Return the change as a decimal fraction, computed not trusted."""
+        """The change as a decimal fraction, computed not trusted.
+
+        ``computed_field`` rather than a plain ``property`` so the value is
+        *serialised*: the alternative is every client re-deriving it from
+        ``price`` and ``prev_close``, and a second implementation of a
+        percentage is a second chance to disagree about rounding, sign, or
+        whether the unit is a fraction or percentage points (constitution 4.2).
+        The client formats what it is given; it does not divide.
+        """
         return (self.price - self.prev_close) / self.prev_close
 
 

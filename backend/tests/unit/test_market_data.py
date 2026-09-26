@@ -14,7 +14,7 @@ and is labelled as such wherever it is used.
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pytest
 
@@ -32,6 +32,7 @@ from alphacouncil.providers.base import (
     ProviderCapabilities,
     ProviderEmptyError,
     ProviderProtocolError,
+    now,
 )
 from alphacouncil.providers.cache import MemoryCache
 from alphacouncil.providers.router import MarketDataRouter
@@ -585,3 +586,39 @@ class TestLiveProviders:
         assert Dataset.DAILY in TencentProvider().capabilities.datasets
         assert Dataset.DAILY in EastmoneyProvider().capabilities.datasets
         assert Dataset.DAILY not in SinaProvider().capabilities.datasets
+
+
+class TestClock:
+    """The provider clock — UTC and aware, not local and naive."""
+
+    def test_now_is_aware_utc(self) -> None:
+        """A naive datetime is a wall-clock reading, not a moment.
+
+        It serialises to JSON as ``2026-09-26T21:40:50`` with nothing to say
+        which clock produced it, and it made two different clocks meet on one
+        page: watchlist events are stored as UTC with a ``Z``
+        (:func:`alphacouncil.core.time.utc_millis`) while a quote carried local
+        time, so "I followed this in March" and "the price is from 21:40" read
+        as eight hours apart on a machine at UTC+8 — with nothing on screen to
+        reveal it. Verified 2026-09-26 against a live Tencent response.
+        """
+        moment = now()
+
+        assert moment.tzinfo is not None
+        assert moment.utcoffset() == timedelta(0)
+
+    def test_a_fetched_stamp_renders_the_same_way_an_event_does(self) -> None:
+        """The consequence, asserted directly: one spelling of a moment.
+
+        Pydantic renders an aware UTC datetime as ``...Z``, which is the same
+        form :func:`alphacouncil.core.time.utc_millis` writes into the database.
+        That agreement is the point — a quote timestamp and a watchlist event
+        timestamp can now be read side by side without the reader having to work
+        out which clock each one came from.
+        """
+        quote = TencentProvider.parse(TENCENT_REALTIME, _moutai(), fetched_at=now())
+
+        stamp = json.loads(quote.model_dump_json())["fetched_at"]
+
+        assert stamp.endswith("Z")
+        assert datetime.fromisoformat(stamp).utcoffset() == timedelta(0)

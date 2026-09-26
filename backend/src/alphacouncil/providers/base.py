@@ -15,7 +15,7 @@ Design borrowed from the TSP review (see ``references/deep-dives/12``):
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
@@ -158,8 +158,21 @@ class MarketDataProvider(Protocol):
 
 
 def now() -> datetime:
-    """Return the current local timestamp.
+    """Return the current instant, in UTC.
 
-    Wrapped so tests can freeze time without patching the stdlib globally.
+    ``datetime.now()`` returns a **naive** local reading, and a datetime with no
+    offset is not a moment — it is a wall-clock number with nothing to say which
+    clock produced it. Serialised to JSON it comes out as
+    ``2026-09-26T21:40:50``, which a client cannot place.
+
+    That mattered as soon as the two kinds of timestamp met on one page. Every
+    timestamp in the database is UTC with a ``Z``
+    (:func:`alphacouncil.core.time.utc_millis`), so a naive quote stamp put two
+    different clocks side by side: "I followed this on 2026-03-02" and "the
+    price is from 21:40" — eight hours apart on this machine, with nothing on
+    screen to reveal it.
+
+    Wrapped rather than inlined so tests can freeze time without patching the
+    stdlib globally.
     """
-    return datetime.now()
+    return datetime.now(UTC)

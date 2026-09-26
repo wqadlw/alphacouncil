@@ -21,6 +21,7 @@ from alphacouncil.api.routes import instruments, watchlist
 from alphacouncil.core.config import Settings, get_settings
 from alphacouncil.core.logging import configure_logging, get_logger
 from alphacouncil.models.domain import ResearchRequest
+from alphacouncil.providers import default_router
 from alphacouncil.storage import migrate
 from alphacouncil.storage.db import connect_for_migration
 
@@ -121,6 +122,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=_lifespan,
     )
     app.state.settings = resolved
+    # One router for the process, because its health bookkeeping — which source
+    # refused us and until when — is only worth anything if it accumulates
+    # across requests. Built here rather than imported as a module global so a
+    # test can replace it on the instance without leaking into the next test.
+    app.state.market_data = default_router()
 
     @app.exception_handler(ValueError)
     async def _handle_value_error(_: Request, exc: ValueError) -> JSONResponse:

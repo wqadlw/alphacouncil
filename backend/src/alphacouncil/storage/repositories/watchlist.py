@@ -32,6 +32,7 @@ __all__ = [
     "append",
     "current",
     "current_event",
+    "history",
 ]
 
 _INSERT = (
@@ -47,6 +48,10 @@ _SELECT_CURRENT = (
 )
 _SELECT_LATEST = (
     "SELECT id, kind FROM watchlist_events WHERE market = ? AND code = ? ORDER BY id DESC LIMIT 1"
+)
+_SELECT_HISTORY = (
+    "SELECT id, occurred_at, kind, reason, supersedes_id FROM watchlist_events "
+    "WHERE market = ? AND code = ? ORDER BY id ASC"
 )
 
 
@@ -148,6 +153,39 @@ def current_event(connection: sqlite3.Connection, symbol: Symbol) -> WatchlistSt
     if row is None:
         return None
     return WatchlistState(event_id=int(row["id"]), kind=WatchlistEventKind(row["kind"]))
+
+
+def history(connection: sqlite3.Connection, symbol: Symbol) -> tuple[RecordedEvent, ...]:
+    """Every event ever recorded for ``symbol``, **oldest first**.
+
+    Ordered by ``id``, not ``occurred_at``: ``id`` is the write order, and the
+    whole promise of this log is that the sequence can be read back. Two events
+    in the same millisecond are the normal case for a scripted change, and
+    sorting them by a millisecond-resolution clock would shuffle the record.
+
+    Ascending rather than descending on purpose. This is not a feed — it is the
+    transcript of a relationship, and the interesting thing is how the reason
+    *moved*: added → revised → removed → added again. Read newest-first that
+    becomes four unrelated rows; read oldest-first it becomes a story, which is
+    the only form in which "I have done this before" is visible.
+
+    An instrument that was never followed has no rows, so this returns an empty
+    tuple rather than raising. Whether that is an error is the caller's question
+    — the domain answers it in
+    :func:`alphacouncil.domain.watchlist.require_followed`.
+    """
+    return tuple(
+        RecordedEvent(
+            event_id=int(row["id"]),
+            occurred_at=row["occurred_at"],
+            kind=WatchlistEventKind(row["kind"]),
+            market=symbol.market,
+            code=symbol.code,
+            reason=row["reason"],
+            supersedes_id=None if row["supersedes_id"] is None else int(row["supersedes_id"]),
+        )
+        for row in connection.execute(_SELECT_HISTORY, (symbol.market.value, symbol.code))
+    )
 
 
 def _to_entry(row: sqlite3.Row) -> WatchlistEntry:
