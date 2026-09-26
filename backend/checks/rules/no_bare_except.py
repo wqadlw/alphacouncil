@@ -84,7 +84,7 @@ def run(ctx: ScanContext) -> CheckResult:
                     CODE,
                     f"`except {_render(node.type)}` with an empty body hides the failure",
                     target=format_target(ctx, path, node.lineno),
-                    fix="Either log it (`logger.warning(\"event\", error=str(exc))`) or "
+                    fix='Either log it (`logger.warning("event", error=str(exc))`) or '
                     "re-raise it (`raise SomeError(...) from exc`). A swallowed "
                     "exception becomes a wrong number, not a visible absence.",
                 )

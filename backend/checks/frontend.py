@@ -73,9 +73,7 @@ def home_pages(ctx: ScanContext) -> list[Path]:
     is not decided yet, and a rule that silently finds nothing is worse than one
     that checks a couple of extra candidates.
     """
-    candidates = [
-        path for path in files(ctx) if path.stem.lower() in HOME_PAGE_STEMS
-    ]
+    candidates = [path for path in files(ctx) if path.stem.lower() in HOME_PAGE_STEMS]
     root_index = source_root(ctx) / "index.html"
     if root_index.is_file() and root_index not in candidates:
         candidates.append(root_index)

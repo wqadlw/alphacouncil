@@ -150,9 +150,7 @@ def run(ctx: ScanContext) -> CheckResult:
     return result
 
 
-def _report_imports(
-    ctx: ScanContext, result: CheckResult, path: Path, tree: ast.Module
-) -> None:
+def _report_imports(ctx: ScanContext, result: CheckResult, path: Path, tree: ast.Module) -> None:
     """Rule 1: outside ``providers/``, importing a network library is the defect."""
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -174,8 +172,7 @@ def _report_imports(
                 CODE,
                 f"`from {node.module} import ...` outside the providers package",
                 target=format_target(ctx, path, node.lineno),
-                fix="Call the provider layer instead — "
-                "`alphacouncil.providers.default_router()`.",
+                fix="Call the provider layer instead — `alphacouncil.providers.default_router()`.",
             )
 
 

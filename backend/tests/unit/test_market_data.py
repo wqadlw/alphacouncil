@@ -53,8 +53,8 @@ TENCENT_REALTIME = (
     "1237.70~1~1237.90~1~1237.97~1~~20260924161444~-14.24~-1.14~1256.13~1231.05~"
     "1237.00/31239/3867310920~31239~386731~0.25~18.99~~1256.13~1231.05~2.00~"
     "15463.51~15463.51~6.15~1376.36~1126.12~1.27~16~1237.96~17.37~18.78~~~0.07~"
-    '386731.0920~74.2200~6~   A~GP-A~-8.31~-2.37~4.21~32.41~27.30~1539.98~'
-    '1151.01~-3.75~-4.28~2.83~1250081601~1250081601~61.54~-9.97~1250081601~~~'
+    "386731.0920~74.2200~6~   A~GP-A~-8.31~-2.37~4.21~32.41~27.30~1539.98~"
+    "1151.01~-3.75~-4.28~2.83~1250081601~1250081601~61.54~-9.97~1250081601~~~"
     '-11.01~-0.09~~CNY~0~___D__F__N~1238.05~-39~";'
 )
 
@@ -467,9 +467,7 @@ class TestCircuitBreaking:
 
     def test_a_blocked_source_enters_cooldown(self) -> None:
         clock = _Clock()
-        blocked = _rt_provider(
-            "blocked", _error("blocked", ErrorCode.DATA_SOURCE_FORBIDDEN)
-        )
+        blocked = _rt_provider("blocked", _error("blocked", ErrorCode.DATA_SOURCE_FORBIDDEN))
         backup = _rt_provider("backup", _ok_realtime("backup"))
         router = MarketDataRouter([blocked, backup], clock=clock)
 
@@ -481,9 +479,7 @@ class TestCircuitBreaking:
 
     def test_cooldown_expires(self) -> None:
         clock = _Clock()
-        blocked = _rt_provider(
-            "blocked", _error("blocked", ErrorCode.DATA_SOURCE_FORBIDDEN)
-        )
+        blocked = _rt_provider("blocked", _error("blocked", ErrorCode.DATA_SOURCE_FORBIDDEN))
         router = MarketDataRouter([blocked], clock=clock)
 
         router.get_realtime(_moutai())

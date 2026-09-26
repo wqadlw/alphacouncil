@@ -127,9 +127,7 @@ class MarketDataRouter:
         This is the gate the UI asks before rendering a panel. A page must not
         promise a chart it cannot fill (constitution: honest empty states).
         """
-        return frozenset(
-            dataset for dataset in Dataset if self._candidates(dataset, symbol)
-        )
+        return frozenset(dataset for dataset in Dataset if self._candidates(dataset, symbol))
 
     # -- internals ---------------------------------------------------------
 

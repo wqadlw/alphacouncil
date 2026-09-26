@@ -35,8 +35,10 @@ print("  source :", daily.source)
 if daily.value:
     for bar in daily.value:
         amount = "None" if bar.amount is None else f"{bar.amount:,.0f}"
-        print(f"  {bar.trade_date}  O{bar.open} H{bar.high} L{bar.low} C{bar.close}"
-              f"  V{bar.volume:,.0f}  A{amount}")
+        print(
+            f"  {bar.trade_date}  O{bar.open} H{bar.high} L{bar.low} C{bar.close}"
+            f"  V{bar.volume:,.0f}  A{amount}"
+        )
 else:
     print("  reason :", daily.reason, daily.error_code)
 

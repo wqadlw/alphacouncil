@@ -335,9 +335,7 @@ class TestEveryAttemptGetsItsOwnSnapshot:
         """
         database = tmp_path / "alphacouncil.db"
         connection = connect(database)
-        migrate.apply(
-            connection, database_path=database, migrations=_chain(tmp_path / "m", (1,))
-        )
+        migrate.apply(connection, database_path=database, migrations=_chain(tmp_path / "m", (1,)))
 
         target = tmp_path / "snapshots" / "fixed.db"
         migrate.snapshot(connection, target)
@@ -599,9 +597,7 @@ class TestRollback:
 class TestTheConnectionProfiles:
     """ADR-0012 rules 5-6: a migration and a query want opposite things."""
 
-    def test_the_migration_profile_pays_for_safety(
-        self, tmp_path: Path, connect: Connect
-    ) -> None:
+    def test_the_migration_profile_pays_for_safety(self, tmp_path: Path, connect: Connect) -> None:
         connection = connect(tmp_path / "m.db")
         assert connection.execute("PRAGMA synchronous").fetchone()[0] == 2  # FULL
         assert connection.execute("PRAGMA temp_store").fetchone()[0] == 1  # FILE
@@ -695,9 +691,7 @@ class TestTheTriggersFireOnTheMigratedDatabase:
         with pytest.raises(sqlite3.IntegrityError, match="append-only"):
             migrated.execute("DELETE FROM audit_log")
 
-    def test_the_reason_field_cannot_be_edited_in_place(
-        self, migrated: sqlite3.Connection
-    ) -> None:
+    def test_the_reason_field_cannot_be_edited_in_place(self, migrated: sqlite3.Connection) -> None:
         """Red line 15 tier ④: an agent may never rewrite a user's stated reason."""
         migrated.execute(
             "INSERT INTO watchlist_events (occurred_at, market, code, kind, reason) "
@@ -730,8 +724,7 @@ class TestTheTriggersFireOnTheMigratedDatabase:
         assert [row[0] for row in current] == ["600519"]
 
         migrated.execute(
-            "INSERT INTO watchlist_events (occurred_at, market, code, kind) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO watchlist_events (occurred_at, market, code, kind) VALUES (?, ?, ?, ?)",
             (NOW, "sh", "600519", "removed"),
         )
         assert migrated.execute("SELECT code FROM watchlist_current").fetchall() == []

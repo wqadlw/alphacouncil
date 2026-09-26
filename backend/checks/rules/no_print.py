@@ -65,7 +65,7 @@ def run(ctx: ScanContext) -> CheckResult:
                 CODE,
                 f"`{name}()` in the product writes to a console nobody reads",
                 target=format_target(ctx, path, node.lineno),
-                fix="Use `structlog`: `logger.info(\"event_name\", key=value)`. "
+                fix='Use `structlog`: `logger.info("event_name", key=value)`. '
                 "A packaged app has no visible stdout (constitution 7.4).",
             )
     return result

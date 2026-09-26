@@ -247,9 +247,7 @@ class TestTheManifestMatchesTheDirectory:
     def test_the_largest_storable_version_is_still_accepted(self, tmp_path: Path) -> None:
         """The guard must not be so eager that it refuses a legal value."""
         _materialise(tmp_path, [(migrate.MAX_VERSION, "biggest")])
-        assert [item.version for item in migrate.load_migrations(tmp_path)] == [
-            migrate.MAX_VERSION
-        ]
+        assert [item.version for item in migrate.load_migrations(tmp_path)] == [migrate.MAX_VERSION]
 
 
 class TestSplittingAScript:

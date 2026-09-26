@@ -27,7 +27,12 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install ruff
-        run: pip install "ruff==0.8.4"
+        # Pinned to the version the project is developed against. It was pinned
+        # at 0.8.4 until the first CI run, which exposed a drift that had never
+        # been visible: ruff removed UP038 (`isinstance(x, (A, B))` -> `A | B`)
+        # in 0.9.0, so the old pin failed a tree the local toolchain accepts.
+        # Bump this together with the local ruff, never separately.
+        run: pip install "ruff==0.16.9"
       - name: Ruff lint
         working-directory: ${{ env.WORKING_DIR }}
         run: ruff check --output-format=github .

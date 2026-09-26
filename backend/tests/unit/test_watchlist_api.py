@@ -167,9 +167,7 @@ class TestTheResolveEndpoint:
         assert body["display"] == "600519.SH"
         assert body["candidates"] == []
 
-    def test_an_ambiguous_ticker_returns_the_choices_not_an_error(
-        self, client: TestClient
-    ) -> None:
+    def test_an_ambiguous_ticker_returns_the_choices_not_an_error(self, client: TestClient) -> None:
         """A 200, because being one answer short of valid is not a failure."""
         response = client.get(RESOLVE, params={"ticker": "000001"})
 

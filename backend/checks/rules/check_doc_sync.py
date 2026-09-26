@@ -83,7 +83,7 @@ def run(ctx: ScanContext) -> CheckResult:
             CODE,
             f"{DOC_PATH} lists `{check_id}` but no rule implements it",
             target=DOC_PATH,
-            fix=f"Implement `checks/rules/*.py` with `META.check_id = \"{check_id}\"`, or "
+            fix=f'Implement `checks/rules/*.py` with `META.check_id = "{check_id}"`, or '
             "remove the row. A documented guard that does not exist is the defect "
             "this rule was written for.",
         )
@@ -102,8 +102,7 @@ def run(ctx: ScanContext) -> CheckResult:
                 f"`{check_id}` is called `{slug}` in {DOC_PATH} but "
                 f"`{implemented[check_id].slug}` in code",
                 target=DOC_PATH,
-                fix="Make them identical; the slug is how the rule is referred to "
-                "everywhere else.",
+                fix="Make them identical; the slug is how the rule is referred to everywhere else.",
             )
     return result
 

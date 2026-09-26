@@ -108,9 +108,7 @@ class TestFailureClassification:
 
     @respx.mock
     def test_a_symbol_missing_from_the_response_is_no_data(self) -> None:
-        respx.get(TENCENT_URL).mock(
-            return_value=httpx.Response(200, content=b'v_sh600519="";')
-        )
+        respx.get(TENCENT_URL).mock(return_value=httpx.Response(200, content=b'v_sh600519="";'))
 
         result = TencentProvider().get_realtime(_moutai())
 

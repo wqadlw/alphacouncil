@@ -29,9 +29,7 @@ _SELECT_ONE = (
     "SELECT market, code, asset_type, name, created_at FROM instruments "
     "WHERE market = ? AND code = ?"
 )
-_INSERT = (
-    "INSERT INTO instruments (market, code, asset_type, created_at) VALUES (?, ?, ?, ?)"
-)
+_INSERT = "INSERT INTO instruments (market, code, asset_type, created_at) VALUES (?, ?, ?, ?)"
 
 
 @dataclass(frozen=True, slots=True)

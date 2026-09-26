@@ -156,7 +156,7 @@ class TestApplyExemptions:
     def test_an_exempted_finding_disappears(self, tmp_path: Path) -> None:
         ctx = make_ctx(
             tmp_path,
-            {"backend/src/alphacouncil/api/app.py": 'x = 1  # noqa: S-10 -- CLI shim\n'},
+            {"backend/src/alphacouncil/api/app.py": "x = 1  # noqa: S-10 -- CLI shim\n"},
         )
         result = framework.CheckResult(
             issues=[
@@ -228,9 +228,7 @@ class TestRegistry:
 
 class TestS01NoRawHttp:
     def test_importing_httpx_outside_providers_is_reported(self, tmp_path: Path) -> None:
-        ctx = make_ctx(
-            tmp_path, {"backend/src/alphacouncil/api/app.py": "import httpx\n"}
-        )
+        ctx = make_ctx(tmp_path, {"backend/src/alphacouncil/api/app.py": "import httpx\n"})
         assert codes(no_raw_http.run(ctx)) == ["CHECK_RAW_HTTP"]
 
     def test_a_convenience_call_is_reported_even_inside_providers(self, tmp_path: Path) -> None:
@@ -286,9 +284,7 @@ class TestS02NoBooleanState:
             tmp_path,
             {
                 "backend/src/alphacouncil/models/domain.py": (
-                    "class Review:\n"
-                    "    reviewed: bool = False\n"
-                    "    outcome_filled: bool = False\n"
+                    "class Review:\n    reviewed: bool = False\n    outcome_filled: bool = False\n"
                 )
             },
         )
@@ -710,9 +706,7 @@ class TestS09TimeCostInStopLoss:
         assert time_cost_in_stop_loss.run(ctx).issues == []
 
     def test_no_stop_loss_component_is_skipped(self, tmp_path: Path) -> None:
-        ctx = make_ctx(
-            tmp_path, {"frontend/src/pages/Home.tsx": "<p>hello</p>\n"}
-        )
+        ctx = make_ctx(tmp_path, {"frontend/src/pages/Home.tsx": "<p>hello</p>\n"})
         assert time_cost_in_stop_loss.run(ctx).skipped is not None
 
 
@@ -723,9 +717,7 @@ class TestS09TimeCostInStopLoss:
 
 class TestS10NoPrint:
     def test_a_print_call_is_reported(self, tmp_path: Path) -> None:
-        ctx = make_ctx(
-            tmp_path, {"backend/src/alphacouncil/api/app.py": 'print("hello")\n'}
-        )
+        ctx = make_ctx(tmp_path, {"backend/src/alphacouncil/api/app.py": 'print("hello")\n'})
         assert codes(no_print.run(ctx)) == ["CHECK_PRINT_STATEMENT"]
 
     def test_structured_logging_stays_silent(self, tmp_path: Path) -> None:

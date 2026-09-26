@@ -46,8 +46,7 @@ _SELECT_CURRENT = (
     "ORDER BY c.occurred_at DESC, c.last_event_id DESC"
 )
 _SELECT_LATEST = (
-    "SELECT id, kind FROM watchlist_events "
-    "WHERE market = ? AND code = ? ORDER BY id DESC LIMIT 1"
+    "SELECT id, kind FROM watchlist_events WHERE market = ? AND code = ? ORDER BY id DESC LIMIT 1"
 )
 
 

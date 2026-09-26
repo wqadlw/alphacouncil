@@ -327,10 +327,7 @@ def _run_script(connection: sqlite3.Connection, script: str, version: int) -> No
             try:
                 connection.execute(statement)
             except sqlite3.Error as exc:
-                msg = (
-                    f"migration {version} failed at statement "
-                    f"{position}/{len(statements)}: {exc}"
-                )
+                msg = f"migration {version} failed at statement {position}/{len(statements)}: {exc}"
                 raise MigrationError(msg) from exc
         # PRAGMA does not accept a bound parameter; `version` is an int read
         # from our own manifest, never from user input.
