@@ -27,27 +27,15 @@ class TestDefaults:
         assert settings.is_development is True
         assert settings.is_production is False
 
-    def test_default_recall_exceeds_rerank(self) -> None:
-        settings = _settings()
-
-        assert settings.recall_top_k == 50
-        assert settings.rerank_top_k == 8
-        assert settings.recall_top_k > settings.rerank_top_k
-
     def test_credentials_are_absent_by_default(self) -> None:
         settings = _settings()
 
         assert settings.openai_api_key is None
         assert settings.anthropic_api_key is None
-        assert settings.langfuse_secret_key is None
 
 
 class TestValidation:
     """Guards that turn silent misconfiguration into loud failures."""
-
-    def test_rerank_above_recall_is_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="must not exceed"):
-            _settings(recall_top_k=5, rerank_top_k=10)
 
     def test_api_port_range_is_enforced(self) -> None:
         with pytest.raises(ValidationError):
@@ -56,12 +44,6 @@ class TestValidation:
     def test_temperature_range_is_enforced(self) -> None:
         with pytest.raises(ValidationError):
             _settings(llm_temperature=3.0)
-
-    def test_urls_are_normalised(self) -> None:
-        settings = _settings(qdrant_url="http://localhost:6333/", langfuse_host="http://x:3001/")
-
-        assert settings.qdrant_url == "http://localhost:6333"
-        assert settings.langfuse_host == "http://x:3001"
 
 
 class TestProductionGuards:
@@ -75,15 +57,6 @@ class TestProductionGuards:
         settings = _settings(env="production", llm_provider="openai", openai_api_key="sk-test")
 
         assert settings.is_production is True
-
-    def test_langfuse_enabled_without_keys_fails_in_production(self) -> None:
-        with pytest.raises(ValidationError, match="LANGFUSE_PUBLIC_KEY"):
-            _settings(
-                env="production",
-                llm_provider="openai",
-                openai_api_key="sk-test",
-                langfuse_enabled=True,
-            )
 
     def test_anthropic_provider_requires_anthropic_key(self) -> None:
         with pytest.raises(ValidationError, match="require credentials"):
@@ -116,6 +89,34 @@ class TestEnvironmentBinding:
         monkeypatch.setenv("ALPHACOUNCIL_TOTALLY_UNKNOWN", "value")
 
         assert _settings().env == "development"
+
+
+class TestV1FieldsAreGone:
+    """The abandoned v1 retrieval configuration must not creep back in.
+
+    Spec 009 removed these fields; this guard makes re-adding them (typically
+    by copying an old snippet) fail loudly instead of reviving a dead layer
+    that /health would then report as existing.
+    """
+
+    def test_no_v1_retrieval_field_is_declared(self) -> None:
+        for name in (
+            "qdrant_url",
+            "qdrant_api_key",
+            "qdrant_collection",
+            "embedding_model",
+            "embedding_dim",
+            "reranker_model",
+            "langfuse_enabled",
+            "langfuse_host",
+            "langfuse_public_key",
+            "langfuse_secret_key",
+            "recall_top_k",
+            "rerank_top_k",
+            "enable_graph_retrieval",
+            "enable_text2sql",
+        ):
+            assert name not in Settings.model_fields, name
 
 
 class TestSingleton:

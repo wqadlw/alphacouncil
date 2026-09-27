@@ -20,7 +20,6 @@ from alphacouncil.api.errors import CODED_ERRORS, domain_failure
 from alphacouncil.api.routes import capabilities, decisions, instruments, today, watchlist
 from alphacouncil.core.config import Settings, get_settings
 from alphacouncil.core.logging import configure_logging, get_logger
-from alphacouncil.models.domain import ResearchRequest
 from alphacouncil.providers import default_router
 from alphacouncil.providers.cache import SqliteCache
 from alphacouncil.storage import migrate
@@ -156,34 +155,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "env": resolved.env,
             "llm_provider": resolved.llm_provider,
             "llm_model": resolved.llm_model,
-            "retrieval": {
-                "recall_top_k": resolved.recall_top_k,
-                "rerank_top_k": resolved.rerank_top_k,
-                "graph_retrieval": resolved.enable_graph_retrieval,
-                "text2sql": resolved.enable_text2sql,
-            },
         }
-
-    @app.post("/api/v1/research", tags=["research"], summary="Submit a research question")
-    async def research(payload: ResearchRequest) -> JSONResponse:
-        """Accept a research question.
-
-        The graph orchestration layer lands in P3. Until then this endpoint
-        validates the request and reports that the pipeline is not yet wired,
-        rather than returning a fabricated answer.
-        """
-        logger.info(
-            "research_request_received",
-            query_length=len(payload.query),
-            code_count=len(payload.codes),
-        )
-        return JSONResponse(
-            status_code=501,
-            content={
-                "detail": "Research pipeline is not implemented yet (planned for P3).",
-                "received": {"query": payload.query, "codes": payload.codes},
-            },
-        )
 
     return app
 

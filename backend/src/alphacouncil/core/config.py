@@ -21,7 +21,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["development", "staging", "production"]
@@ -80,16 +80,6 @@ class Settings(BaseSettings):
     llm_temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     llm_max_tokens: int = Field(default=4096, ge=1, le=200_000)
 
-    # ---- embedding ---------------------------------------------------------
-    embedding_model: str = "BAAI/bge-m3"
-    embedding_dim: int = Field(default=1024, ge=1)
-    reranker_model: str = "BAAI/bge-reranker-v2-m3"
-
-    # ---- vector store ------------------------------------------------------
-    qdrant_url: str = "http://localhost:6333"
-    qdrant_api_key: SecretStr | None = None
-    qdrant_collection: str = "alphacouncil_docs"
-
     # ---- relational store --------------------------------------------------
     # The database must not sit next to the executable: a packaged app under
     # Program Files cannot write there, so the first save would fail on a user's
@@ -103,50 +93,17 @@ class Settings(BaseSettings):
     # so removing it breaks no caller.
     database_path: Path = Field(default_factory=default_database_path)
 
-    # ---- observability -----------------------------------------------------
-    langfuse_enabled: bool = False
-    langfuse_host: str = "http://localhost:3001"
-
     # ---- agent runtime guards ---------------------------------------------
     max_agent_steps: int = Field(default=25, ge=1, le=500)
     max_cost_usd_per_run: float = Field(default=0.50, gt=0.0)
     request_timeout_seconds: int = Field(default=120, ge=1, le=3600)
 
-    # ---- retrieval tuning --------------------------------------------------
-    recall_top_k: int = Field(default=50, ge=1, le=1000)
-    rerank_top_k: int = Field(default=8, ge=1, le=100)
-    enable_graph_retrieval: bool = True
-    enable_text2sql: bool = True
-
     # ---- credentials (unprefixed aliases) ---------------------------------
     openai_api_key: SecretStr | None = Field(default=None, validation_alias="OPENAI_API_KEY")
     anthropic_api_key: SecretStr | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
     deepseek_api_key: SecretStr | None = Field(default=None, validation_alias="DEEPSEEK_API_KEY")
-    langfuse_public_key: SecretStr | None = Field(
-        default=None, validation_alias="LANGFUSE_PUBLIC_KEY"
-    )
-    langfuse_secret_key: SecretStr | None = Field(
-        default=None, validation_alias="LANGFUSE_SECRET_KEY"
-    )
 
     # ---- validators --------------------------------------------------------
-    @field_validator("qdrant_url", "langfuse_host")
-    @classmethod
-    def _strip_trailing_slash(cls, value: str) -> str:
-        """Normalise URLs so downstream joins never produce a double slash."""
-        return value.rstrip("/")
-
-    @model_validator(mode="after")
-    def _check_rerank_not_exceeding_recall(self) -> Settings:
-        """Guard against a silent misconfiguration that would return nothing."""
-        if self.rerank_top_k > self.recall_top_k:
-            msg = (
-                f"rerank_top_k ({self.rerank_top_k}) must not exceed "
-                f"recall_top_k ({self.recall_top_k})"
-            )
-            raise ValueError(msg)
-        return self
-
     @model_validator(mode="after")
     def _require_provider_credentials(self) -> Settings:
         """Fail fast in production rather than at the first LLM call."""
@@ -164,10 +121,6 @@ class Settings(BaseSettings):
                 f"llm_provider is '{self.llm_provider}' but the matching API key "
                 "is not set; production runs require credentials"
             )
-            raise ValueError(msg)
-
-        if self.langfuse_enabled and not (self.langfuse_public_key and self.langfuse_secret_key):
-            msg = "langfuse_enabled is true but LANGFUSE_PUBLIC_KEY/SECRET_KEY are missing"
             raise ValueError(msg)
 
         return self

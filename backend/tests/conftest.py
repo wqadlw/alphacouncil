@@ -8,14 +8,13 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from alphacouncil.core.config import Settings, get_settings
-from alphacouncil.models.domain import Quote, RecallRoute, RetrievedDoc
 
 
 @pytest.fixture(autouse=True)
@@ -30,8 +29,6 @@ def _isolate_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
             "OPENAI_API_KEY",
             "ANTHROPIC_API_KEY",
             "DEEPSEEK_API_KEY",
-            "LANGFUSE_PUBLIC_KEY",
-            "LANGFUSE_SECRET_KEY",
         }:
             monkeypatch.delenv(key, raising=False)
     get_settings.cache_clear()
@@ -78,50 +75,6 @@ def dev_settings() -> Settings:
 def fixed_now() -> datetime:
     """A deterministic timestamp so assertions on ``fetched_at`` are stable."""
     return datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
-
-
-@pytest.fixture
-def sample_quote(fixed_now: datetime) -> Quote:
-    """A valid OHLCV bar for use in data-layer tests."""
-    return Quote(
-        code="600519",
-        trade_date=date(2026, 9, 24),
-        open=1500.0,
-        high=1520.0,
-        low=1490.0,
-        close=1510.0,
-        volume=1_000_000.0,
-        amount=1_510_000_000.0,
-        source="fixture",
-        fetched_at=fixed_now,
-    )
-
-
-@pytest.fixture
-def sample_docs() -> list[RetrievedDoc]:
-    """Two documents with overlapping route ranks, for fusion tests.
-
-    ``doc-a`` is retrieved by both the dense and sparse routes — this is the
-    duplicate case that spec 002 FR-9 requires fusion to collapse.
-    """
-    return [
-        RetrievedDoc(
-            doc_id="doc-a",
-            content="Gross margin expanded on a favourable product mix.",
-            source="2026-annual-report.pdf",
-            page=42,
-            score=0.91,
-            route_ranks={RecallRoute.DENSE: 1, RecallRoute.SPARSE: 3},
-        ),
-        RetrievedDoc(
-            doc_id="doc-b",
-            content="Upstream suppliers are concentrated in two provinces.",
-            source="supply-chain-note.pdf",
-            page=7,
-            score=0.77,
-            route_ranks={RecallRoute.GRAPH: 2},
-        ),
-    ]
 
 
 @pytest.fixture
