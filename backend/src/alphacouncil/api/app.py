@@ -22,6 +22,7 @@ from alphacouncil.core.config import Settings, get_settings
 from alphacouncil.core.logging import configure_logging, get_logger
 from alphacouncil.models.domain import ResearchRequest
 from alphacouncil.providers import default_router
+from alphacouncil.providers.cache import SqliteCache
 from alphacouncil.storage import migrate
 from alphacouncil.storage.db import connect_for_migration
 
@@ -126,7 +127,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # refused us and until when — is only worth anything if it accumulates
     # across requests. Built here rather than imported as a module global so a
     # test can replace it on the instance without leaking into the next test.
-    app.state.market_data = default_router()
+    # The cache is the disk-backed one (spec 006): the last known good price
+    # must survive a restart, which is what "reopen offline and see something"
+    # asks for. MemoryCache stays the router tests' lightweight double.
+    app.state.market_data = default_router(cache=SqliteCache(resolved.database_path))
 
     @app.exception_handler(ValueError)
     async def _handle_value_error(_: Request, exc: ValueError) -> JSONResponse:

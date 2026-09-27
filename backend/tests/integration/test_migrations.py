@@ -728,3 +728,83 @@ class TestTheTriggersFireOnTheMigratedDatabase:
             (NOW, "sh", "600519", "removed"),
         )
         assert migrated.execute("SELECT code FROM watchlist_current").fetchall() == []
+
+
+class TestTheRealSecondMigration:
+    """The shipped 1→2 upgrade, on the shipped chain, with real user rows.
+
+    Until 0002 existed, every "upgrade keeps data" claim ran against a
+    *synthetic* second step (see ``_chain``) — the real one had never been
+    applied to a database holding anything. status.md §五 recorded that gap
+    as "升级链只在合成意义上被验证过"; these tests retire it.
+    """
+
+    def test_a_version_one_database_upgrades_with_its_rows_intact(
+        self, tmp_path: Path, connect: Connect
+    ) -> None:
+        database = tmp_path / "alphacouncil.db"
+        connection = connect(database)
+        real_first = {item.version: item for item in migrate.load_migrations()}[1]
+        for statement in migrate.split_statements(real_first.up.read_text(encoding="utf-8")):
+            connection.execute(statement)
+        connection.execute("PRAGMA user_version = 1")
+        _add_an_instrument_and_a_reason(connection)
+
+        report = migrate.apply(connection, database_path=database)
+
+        assert report.applied == (2,)
+        assert report.from_version == 1
+        assert migrate.schema_version(connection) == 2
+        row = connection.execute(
+            "SELECT reason FROM watchlist_events WHERE code = ?", ("600519",)
+        ).fetchone()
+        assert row is not None
+        assert row[0] == "估值到了我算得出来的区间"
+
+    def test_the_upgraded_database_can_hold_cache_rows(
+        self, tmp_path: Path, connect: Connect
+    ) -> None:
+        database = tmp_path / "alphacouncil.db"
+        connection = connect(database)
+        real_first = {item.version: item for item in migrate.load_migrations()}[1]
+        for statement in migrate.split_statements(real_first.up.read_text(encoding="utf-8")):
+            connection.execute(statement)
+        connection.execute("PRAGMA user_version = 1")
+        migrate.apply(connection, database_path=database)
+
+        connection.execute(
+            "INSERT INTO market_cache (cache_key, dataset, payload, expires_at) "
+            "VALUES ('realtime:sh600519', 'realtime', '{\"status\": \"error\"}', 0)"
+        )
+        row = connection.execute(
+            "SELECT payload FROM market_cache WHERE cache_key = 'realtime:sh600519'"
+        ).fetchone()
+        assert row is not None
+
+    def test_the_snapshot_taken_before_the_upgrade_lacks_the_new_table(
+        self, tmp_path: Path, connect: Connect
+    ) -> None:
+        """The snapshot is the pre-upgrade state: v1 schema, user rows, no cache."""
+        database = tmp_path / "alphacouncil.db"
+        connection = connect(database)
+        real_first = {item.version: item for item in migrate.load_migrations()}[1]
+        for statement in migrate.split_statements(real_first.up.read_text(encoding="utf-8")):
+            connection.execute(statement)
+        connection.execute("PRAGMA user_version = 1")
+        _add_an_instrument_and_a_reason(connection)
+
+        report = migrate.apply(connection, database_path=database)
+
+        assert report.snapshot_path is not None
+        assert report.snapshot_sha256 == _digest(report.snapshot_path)
+        snapshot = sqlite3.connect(report.snapshot_path)
+        try:
+            tables = {
+                str(row[0]) for row in snapshot.execute("SELECT name FROM sqlite_master").fetchall()
+            }
+            assert "market_cache" not in tables
+            assert "watchlist_events" in tables
+            rows = snapshot.execute("SELECT count(*) FROM watchlist_events").fetchone()[0]
+            assert rows == 1
+        finally:
+            snapshot.close()

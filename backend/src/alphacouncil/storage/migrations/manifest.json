@@ -17,6 +17,14 @@
       "down": "0001_initial.down.sql",
       "destructive_down": true,
       "down_note": "删除 decisions / audit_log 的全部内容。要退回请从 VACUUM INTO 快照恢复，不要跑 down.sql。"
+    },
+    {
+      "version": 2,
+      "name": "market_cache",
+      "up": "0002_market_cache.up.sql",
+      "down": "0002_market_cache.down.sql",
+      "destructive_down": false,
+      "down_note": "只丢弃可再生缓存（行情结果），用户记录不受影响。"
     }
   ]
 }

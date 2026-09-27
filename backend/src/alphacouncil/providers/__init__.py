@@ -16,7 +16,7 @@ from alphacouncil.providers.base import (
     ProviderProtocolError,
     ProviderUnreachableError,
 )
-from alphacouncil.providers.cache import Cache, MemoryCache
+from alphacouncil.providers.cache import Cache, MemoryCache, SqliteCache
 from alphacouncil.providers.router import MarketDataRouter
 from alphacouncil.providers.sources import (
     EastmoneyProvider,
@@ -39,6 +39,7 @@ __all__ = [
     "ProviderProtocolError",
     "ProviderUnreachableError",
     "SinaProvider",
+    "SqliteCache",
     "TencentProvider",
     "default_router",
 ]

@@ -142,7 +142,7 @@ class MarketDataRouter:
     ) -> DataResult[T]:
         """Try capable providers in order and degrade explicitly."""
         if allow_cached_answer and self._cache is not None:
-            cached = self._cache.get(cache_key)
+            cached = self._cache.get(cache_key, dataset)
             if cached is not None:
                 log.info("router.cache_hit", dataset=dataset.value, symbol=symbol.full)
                 return cached
@@ -157,7 +157,7 @@ class MarketDataRouter:
             self._record(provider.name, result)
 
             if result.status is DataStatus.OK:
-                self._remember(cache_key, result)
+                self._remember(cache_key, result, dataset=dataset)
                 return result
             if result.status is DataStatus.NO_DATA:
                 if first_no_data is None:
@@ -169,7 +169,7 @@ class MarketDataRouter:
         # No live source answered with data. A stale value beats an empty page,
         # but only when nothing authoritative said "there is nothing".
         if first_no_data is None:
-            stale: DataResult[T] | None = self._recall(cache_key)
+            stale: DataResult[T] | None = self._recall(cache_key, dataset)
             if stale is not None:
                 log.warning(
                     "router.serving_stale",
@@ -245,16 +245,16 @@ class MarketDataRouter:
                     cooldown_s=_FAILURE_COOLDOWN_S,
                 )
 
-    def _remember(self, key: str, result: DataResult[T]) -> None:
+    def _remember(self, key: str, result: DataResult[T], *, dataset: Dataset) -> None:
         """Cache a successful result."""
         if self._cache is not None:
-            self._cache.put(key, result)
+            self._cache.put(key, result, dataset=dataset)
 
-    def _recall(self, key: str) -> DataResult[T] | None:
+    def _recall(self, key: str, dataset: Dataset) -> DataResult[T] | None:
         """Return the cached value relabelled as stale, or ``None``."""
         if self._cache is None:
             return None
-        cached = self._cache.get(key)
+        cached = self._cache.get(key, dataset)
         if cached is None:
             return None
         return cached.model_copy(update={"stale": True})

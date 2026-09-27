@@ -82,6 +82,15 @@
         "audit_log_target_check": "conditional_required",
         "audit_log_detail_length_check": "length"
       }
+    },
+    "market_cache": {
+      "append_only": false,
+      "constraints": {
+        "market_cache_key_required_check": "required",
+        "market_cache_dataset_check": "enum",
+        "market_cache_payload_required_check": "required",
+        "market_cache_payload_json_check": "json"
+      }
     }
   }
 }

@@ -107,10 +107,16 @@ class SchemaObject:
 
 
 def _live_schema() -> tuple[SchemaObject, ...]:
-    """Create the real schema in memory and return what ``sqlite_master`` holds."""
-    script = {item.version: item for item in migrate.load_migrations()}[1].up.read_text(
-        encoding="utf-8"
-    )
+    """Create the real schema in memory and return what ``sqlite_master`` holds.
+
+    Applies the **whole shipped chain**, not one migration: since 0002 the
+    schema's own tables span multiple `.sql` files, and "the schema" means the
+    state a fresh install ends up in. The first version of this helper read
+    only `[1]` — accurate while there was one migration, and a trap the moment
+    a second landed: the ledger would describe a table the comparison could
+    never see, and every ledger↔schema assertion would fail in both directions.
+    """
+    script = "\n".join(item.up.read_text(encoding="utf-8") for item in migrate.load_migrations())
     connection = sqlite3.connect(":memory:")
     try:
         for statement in migrate.split_statements(script):
@@ -365,7 +371,10 @@ class TestTheLedgerMatchesTheSchema:
         """Guards the reader: if the extractor found nothing, the two set
         comparisons above would agree on two empty sets and pass."""
         bodies = {name for ddl in _table_ddl().values() for name in _constraint_bodies(ddl)}
-        assert len(bodies) == 24, f"expected 24 named constraints, found {len(bodies)}"
+        # 4 tables from 0001 + market_cache from 0002 = 4 + 4 + 12 + ... — the
+        # number is written dead on purpose (constitution 8.3): a new migration
+        # changes it, and that is exactly when a human should look.
+        assert len(bodies) == 28, f"expected 28 named constraints, found {len(bodies)}"
 
     def test_every_constraint_uses_a_declared_category(self) -> None:
         for table, constraints in _ledger_constraints().items():

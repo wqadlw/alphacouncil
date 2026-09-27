@@ -151,6 +151,23 @@ class RealtimeQuote(_FrozenModel):
     source: str = Field(min_length=1)
     fetched_at: datetime
 
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_serialised_computed(cls, data: object) -> object:
+        """Tolerate this model's own serialisation.
+
+        ``change_pct`` is a ``computed_field``, so ``model_dump_json`` writes it
+        — and a strict re-validation of that JSON would refuse it as an extra
+        input, breaking every dump→validate round trip (the disk cache is one;
+        a client echoing a payload back is another). The key is dropped, never
+        trusted: the value recomputed from ``price`` / ``prev_close`` is the
+        only authoritative one (constitution 4.2 — one implementation of a
+        percentage).
+        """
+        if isinstance(data, dict) and "change_pct" in data:
+            del data["change_pct"]
+        return data
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def change_pct(self) -> float:
