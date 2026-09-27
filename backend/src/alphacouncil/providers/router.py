@@ -27,14 +27,17 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
+from enum import StrEnum
 from typing import Any, TypeVar
 
 import structlog
+from pydantic import BaseModel, Field
 
 from alphacouncil.core.error_codes import ErrorCode
 from alphacouncil.models.market import (
     DataResult,
     DataStatus,
+    Market,
     Quote,
     RealtimeQuote,
     Symbol,
@@ -64,6 +67,46 @@ class _Health:
 
     failures: int = 0
     cooling_until: float = 0.0
+
+
+class CapabilityState(StrEnum):
+    """The three states a (dataset, venue) cell can be in (spec 008, TSP T-02).
+
+    `candidates` is not "healthy": it means sources *exist and declared* the
+    capability but are all cooling right now. `pending` means nobody declared
+    it at all — "not wired yet", a fact about the product, not an error.
+    """
+
+    USABLE = "usable"
+    CANDIDATES = "candidates"
+    PENDING = "pending"
+
+
+class CapabilitySource(BaseModel):
+    """One declaring provider, as the matrix sees it right now."""
+
+    name: str
+    healthy: bool = Field(description="False while the provider is in cooldown.")
+    cooldown_remaining_s: float | None = Field(
+        default=None, description="Seconds left in cooldown. Null when healthy."
+    )
+
+
+class CapabilityCell(BaseModel):
+    """One (dataset, venue) cell of the capability matrix."""
+
+    dataset: Dataset
+    market: Market
+    state: CapabilityState
+    sources: list[CapabilitySource] = Field(default_factory=list)
+    reason: str | None = Field(
+        default=None,
+        description=(
+            "For `pending`: why nothing can serve this cell (usually 'not wired "
+            "yet'). For `candidates`: why the declaring sources cannot serve it "
+            "right now. Null for `usable`."
+        ),
+    )
 
 
 class MarketDataRouter:
@@ -128,6 +171,71 @@ class MarketDataRouter:
         promise a chart it cannot fill (constitution: honest empty states).
         """
         return frozenset(dataset for dataset in Dataset if self._candidates(dataset, symbol))
+
+    def capability_matrix(self) -> list[CapabilityCell]:
+        """The full `Dataset` x `Market` map, from declarations plus live health.
+
+        Reading this costs **no network traffic** — it inspects the providers'
+        static declarations and the router's own health bookkeeping, which is
+        exactly what makes it safe for a page to ask before it fetches. It is
+        also the single authority the TSP borrowing prescribes: providers
+        declare capabilities in one place, and the matrix — not a page's hard-
+        coded assumption — is what decides whether a feature can work.
+        """
+        cells: list[CapabilityCell] = []
+        for dataset in Dataset:
+            for market in Market:
+                declaring = [
+                    provider
+                    for provider in self._providers
+                    if dataset in provider.capabilities.datasets
+                    and market in provider.capabilities.markets
+                ]
+                sources = [
+                    CapabilitySource(
+                        name=provider.name,
+                        healthy=not self._cooling(provider.name),
+                        cooldown_remaining_s=self._cooldown_remaining(provider.name),
+                    )
+                    for provider in declaring
+                ]
+                if not declaring:
+                    cells.append(
+                        CapabilityCell(
+                            dataset=dataset,
+                            market=market,
+                            state=CapabilityState.PENDING,
+                            reason="no provider declares this dataset for this venue yet",
+                        )
+                    )
+                elif all(not source.healthy for source in sources):
+                    cells.append(
+                        CapabilityCell(
+                            dataset=dataset,
+                            market=market,
+                            state=CapabilityState.CANDIDATES,
+                            sources=sources,
+                            reason="declaring sources are all in cooldown",
+                        )
+                    )
+                else:
+                    cells.append(
+                        CapabilityCell(
+                            dataset=dataset,
+                            market=market,
+                            state=CapabilityState.USABLE,
+                            sources=sources,
+                        )
+                    )
+        return cells
+
+    def _cooldown_remaining(self, name: str) -> float | None:
+        """Seconds before a cooling provider wakes; None when it is awake."""
+        health = self._health.get(name)
+        if health is None:
+            return None
+        remaining = health.cooling_until - self._clock()
+        return max(remaining, 0.0) if remaining > 0 else None
 
     # -- internals ---------------------------------------------------------
 
