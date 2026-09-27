@@ -67,6 +67,13 @@ class ErrorCode(StrEnum):
     CARD_ALREADY_VERIFIED = "CARD_ALREADY_VERIFIED"
     CARD_TEXT_TOO_LONG = "CARD_TEXT_TOO_LONG"
     CARD_PRIORITY_INVALID = "CARD_PRIORITY_INVALID"
+    # Added 2026-09-27 with K2 (spec 013). Convergence is the lifecycle exit:
+    # it only applies to an active card and demands a user-written reason. The
+    # two failures stay separate codes — "how often do users try to retire an
+    # already retired card" and "how often do they skip the reason" answer
+    # different questions.
+    CARD_NOT_ACTIVE = "CARD_NOT_ACTIVE"
+    CARD_CONVERGE_REASON_REQUIRED = "CARD_CONVERGE_REASON_REQUIRED"
 
     # -- WATCHLIST_* : the instrument pool (D1) ----------------------------
     # A separate namespace from DECISION_* because the two rules look alike and

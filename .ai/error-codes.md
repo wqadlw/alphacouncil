@@ -135,6 +135,8 @@ class DataFetchError(RuntimeError): ...
 | `CARD_ALREADY_VERIFIED` | error | 卡片非 `ai_generated`，无法执行核对升级 |
 | `CARD_TEXT_TOO_LONG` | error | 卡片主张内容超过长度上限 |
 | `CARD_PRIORITY_INVALID` | error | 卡片优先级超出 1..5 范围 |
+| `CARD_NOT_ACTIVE` | error | 卡片非 `active`，无法收敛（K2） |
+| `CARD_CONVERGE_REASON_REQUIRED` | error | 收敛卡片未提供非空白理由（K2） |
 
 ### 2.5 `AGENT_*`
 

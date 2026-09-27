@@ -37,6 +37,7 @@ _STATUS_BY_CODE: dict[str, int] = {
     ErrorCode.INSTRUMENT_ASSET_TYPE_CONFLICT.value: 409,
     ErrorCode.CARD_NOT_FOUND.value: 404,
     ErrorCode.CARD_ALREADY_VERIFIED.value: 409,
+    ErrorCode.CARD_NOT_ACTIVE.value: 409,
 
 }
 

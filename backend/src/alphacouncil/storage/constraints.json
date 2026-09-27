@@ -118,6 +118,18 @@
         "card_symbols_code_check": "identity",
         "card_symbols_created_at_check": "identity"
       }
+    },
+    "card_events": {
+      "append_only": true,
+      "constraints": {
+        "card_events_id_check": "identity",
+        "card_events_card_required_check": "required",
+        "card_events_type_check": "enum",
+        "card_events_reason_not_blank_check": "identity",
+        "card_events_reason_length_check": "length",
+        "card_events_converge_reason_check": "conditional_required",
+        "card_events_created_at_check": "identity"
+      }
     }
   }
 }

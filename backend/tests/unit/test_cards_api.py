@@ -291,3 +291,83 @@ def test_instrument_detail_without_cards_has_an_empty_list(
     detail = client.get("/api/v1/instruments/sh/600519")
     assert detail.status_code == 200, detail.text
     assert detail.json()["cards"] == []
+
+# ---------------------------------------------------------------------------
+# K2 (spec 013): lifecycle events and the convergence exit
+# ---------------------------------------------------------------------------
+
+
+def test_verify_appends_a_verified_event(client: TestClient) -> None:
+    created = record(client, origin="ai_generated")
+    verified = client.patch(f"{CARDS}/{created['id']}/verify")
+    assert verified.status_code == 200, verified.text
+
+    events = verified.json()["events"]
+    assert [e["event_type"] for e in events] == ["verified"]
+    assert events[0]["reason"] is None
+    # A fresh GET carries the same persisted event.
+    again = client.get(f"{CARDS}/{created['id']}")
+    assert [e["event_type"] for e in again.json()["events"]] == ["verified"]
+
+
+def test_converge_retire_active_card_with_a_reason(client: TestClient) -> None:
+    created = record(client)
+    converged = client.patch(
+        f"{CARDS}/{created['id']}/converge",
+        json={"reason": "公司改直营，渠道先行关系失效"},
+    )
+    assert converged.status_code == 200, converged.text
+    payload = converged.json()
+    assert payload["status"] == "converged"
+    events = payload["events"]
+    assert [e["event_type"] for e in events] == ["converged"]
+    assert events[0]["reason"] == "公司改直营，渠道先行关系失效"
+
+    again = client.get(f"{CARDS}/{created['id']}")
+    assert again.json()["status"] == "converged"
+
+
+def test_converge_on_a_converged_card_is_409(client: TestClient) -> None:
+    created = record(client)
+    first = client.patch(
+        f"{CARDS}/{created['id']}/converge", json={"reason": "第一次收敛"}
+    )
+    assert first.status_code == 200, first.text
+    assert_envelope(
+        client.patch(
+            f"{CARDS}/{created['id']}/converge", json={"reason": "再试一次"}
+        ),
+        "CARD_NOT_ACTIVE",
+        409,
+    )
+
+
+def test_converge_with_a_blank_reason_is_400(client: TestClient) -> None:
+    created = record(client)
+    # Whitespace-only passes Pydantic min_length but is refused by the repository.
+    assert_envelope(
+        client.patch(
+            f"{CARDS}/{created['id']}/converge", json={"reason": "   "}
+        ),
+        "CARD_CONVERGE_REASON_REQUIRED",
+        400,
+    )
+
+
+def test_converge_on_a_missing_card_is_404(client: TestClient) -> None:
+    assert_envelope(
+        client.patch(f"{CARDS}/card_999/converge", json={"reason": "理由"}),
+        "CARD_NOT_FOUND",
+        404,
+    )
+
+
+def test_verify_then_converge_history_is_complete(client: TestClient) -> None:
+    created = record(client, origin="ai_generated")
+    client.patch(f"{CARDS}/{created['id']}/verify")
+    client.patch(
+        f"{CARDS}/{created['id']}/converge", json={"reason": "收敛理由"}
+    )
+
+    events = client.get(f"{CARDS}/{created['id']}").json()["events"]
+    assert [e["event_type"] for e in events] == ["verified", "converged"]

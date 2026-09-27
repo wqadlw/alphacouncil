@@ -67,9 +67,18 @@ META = CheckMeta(
 #: journal, the review conclusions, the thesis version history, and the audit
 #: trail — plus the watchlist event log, whose entries are what the user wrote
 #: down and which red line 15 forbids an agent from editing (tier ④).
+#: card_events (K2, spec 013) joins them: a card lifecycle event is itself
+#: an audit record and must never be rewritten after the fact.
 #: Adding a table here is the whole cost of extending the rule.
 APPEND_ONLY_TABLES = frozenset(
-    {"decisions", "reviews", "thesis_versions", "audit_log", "watchlist_events"}
+    {
+        "decisions",
+        "reviews",
+        "thesis_versions",
+        "audit_log",
+        "watchlist_events",
+        "card_events",
+    }
 )
 
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)

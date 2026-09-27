@@ -33,6 +33,14 @@
       "down": "0003_knowledge_cards.down.sql",
       "destructive_down": true,
       "down_note": "删除 cards / card_symbols 的全部内容。要退回请从 VACUUM INTO 快照恢复，不要跑 down.sql。"
+    },
+    {
+      "version": 4,
+      "name": "card_events",
+      "up": "0004_card_events.up.sql",
+      "down": "0004_card_events.down.sql",
+      "destructive_down": true,
+      "down_note": "删除 card_events 状态事件流（卡片当前状态在 cards 中保留，但状态流转历史丢失）。要退回请从快照恢复。"
     }
   ]
 }

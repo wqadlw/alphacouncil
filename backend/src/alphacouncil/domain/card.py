@@ -37,8 +37,11 @@ __all__ = [
     "Card",
     "CardAlreadyVerifiedError",
     "CardContentRequiredError",
+    "CardConvergeReasonRequiredError",
     "CardDraft",
     "CardError",
+    "CardEventType",
+    "CardNotActiveError",
     "CardNotFoundError",
     "CardOrigin",
     "CardPriorityInvalidError",
@@ -68,6 +71,18 @@ class CardOrigin(StrEnum):
 
 class CardStatus(StrEnum):
     ACTIVE = "active"
+    CONVERGED = "converged"
+
+
+class CardEventType(StrEnum):
+    """Lifecycle events recorded when a card state or origin changes (K2).
+
+    VERIFIED is the source-check upgrade (ai_generated -> user_written);
+    CONVERGED is the lifecycle exit (active -> converged). The stream is
+    append-only: a state change without an event is a defect (spec 013).
+    """
+
+    VERIFIED = "verified"
     CONVERGED = "converged"
 
 
@@ -101,6 +116,18 @@ class CardAlreadyVerifiedError(CardError):
 
 class CardPriorityInvalidError(CardError):
     code = ErrorCode.CARD_PRIORITY_INVALID
+
+
+class CardNotActiveError(CardError):
+    """Convergence only applies to an active card (K2)."""
+
+    code = ErrorCode.CARD_NOT_ACTIVE
+
+
+class CardConvergeReasonRequiredError(CardError):
+    """Converging a card demands a user-written reason (K2)."""
+
+    code = ErrorCode.CARD_CONVERGE_REASON_REQUIRED
 
 
 @dataclass(frozen=True, slots=True)

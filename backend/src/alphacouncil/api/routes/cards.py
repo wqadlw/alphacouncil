@@ -1,11 +1,13 @@
-"""The knowledge-card API (K1) — record a claim with its provenance.
+"""The knowledge-card API (K1) — record a claim with its provenance — and (K2)
+run its lifecycle: source-check upgrades and the convergence exit.
 
-Four verbs: ``POST`` records a card, ``GET`` lists and reads, ``PATCH
-/{id}/verify`` upgrades an ``ai_generated`` card to ``user_written``. There is
+Verbs: ``POST`` records a card, ``GET`` lists and reads, ``PATCH
+/{id}/verify`` upgrades an ``ai_generated`` card to ``user_written``, and
+``PATCH /{id}/converge`` (K2) retires an active card with a reason. There is
 no ``PUT``, no ``DELETE`` and no way to edit ``content``: a card is a signed
 statement, and editing it after the fact would quietly rewrite what you once
-claimed and where it came from. Changing your mind is a new card (or, later, a
-``converged`` status), never an edit of the old one.
+claimed and where it came from. Changing your mind is a new card or a
+``converged`` status, never an edit of the old one.
 
 **The request schema forbids unknown fields, and that is load-bearing.** The
 ``id``, ``captured_at`` and ``created_at`` columns are server-generated — the
@@ -15,15 +17,17 @@ and ``extra="forbid"`` turns that attempt into a ``422`` naming the field
 (S-06, the same rule that guards ``decisions``).
 
 **Symbols are tickers, resolved through the same parser the rest of the API
-uses.** ``sh:600519`` in the spec sketch was written before ``parse_ticker``
-existed; the conventional spelling here is ``600519`` / ``sh600519`` /
-``600519.SH``, and ambiguity (``000xxx``) is refused loudly rather than
-guessed — a card misattributed to the wrong exchange is a card that will later
-read as evidence for the wrong thesis.
+uses.** The conventional spelling is ``600519`` / ``sh600519`` / ``600519.SH``,
+and ambiguity (``000xxx``) is refused loudly rather than guessed — a card
+misattributed to the wrong exchange is a card that will later read as evidence
+for the wrong thesis.
 
-Nothing here re-checks what the domain checks. The route parses the tickers,
-the domain refuses a blank claim or a sourceless one, and the database is the
-floor under both.
+**K2: every state or origin change appends an event.** ``origin`` and
+``status`` are mutable, which collides with the append-only discipline; an
+``card_events`` row is the durable proof that the change happened, when, and
+why. Convergence demands a user-written reason — never an agent verdict (red
+line 15) — and a converged card stays visible, just retired from the current
+body of claims (red line 10).
 """
 
 from __future__ import annotations
@@ -39,6 +43,7 @@ from alphacouncil.api.deps import DatabaseConnection
 from alphacouncil.domain.card import (
     MAX_CONTENT_CHARS,
     MAX_TITLE_CHARS,
+    CardEventType,
     CardNotFoundError,
     CardOrigin,
     CardStatus,
@@ -94,6 +99,20 @@ class CardCreateRequest(BaseModel):
     )
 
 
+class CardConvergeRequest(BaseModel):
+    """Retire a card to converged (K2). The reason is mandatory.
+
+    ``min_length=1`` rejects an empty string at the boundary; a whitespace-only
+    value still reaches the repository, which strips it and raises
+    CARD_CONVERGE_REASON_REQUIRED — the database cannot tell a blank string
+    from a real one, so the domain layer does.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=1, max_length=500)
+
+
 class SymbolRead(BaseModel):
     """One instrument a card is attached to, in the conventional form."""
 
@@ -102,8 +121,17 @@ class SymbolRead(BaseModel):
     display: str
 
 
+class CardEventRead(BaseModel):
+    """One append-only lifecycle event for a card (K2)."""
+
+    id: str
+    event_type: CardEventType
+    reason: str | None = None
+    created_at: str
+
+
 class CardRead(BaseModel):
-    """One card, as stored, with its symbols already rendered."""
+    """One card, as stored, with its symbols and lifecycle events rendered."""
 
     id: str = Field(
         description=(
@@ -124,6 +152,13 @@ class CardRead(BaseModel):
     symbols: list[SymbolRead] = Field(
         default_factory=list,
         description="Every instrument this card is tied to, newest association first.",
+    )
+    events: list[CardEventRead] = Field(
+        default_factory=list,
+        description=(
+            "The append-only lifecycle history (K2): source-check upgrades and "
+            "convergence, oldest first."
+        ),
     )
 
 
@@ -149,6 +184,15 @@ def to_read(row: repository.CardRow) -> CardRead:
         symbols=[
             SymbolRead(market=symbol.market.value, code=symbol.code, display=symbol.full)
             for symbol in row.symbols
+        ],
+        events=[
+            CardEventRead(
+                id=event.id,
+                event_type=event.event_type,
+                reason=event.reason,
+                created_at=event.created_at,
+            )
+            for event in row.events
         ],
     )
 
@@ -232,7 +276,8 @@ def verify(card_id: str, connection: DatabaseConnection) -> CardRead:
 
     Only an ``ai_generated`` card may be upgraded — that is the isolation red
     line (15): an AI candidate stays flagged until a person has actually looked
-    at the source. Upgrading anything else is a ``409``.
+    at the source. Upgrading anything else is a ``409``. The upgrade appends a
+    ``verified`` event (K2).
 
     Raises:
         CardNotFoundError: The card does not exist. 404.
@@ -240,3 +285,25 @@ def verify(card_id: str, connection: DatabaseConnection) -> CardRead:
     """
     with transaction(connection):
         return to_read(repository.verify(connection, card_id))
+
+
+@router.patch("/{card_id}/converge", summary="Retire an active card to converged with a reason")
+def converge(
+    card_id: str,
+    payload: CardConvergeRequest,
+    connection: DatabaseConnection,
+) -> CardRead:
+    """Retire an active card from the current body of claims (K2).
+
+    Only an ``active`` card may converge, and the reason is mandatory: the exit
+    from the current claims must itself say why the claim no longer stands. The
+    status UPDATE and the ``converged`` event are one transaction. The card is
+    not deleted and stays visible, just retired (red line 10).
+
+    Raises:
+        CardNotFoundError: The card does not exist. 404.
+        CardNotActiveError: The card is not ``active``. 409.
+        CardConvergeReasonRequiredError: The reason is blank. 400.
+    """
+    with transaction(connection):
+        return to_read(repository.converge(connection, card_id, payload.reason))

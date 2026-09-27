@@ -752,9 +752,9 @@ class TestTheRealSecondMigration:
 
         report = migrate.apply(connection, database_path=database)
 
-        assert report.applied == (2, 3)
+        assert report.applied == (2, 3, 4)
         assert report.from_version == 1
-        assert migrate.schema_version(connection) == 3
+        assert migrate.schema_version(connection) == 4
         row = connection.execute(
             "SELECT reason FROM watchlist_events WHERE code = ?", ("600519",)
         ).fetchone()
@@ -831,9 +831,9 @@ class TestTheRealThirdMigration:
 
         report = migrate.apply(connection, database_path=database)
 
-        assert report.applied == (3,)
+        assert report.applied == (3, 4)
         assert report.from_version == 2
-        assert migrate.schema_version(connection) == 3
+        assert migrate.schema_version(connection) == 4
         # Watchlist row preserved
         row = connection.execute(
             "SELECT reason FROM watchlist_events WHERE code = ?", ("600519",)
@@ -853,4 +853,94 @@ class TestTheRealThirdMigration:
         card_row = connection.execute("SELECT content FROM cards WHERE id = 'card_1'").fetchone()
         assert card_row is not None
         assert card_row[0] == "白酒领先指标"
+
+
+class TestTheRealFourthMigration:
+    """The shipped 3 -> 4 upgrade, creating the append-only card event stream."""
+
+    def _at_version_three(
+        self, connection: sqlite3.Connection, all_migrations: dict[int, migrate.Migration]
+    ) -> None:
+        for v in (1, 2, 3):
+            for statement in migrate.split_statements(
+                all_migrations[v].up.read_text(encoding="utf-8")
+            ):
+                connection.execute(statement)
+        connection.execute("PRAGMA user_version = 3")
+        _add_an_instrument_and_a_reason(connection)
+        connection.execute(
+            "INSERT INTO cards (id, content, claim_type, source_url, source_title, "
+            "captured_at, origin, priority, status, created_at) "
+            "VALUES ('card_1', '白酒领先指标', 'supporting', 'https://example.com/r1', "
+            "'调研报告', ?, 'user_written', 3, 'active', ?)",
+            (NOW, NOW),
+        )
+
+    def test_a_version_three_database_upgrades_to_version_four(
+        self, tmp_path: Path, connect: Connect
+    ) -> None:
+        database = tmp_path / "alphacouncil.db"
+        connection = connect(database)
+        all_migrations = {item.version: item for item in migrate.load_migrations()}
+        self._at_version_three(connection, all_migrations)
+
+        report = migrate.apply(connection, database_path=database)
+
+        assert report.applied == (4,)
+        assert report.from_version == 3
+        assert migrate.schema_version(connection) == 4
+        # The existing card survives the upgrade.
+        row = connection.execute("SELECT status FROM cards WHERE id = 'card_1'").fetchone()
+        assert row is not None and row[0] == "active"
+
+    def test_the_event_stream_accepts_a_verified_event(
+        self, tmp_path: Path, connect: Connect
+    ) -> None:
+        database = tmp_path / "alphacouncil.db"
+        connection = connect(database)
+        all_migrations = {item.version: item for item in migrate.load_migrations()}
+        self._at_version_three(connection, all_migrations)
+        migrate.apply(connection, database_path=database)
+
+        connection.execute(
+            "INSERT INTO card_events (id, card_id, event_type, reason, created_at) "
+            "VALUES ('event_1', 'card_1', 'verified', NULL, ?)",
+            (NOW,),
+        )
+        rows = connection.execute("SELECT event_type FROM card_events").fetchall()
+        assert [str(r[0]) for r in rows] == ["verified"]
+
+    def test_a_converged_event_requires_a_reason(
+        self, tmp_path: Path, connect: Connect
+    ) -> None:
+        database = tmp_path / "alphacouncil.db"
+        connection = connect(database)
+        all_migrations = {item.version: item for item in migrate.load_migrations()}
+        self._at_version_three(connection, all_migrations)
+        migrate.apply(connection, database_path=database)
+
+        with pytest.raises(sqlite3.IntegrityError, match="card_events"):
+            connection.execute(
+                "INSERT INTO card_events (id, card_id, event_type, reason, created_at) "
+                "VALUES ('event_2', 'card_1', 'converged', NULL, ?)",
+                (NOW,),
+            )
+
+    def test_the_event_stream_is_append_only(
+        self, tmp_path: Path, connect: Connect
+    ) -> None:
+        database = tmp_path / "alphacouncil.db"
+        connection = connect(database)
+        all_migrations = {item.version: item for item in migrate.load_migrations()}
+        self._at_version_three(connection, all_migrations)
+        migrate.apply(connection, database_path=database)
+        connection.execute(
+            "INSERT INTO card_events (id, card_id, event_type, reason, created_at) "
+            "VALUES ('event_1', 'card_1', 'verified', NULL, ?)",
+            (NOW,),
+        )
+
+        for sql in ("UPDATE card_events SET reason = 'x'", "DELETE FROM card_events"):
+            with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+                connection.execute(sql)
 

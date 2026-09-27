@@ -8,7 +8,10 @@ import pytest
 from alphacouncil.domain.card import (
     CardAlreadyVerifiedError,
     CardContentRequiredError,
+    CardConvergeReasonRequiredError,
     CardDraft,
+    CardEventType,
+    CardNotActiveError,
     CardNotFoundError,
     CardOrigin,
     CardPriorityInvalidError,
@@ -339,3 +342,84 @@ def test_list_all_orders_by_created_at(connection: sqlite3.Connection) -> None:
     c2 = repository.create(connection, _draft(content="第二张"), now="2026-09-27T12:00:01.000Z")
     got = repository.list_all(connection)
     assert [c.id for c in got] == [c1.id, c2.id]
+
+
+# --- K2 (spec 013): lifecycle events and the convergence exit ---
+
+
+def test_verify_records_a_verified_event(connection: sqlite3.Connection) -> None:
+    row = repository.create(
+        connection,
+        _draft(origin=CardOrigin.AI_GENERATED),
+        now="2026-09-27T12:00:00.000Z",
+    )
+    verified = repository.verify(connection, row.id, now="2026-09-27T12:05:00.000Z")
+
+    assert len(verified.events) == 1
+    event = verified.events[0]
+    assert event.event_type is CardEventType.VERIFIED
+    assert event.reason is None
+    assert event.created_at == "2026-09-27T12:05:00.000Z"
+
+    stored = repository.list_events(connection, row.id)
+    assert [e.event_type for e in stored] == [CardEventType.VERIFIED]
+
+
+def test_converge_moves_active_card_to_converged(
+    connection: sqlite3.Connection,
+) -> None:
+    row = repository.create(connection, _draft(), now="2026-09-27T12:00:00.000Z")
+    converged = repository.converge(
+        connection,
+        row.id,
+        "公司改直营，渠道先行关系失效",
+        now="2026-09-27T12:05:00.000Z",
+    )
+
+    assert converged.status is CardStatus.CONVERGED
+    assert len(converged.events) == 1
+    event = converged.events[0]
+    assert event.event_type is CardEventType.CONVERGED
+    assert event.reason == "公司改直营，渠道先行关系失效"
+
+    again = repository.get_by_id(connection, row.id)
+    assert again is not None
+    assert again.status is CardStatus.CONVERGED
+    assert again.events[0].event_type is CardEventType.CONVERGED
+
+
+def test_converge_on_converged_card_raises_not_active(
+    connection: sqlite3.Connection,
+) -> None:
+    row = repository.create(connection, _draft(), now="2026-09-27T12:00:00.000Z")
+    repository.converge(connection, row.id, "理由", now="2026-09-27T12:05:00.000Z")
+    with pytest.raises(CardNotActiveError):
+        repository.converge(connection, row.id, "再试一次")
+
+
+def test_converge_with_blank_reason_raises(connection: sqlite3.Connection) -> None:
+    row = repository.create(connection, _draft(), now="2026-09-27T12:00:00.000Z")
+    with pytest.raises(CardConvergeReasonRequiredError):
+        repository.converge(connection, row.id, "   ")
+
+
+def test_converge_on_missing_card_raises(connection: sqlite3.Connection) -> None:
+    with pytest.raises(CardNotFoundError):
+        repository.converge(connection, "card_999", "理由")
+
+
+def test_list_events_orders_by_created_at(connection: sqlite3.Connection) -> None:
+    row = repository.create(
+        connection,
+        _draft(origin=CardOrigin.AI_GENERATED),
+        now="2026-09-27T12:00:00.000Z",
+    )
+    repository.verify(connection, row.id, now="2026-09-27T12:05:00.000Z")
+    repository.converge(connection, row.id, "收敛理由", now="2026-09-27T12:10:00.000Z")
+
+    events = repository.list_events(connection, row.id)
+    assert [e.event_type for e in events] == [
+        CardEventType.VERIFIED,
+        CardEventType.CONVERGED,
+    ]
+    assert events[1].reason == "收敛理由"
