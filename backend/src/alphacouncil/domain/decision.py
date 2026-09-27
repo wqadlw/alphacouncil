@@ -211,6 +211,29 @@ class KillCriterion:
             "as_of": self.as_of.isoformat(),
         }
 
+    def due(self, *, as_of: date) -> bool:
+        """Whether this predicate's cutoff has arrived: ``as_of`` date reached.
+
+        "Due" means *the question can now be asked* — the day the condition
+        refers to has come and the reader should go look. It does **not** mean
+        "triggered": the metric's value is not in this system yet (D4), so
+        whether the comparison holds is unverified, and a caller that reports
+        it as decided would be inventing a fact (constitution 4.6 —
+        ``unavailable`` must not dress up as an answer).
+
+        On the boundary day itself the answer is *due*: a condition written
+        "as of 2026-12-31" is on the reader's desk that morning, not the day
+        after. The date is injected so the rule is a pure function of its
+        arguments and the boundary is testable.
+
+        Args:
+            as_of: The reader's calendar date to compare against.
+
+        Returns:
+            True once the cutoff day has arrived.
+        """
+        return as_of >= self.as_of
+
     @classmethod
     def from_json(cls, raw: object) -> KillCriterion:
         """Decode one stored predicate. A malformed row is corruption, not a default."""

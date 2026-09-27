@@ -6,12 +6,11 @@ import {
   listWatchlist,
   removeFromWatchlist,
   type PoolQuote,
-  type QuoteResult,
   type WatchlistEntry,
 } from './api'
-import { TONE_CLASS, displayCode, formatMoment } from './format'
-import { summarizeQuote } from './quoteSummary'
-import { instrumentHref } from './routing'
+import { displayCode, formatMoment } from './format'
+import { TODAY_HREF, instrumentHref } from './routing'
+import QuoteCell from './QuoteCell'
 
 export default function PoolPage() {
   const [entries, setEntries] = useState<WatchlistEntry[]>([])
@@ -121,7 +120,12 @@ export default function PoolPage() {
   return (
     <div className="mx-auto max-w-[860px] px-8 py-10">
       <header className="border-b border-rule pb-5">
-        <h1 className="serif text-[26px] leading-tight">关注池</h1>
+        <p className="text-[12px] text-ink-faint">
+          <a href={TODAY_HREF} className="text-navy no-underline hover:underline">
+            ← 今日
+          </a>
+        </p>
+        <h1 className="serif mt-2 text-[26px] leading-tight">关注池</h1>
         <p className="mt-1 text-ink-soft">
           你关注什么，以及<span className="text-ink">你为什么关注它</span>。
           <span className="text-ink-faint"> 理由不是备注，是半年后你被追问时要面对的那句话。</span>
@@ -268,42 +272,6 @@ export default function PoolPage() {
         行情是打开页面或点「刷新行情」时的一次快照，不自动刷新 —— 会自己跳动
         的价格把记录页变成盯盘终端。
       </footer>
-    </div>
-  )
-}
-
-/**
- * The row's right column: what the instrument is worth right now, or the
- * row's word for why it does not know.
- *
- * Presentation only — every decision about copy, tone and staleness was made
- * by `summarizeQuote`, where it is tested. Hovering holds the provenance (data
- * time and source) or the reason a number is absent; the full four-state
- * sentence lives one click away on the instrument page.
- */
-function QuoteCell({ result }: { result: QuoteResult | undefined }) {
-  const cell = summarizeQuote(result)
-
-  if (cell.note) {
-    return (
-      <p
-        className={`shrink-0 self-center text-[13px] ${cell.emphasis === 'warn' ? 'text-warn' : 'text-ink-faint'}`}
-        title={cell.detail ?? undefined}
-      >
-        {cell.note}
-      </p>
-    )
-  }
-
-  return (
-    <div className="num shrink-0 self-center text-right" title={cell.detail ?? undefined}>
-      <p className="text-[15px] leading-tight">{cell.price}</p>
-      <p className="text-[12px] leading-tight">
-        <span className={cell.change ? TONE_CLASS[cell.change.tone] : undefined}>
-          {cell.change?.text}
-        </span>
-        {cell.stale && <span className="text-warn"> · 旧</span>}
-      </p>
     </div>
   )
 }

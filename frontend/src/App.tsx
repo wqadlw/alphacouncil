@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import InstrumentPage from './InstrumentPage'
 import PoolPage from './PoolPage'
+import TodayPage from './TodayPage'
 import { POOL_HREF, useRoute } from './routing'
 
 export default function App() {
@@ -10,7 +11,9 @@ export default function App() {
     document.title =
       route.name === 'instrument'
         ? `${route.code}.${route.market.toUpperCase()} · AlphaCouncil`
-        : 'AlphaCouncil · 关注池'
+        : route.name === 'pool'
+          ? 'AlphaCouncil · 关注池'
+          : 'AlphaCouncil · 今天'
   }, [route])
 
   if (route.name === 'instrument') {
@@ -26,9 +29,11 @@ export default function App() {
     )
   }
 
-  if (route.name === 'unknown') return <UnknownRoute raw={route.raw} />
+  if (route.name === 'pool') return <PoolPage />
+  if (route.name === 'today') return <TodayPage />
 
-  return <PoolPage />
+  // TypeScript narrowing leaves only `unknown` here.
+  return <UnknownRoute raw={route.raw} />
 }
 
 /**

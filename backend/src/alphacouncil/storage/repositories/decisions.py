@@ -49,6 +49,10 @@ _SELECT_RECENT = (
     "SELECT id, market, code, action, rationale, counter_evidence, kill_criteria, thesis_id "
     "FROM decisions ORDER BY id DESC LIMIT ?"
 )
+_SELECT_ALL = (
+    "SELECT id, market, code, action, rationale, counter_evidence, kill_criteria, thesis_id "
+    "FROM decisions ORDER BY id ASC"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +150,19 @@ def recent(connection: sqlite3.Connection, *, limit: int = 50) -> tuple[Decision
     works in order.
     """
     return tuple(_to_row(row) for row in connection.execute(_SELECT_RECENT, (limit,)))
+
+
+def list_all(connection: sqlite3.Connection) -> tuple[DecisionRow, ...]:
+    """Every decision ever recorded, oldest first — deliberately untruncated.
+
+    Exists because a rule that scans for "is there anything I should look at
+    today" cannot afford a window: a predicate written on a decision three
+    years ago is exactly the one that comes due today, and a ``LIMIT`` —
+    however generous — silently drops precisely those. Personal-scale data
+    (thousands of rows, not millions) is what makes the untruncated read the
+    honest choice rather than the naive one.
+    """
+    return tuple(_to_row(row) for row in connection.execute(_SELECT_ALL))
 
 
 def _to_row(row: sqlite3.Row) -> DecisionRow:

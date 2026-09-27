@@ -254,6 +254,35 @@ export function getWatchlistQuotes(): Promise<PoolQuote[]> {
   return request<PoolQuote[]>('/api/v1/watchlist/quotes')
 }
 
+/** One predicate the server found due, with the decision it came from. */
+export interface AttentionItem {
+  kind: 'kill_criterion_due'
+  item: {
+    decision_id: string
+    market: string
+    code: string
+    display: string
+    action: DecisionAction
+    criterion: KillCriterion
+  }
+}
+
+export interface Today {
+  generated_at: string
+  attention: AttentionItem[]
+}
+
+/**
+ * What deserves attention today (the today page's block ①).
+ *
+ * "Due" means the cutoff date you wrote has arrived — the question can now be
+ * asked. It does **not** mean triggered: the metric has no data source yet, so
+ * the client must say "go verify", never announce an outcome.
+ */
+export function getToday(): Promise<Today> {
+  return request<Today>('/api/v1/today')
+}
+
 /**
  * The three writes. Each takes an optional `market`.
  *

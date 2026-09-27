@@ -121,6 +121,29 @@ export function formatDay(iso: string | null): string {
   return /^\d{4}-\d{2}-\d{2}/.test(iso) ? iso.slice(0, 10) : iso
 }
 
+const WEEKDAY: Record<number, string> = {
+  0: '周日',
+  1: '周一',
+  2: '周二',
+  3: '周三',
+  4: '周四',
+  5: '周五',
+  6: '周六',
+}
+
+/**
+ * Today, for the today page's header — the reader's own calendar.
+ *
+ * The clock is a parameter so the label is a pure function: a test pins the
+ * date instead of hoping it runs before midnight. Like `formatDay`, this is a
+ * calendar date and never passes through timezone machinery — "today" is
+ * where the reader is, not where UTC is.
+ */
+export function todayLabel(now: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} · ${WEEKDAY[now.getDay()]}`
+}
+
 /** One predicate as a sentence: "截至 2026-12-31，gross_margin 小于 0.55". */
 export function formatPredicate(criterion: {
   metric: string

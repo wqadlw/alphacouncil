@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { instrumentHref, parseHash, POOL_HREF } from './routing'
+import { instrumentHref, parseHash, POOL_HREF, TODAY_HREF } from './routing'
 
 describe('parseHash', () => {
-  it('reads an empty hash as the pool', () => {
-    expect(parseHash('')).toEqual({ name: 'pool' })
-    expect(parseHash('#')).toEqual({ name: 'pool' })
-    expect(parseHash('#/')).toEqual({ name: 'pool' })
+  it('reads an empty hash as the today page', () => {
+    // Product definition §六: opening the program lands on today. The pool is
+    // one deliberate click away, not the default.
+    expect(parseHash('')).toEqual({ name: 'today' })
+    expect(parseHash('#')).toEqual({ name: 'today' })
+    expect(parseHash('#/')).toEqual({ name: 'today' })
+  })
+
+  it('reads the pool route', () => {
+    expect(parseHash('#/pool')).toEqual({ name: 'pool' })
   })
 
   it('reads an instrument route', () => {
@@ -16,7 +22,7 @@ describe('parseHash', () => {
     })
   })
 
-  it('reports an unrecognised hash instead of falling back to the pool', () => {
+  it('reports an unrecognised hash instead of falling back to today', () => {
     // Showing a plausible page for a mistyped link is the kind of failure that
     // looks like success — the same reason the backend reports an ambiguous
     // ticker rather than choosing a market for you.
@@ -46,6 +52,12 @@ describe('instrumentHref', () => {
 
   it('produces the documented address form', () => {
     expect(instrumentHref('sh', '600519')).toBe('#/i/sh/600519')
+  })
+})
+
+describe('TODAY_HREF', () => {
+  it('parses back to today', () => {
+    expect(parseHash(TODAY_HREF)).toEqual({ name: 'today' })
   })
 })
 

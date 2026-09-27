@@ -7,6 +7,7 @@ import {
   formatMoment,
   formatPrice,
   formatVolume,
+  todayLabel,
 } from './format'
 
 /**
@@ -110,5 +111,20 @@ describe('formatAmount', () => {
     expect(formatAmount(9_000)).toBe('9000 元')
     expect(formatAmount(3_867_310_000)).toBe('38.67 亿')
     expect(formatAmount(2_500_000)).toBe('250.00 万')
+  })
+})
+
+describe('todayLabel', () => {
+  it('renders the reader\'s calendar date with its weekday', () => {
+    // The clock is a parameter: a test pins the date instead of hoping it
+    // runs before midnight. 2026-09-27 is a Sunday.
+    expect(todayLabel(new Date(2026, 8, 27, 23, 5))).toBe('2026-09-27 · 周日')
+  })
+
+  it('stays on the constructed calendar day', () => {
+    // Built from local fields, the label must not re-derive the date through
+    // the timezone machinery — midnight in Beijing is the 26th in UTC, and a
+    // "today" that flips at midnight UTC is nobody's today.
+    expect(todayLabel(new Date(2026, 8, 27, 0, 30))).toBe('2026-09-27 · 周日')
   })
 })
