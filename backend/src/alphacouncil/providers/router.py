@@ -23,8 +23,9 @@ wins when no live source managed to answer at all.
 
 from __future__ import annotations
 
+import contextlib
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
@@ -34,6 +35,7 @@ import structlog
 from pydantic import BaseModel, Field
 
 from alphacouncil.core.error_codes import ErrorCode
+from alphacouncil.core.trace import TraceHook
 from alphacouncil.models.market import (
     DataResult,
     DataStatus,
@@ -109,6 +111,12 @@ class CapabilityCell(BaseModel):
     )
 
 
+@contextlib.contextmanager
+def _null_slot() -> Iterator[None]:
+    """Yields ``None``: the no-tracer path records nothing."""
+    yield None
+
+
 class MarketDataRouter:
     """Routes dataset requests across providers, with fallback and caching."""
 
@@ -118,11 +126,13 @@ class MarketDataRouter:
         *,
         cache: Cache | None = None,
         clock: Callable[[], float] = time.monotonic,
+        tracer: TraceHook | None = None,
     ) -> None:
         """``providers`` is in priority order: first is the preferred source."""
         self._providers = list(providers)
         self._cache = cache
         self._clock = clock
+        self._tracer = tracer
         self._health: dict[str, _Health] = {}
 
     # -- public API --------------------------------------------------------
@@ -237,6 +247,21 @@ class MarketDataRouter:
         remaining = health.cooling_until - self._clock()
         return max(remaining, 0.0) if remaining > 0 else None
 
+    def _tracer_observation(
+        self, provider_name: str, dataset: Dataset, symbol: Symbol
+    ) -> contextlib.AbstractContextManager[dict[str, Any] | None]:
+        """Open a trace observation when a tracer is wired; else yield ``None``.
+
+        The yielded slot (when present) carries the four-state outcome back
+        into the observation that lands on disk.
+        """
+        if self._tracer is None:
+            return _null_slot()
+        return self._tracer.observation(
+            f"provider:{provider_name}",
+            meta={"dataset": dataset.value, "symbol": symbol.full},
+        )
+
     # -- internals ---------------------------------------------------------
 
     def _route(
@@ -261,7 +286,18 @@ class MarketDataRouter:
 
         for provider in self._candidates(dataset, symbol):
             attempted.append(provider.name)
-            result = call(provider)
+            # Each upstream fetch is one observation in the current trace —
+            # the record that makes an intermittent failure attributable after
+            # the fact (which sources were asked, what they answered, how long
+            # each took). No tracer wired → plain call.
+            if self._tracer is None:
+                result = call(provider)
+            else:
+                with self._tracer_observation(provider.name, dataset, symbol) as slot:
+                    result = call(provider)
+                    if slot is not None:
+                        slot["status"] = result.status.value
+                        slot["error_code"] = result.error_code.value if result.error_code else None
             self._record(provider.name, result)
 
             if result.status is DataStatus.OK:

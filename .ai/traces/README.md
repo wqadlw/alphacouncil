@@ -1,7 +1,7 @@
 # traces/ —— agent 运行记录
 
 > **用途**：记录每一次 agent 运行的完整轨迹，服务于三件事：**排错 · 计成本 · 评测**。
-> 建立：2026-09-26（宪法 v2.0 §10.4）
+> 建立：2026-09-26（宪法 v2.0 §10.4）· **实现：2026-09-27（spec 011）**
 > **来源**：数据模型借自 `references/deep-dives/01-wealthfolio.md`（Langfuse 的 `Trace → Observation → Score`）
 
 ---
@@ -10,8 +10,8 @@
 
 | 层 | 含义 | 例子 |
 |---|---|---|
-| **Trace** | 一次完整任务 | "抽取贵州茅台 2025 年报的营收事实" |
-| **Observation** | 其中的每一步 | 一次 LLM 调用 / 一次工具调用 / 一次检索，带 **token 数 · 延迟 · 成本** |
+| **Trace** | 一次完整任务 | "处理一次 `GET /api/v1/watchlist/quotes`" |
+| **Observation** | 其中的每一步 | 一次 HTTP 步骤 / 一次 provider 取数，带 **四态结果 · 延迟**（`token_count` / `cost_usd` 字段已预留，agent 层落地即填） |
 | **Score** | 对结果的评分 | 人工或自动打分 —— **这是"评测"的落点** |
 
 **为什么这个模型同时满足三件事**：
@@ -21,15 +21,24 @@
 
 ---
 
-## 目录约定
+## 实现状态（2026-09-27，spec 011）
+
+- [x] **trace 写入器**（`backend/src/alphacouncil/core/trace.py`）：`TraceWriter` + `Trace` 句柄 + contextvar 绑定
+- [x] **请求级集成**：FastAPI 中间件每请求一条 trace；路由器每次 provider 取数为一条 observation（源名 / 数据集 / 四态 / 时长）
+- [x] **Score 通道**：`trace.score(name, value)` 落 `scores/YYYY-MM-DD.jsonl`
+- [x] **运行数据不入库**：traces 默认落在数据库同级的 `traces/`（`ALPHACOUNCIL_TRACES_DIR` 可覆盖）——运行时数据在用户数据目录，本仓库目录只存**主动归档**的开发期证据
+- [ ] **`make eval` 目标**（跑评测集 → 输出通过率）—— 等评测对象（agent 抽取层）存在
+- [ ] **成本汇总脚本** —— token/cost 字段已在 schema 预留，agent 层落地即有数据可汇
+
+## 落盘布局
 
 ```
-traces/
+<root>/                          # root 默认 = 数据库文件旁的 traces/（不入库）
 ├── YYYY-MM-DD/
-│   ├── <run-id>.jsonl     # 一次运行的 Trace + 全部 Observation
+│   ├── <run-id>.jsonl           # 一次运行的 trace 头 + 全部 observation
 │   └── ...
 └── scores/
-    └── YYYY-MM-DD.jsonl   # 当日的 Score 记录（评测结果）
+    └── YYYY-MM-DD.jsonl         # 当日的 Score 记录（评测结果）
 ```
 
 **格式**：**JSON Lines**（每行一条，append-only，不重写整个文件）。
@@ -40,22 +49,10 @@ traces/
 
 | # | 要求 | 依据 |
 |---|---|---|
-| 1 | **每次 agent 运行必须记录 token 数与成本** | 宪法 §8.2 |
+| 1 | **每次 agent 运行必须记录 token 数与成本** —— 字段已在 schema 预留，agent 层落地即填 | 宪法 §8.2 |
 | 2 | **必须能回答"这次抽取的事实出自哪一页"** | 红线 15（可追溯到来源） |
-| 3 | ⚠️ **禁止把原文内容写进 trace** —— 只记引用位置（页码 / URL / 片段哈希） | 宪法 §6.3（审计脱敏） |
+| 3 | ⚠️ **禁止把原文内容写进 trace** —— 实现为"中间件根本不读请求体"；只记路由、方法、状态码、时长、四态结果、错误码、源名 | 宪法 §6.3（审计脱敏） |
 | 4 | **trace 只追加，不修改** | 宪法 §9（台账 Append-Only） |
-| 5 | **必须有固定的评测集，且 `make eval` 能一键跑出通过率** | 宪法 §8.2 |
+| 5 | **必须有固定的评测集，且 `make eval` 能一键跑出通过率** | 宪法 §8.2 —— **尚未实现，见上** |
 
----
-
-## ⚠️ 尚未实现
-
-本目录**目前只有这份说明，没有任何实现**。
-
-需要补的：
-- [ ] trace 写入器（Python）
-- [ ] `make eval` 目标（跑评测集 → 输出通过率）
-- [ ] 成本汇总脚本
-- [ ] `.gitignore` 规则（**运行数据不入库** —— 宪法红线「禁止提交大文件与本地数据」）
-
-> **未实现的功能明确标注，不假装已有。**（宪法 §2.4 不虚构）
+> **已实现与未实现的边界如实标注。**（宪法 §2.4 不虚构）

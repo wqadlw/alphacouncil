@@ -5,6 +5,7 @@ Public surface of the data boundary. Everything above this package talks to
 it never imports a concrete provider, so swapping a source is a local change.
 """
 
+from alphacouncil.core.trace import TraceHook
 from alphacouncil.providers.base import (
     BatchSemantics,
     Dataset,
@@ -45,7 +46,9 @@ __all__ = [
 ]
 
 
-def default_router(*, cache: Cache | None = None) -> MarketDataRouter:
+def default_router(
+    *, cache: Cache | None = None, tracer: TraceHook | None = None
+) -> MarketDataRouter:
     """Build the production router.
 
     The order looks odd — the fragile source first — until you remember that
@@ -60,4 +63,5 @@ def default_router(*, cache: Cache | None = None) -> MarketDataRouter:
     return MarketDataRouter(
         [EastmoneyProvider(), TencentProvider(), SinaProvider()],
         cache=cache if cache is not None else MemoryCache(),
+        tracer=tracer,
     )

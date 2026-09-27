@@ -8,18 +8,19 @@ runs its own migration.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from alphacouncil import __version__
 from alphacouncil.api.errors import CODED_ERRORS, domain_failure
 from alphacouncil.api.routes import capabilities, decisions, instruments, today, watchlist
 from alphacouncil.core.config import Settings, get_settings
 from alphacouncil.core.logging import configure_logging, get_logger
+from alphacouncil.core.trace import TraceWriter, set_current_trace
 from alphacouncil.providers import default_router
 from alphacouncil.providers.cache import SqliteCache
 from alphacouncil.storage import migrate
@@ -129,7 +130,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # The cache is the disk-backed one (spec 006): the last known good price
     # must survive a restart, which is what "reopen offline and see something"
     # asks for. MemoryCache stays the router tests' lightweight double.
-    app.state.market_data = default_router(cache=SqliteCache(resolved.database_path))
+    trace_writer = TraceWriter(resolved.traces_dir or resolved.database_path.parent / "traces")
+    app.state.trace_writer = trace_writer
+    app.state.market_data = default_router(
+        cache=SqliteCache(resolved.database_path), tracer=trace_writer
+    )
+
+    @app.middleware("http")
+    async def trace_requests(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        """One trace per request (spec 011): route, status, duration, plus the
+        provider observations the handlers happen to make. Bodies are never
+        read — the audit records what was done, not what was said."""
+        trace = trace_writer.start(f"{request.method} {request.url.path}")
+        set_current_trace(trace)
+        try:
+            response = await call_next(request)
+            with trace.observation(
+                "http",
+                meta={"path": request.url.path, "http_status": response.status_code},
+            ):
+                pass
+            return response
+        finally:
+            set_current_trace(None)
 
     @app.exception_handler(ValueError)
     async def _handle_value_error(_: Request, exc: ValueError) -> JSONResponse:

@@ -93,6 +93,18 @@ class Settings(BaseSettings):
     # so removing it breaks no caller.
     database_path: Path = Field(default_factory=default_database_path)
 
+    # ---- observability -----------------------------------------------------
+    # Runtime traces land beside the database, never inside the repository:
+    # the `.ai/traces/` convention describes the *format* (and archives
+    # deliberately-saved development evidence), while per-request user data
+    # stays out of version control (constitution §6.3).
+    #
+    # ``None`` means "derive from database_path after validation" — a default
+    # factory here runs before env overrides are applied, so it would ignore
+    # an ``ALPHACOUNCIL_DATABASE_PATH`` set by tests or the user and scatter
+    # test traces into the real user directory (observed 2026-09-27, spec 011).
+    traces_dir: Path | None = Field(default=None)
+
     # ---- agent runtime guards ---------------------------------------------
     max_agent_steps: int = Field(default=25, ge=1, le=500)
     max_cost_usd_per_run: float = Field(default=0.50, gt=0.0)
@@ -104,6 +116,14 @@ class Settings(BaseSettings):
     deepseek_api_key: SecretStr | None = Field(default=None, validation_alias="DEEPSEEK_API_KEY")
 
     # ---- validators --------------------------------------------------------
+    @model_validator(mode="after")
+    def _derive_traces_dir(self) -> Settings:
+        """Traces live beside *the database in use* — the one this process was
+        given, not the one a fresh default would have picked."""
+        if self.traces_dir is None:
+            object.__setattr__(self, "traces_dir", self.database_path.parent / "traces")
+        return self
+
     @model_validator(mode="after")
     def _require_provider_credentials(self) -> Settings:
         """Fail fast in production rather than at the first LLM call."""
