@@ -124,6 +124,12 @@ GATES: dict[str, Gate] = {
         (_NPM, "run", "build"),
         cwd=FRONTEND,
     ),
+    "e2e": Gate(
+        "e2e",
+        "playwright test (built app on Edge/Chromium)",
+        (_NPM, "run", "test:e2e"),
+        cwd=FRONTEND,
+    ),
 }
 
 # `check` is the CI gate set: everything, including the not-yet-written ones, so
@@ -138,6 +144,7 @@ CHECK: tuple[str, ...] = (
     "frontend-lint",
     "frontend-test",
     "frontend-build",
+    "e2e",
 )
 # `check-lite` is the daily driver: only the gates that actually exist. The four
 # frontend gates are in here too — they take about four seconds together, and a

@@ -83,3 +83,7 @@ Thumbs.db
 # A later rule overrides an earlier one, so these must stay at the end.
 !.ai/logs/
 !.ai/checks/data/
+
+# Playwright test artifacts
+test-results/
+playwright-report/
