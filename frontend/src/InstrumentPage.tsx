@@ -13,22 +13,16 @@ import {
 } from './api'
 import {
   EVENT_LABEL,
+  TONE_CLASS,
   displayCode,
   formatAmount,
   formatChange,
   formatMoment,
   formatPrice,
   formatVolume,
-  type Tone,
 } from './format'
 import { POOL_HREF } from './routing'
 import DecisionSection from './DecisionSection'
-
-const TONE_CLASS: Record<Tone, string> = {
-  up: 'text-up',
-  down: 'text-down',
-  flat: 'text-ink-soft',
-}
 
 const FOLLOW_LABEL: Record<string, string> = {
   followed: '关注中',

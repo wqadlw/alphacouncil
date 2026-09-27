@@ -1,11 +1,12 @@
 """The watchlist API — four verbs, and deliberately no DELETE.
 
 ``POST`` adds, ``POST /reason`` changes the reason, ``POST /remove`` stops
-following, ``GET`` lists. There is no ``DELETE`` because nothing is ever
-deleted: the pool is an append-only log, so "remove" is a new event rather than
-the absence of an old one. Exposing ``DELETE`` would imply otherwise and give
-the frontend a way to erase the record the product's second highlight is built
-on ("you said this three times").
+following, ``GET`` lists — and ``GET /quotes`` prices the pool, each instrument
+carrying its own four-state outcome (spec 004). There is no ``DELETE`` because
+nothing is ever deleted: the pool is an append-only log, so "remove" is a new
+event rather than the absence of an old one. Exposing ``DELETE`` would imply
+otherwise and give the frontend a way to erase the record the product's second
+highlight is built on ("you said this three times").
 
 Every write goes through :func:`alphacouncil.domain.watchlist`, which is where a
 reason is required to be a real sentence. The route does not re-check that — it
@@ -20,7 +21,7 @@ import sqlite3
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
-from alphacouncil.api.deps import DatabaseConnection
+from alphacouncil.api.deps import DatabaseConnection, MarketData
 from alphacouncil.domain.instrument import parse_ticker
 from alphacouncil.domain.watchlist import (
     MAX_REASON_CHARS,
@@ -31,7 +32,7 @@ from alphacouncil.domain.watchlist import (
     removed,
     require_followed,
 )
-from alphacouncil.models.market import AssetType, Market, Symbol
+from alphacouncil.models.market import AssetType, DataResult, Market, RealtimeQuote, Symbol
 from alphacouncil.storage.db import transaction
 from alphacouncil.storage.repositories import watchlist as repository
 
@@ -132,6 +133,63 @@ def list_watchlist(connection: DatabaseConnection) -> list[WatchlistEntryRead]:
         )
         for entry in repository.current(connection)
     ]
+
+
+class PoolQuoteRead(BaseModel):
+    """One pool instrument paired with its own fetch outcome."""
+
+    market: Market
+    code: str
+    display: str = Field(description="Conventional form, e.g. 600519.SH.")
+    quote: DataResult[RealtimeQuote] = Field(
+        description=(
+            "This symbol's own four-state outcome. Deliberately not merged with "
+            "the neighbours' — see the endpoint's docstring."
+        )
+    )
+
+
+@router.get("/quotes", summary="Price every instrument currently followed")
+def pool_quotes(
+    connection: DatabaseConnection,
+    market_data: MarketData,
+) -> list[PoolQuoteRead]:
+    """Fetch a realtime snapshot for each instrument in the pool.
+
+    **The pool priced here is the pool that ``GET ""`` lists** — both read the
+    same ``watchlist_current`` view. Two endpoints holding two ideas of what
+    "currently followed" means is how a page starts showing a price for a
+    stock the list above it says you left.
+
+    **Every symbol gets its own four-state result, and the states are never
+    merged into a batch status.** The truthful sentence about ten followed
+    instruments is "seven priced, two not quoted by any source, one refused"
+    — any single batch-level status would be a lie about at least one of them
+    (spec 004 FR-2). This is also why the loop needs no ``try``: the providers
+    map their own transport failures onto the four states, so an exception
+    here would be a bug, not a data condition, and it should surface as a 500.
+
+    **The walk is sequential on purpose.** Ten followed instruments fanned out
+    concurrently is ten simultaneous upstream requests — the exact behaviour
+    that got a source to rate-limit us once already. Until the router grows
+    its own throttling, one-at-a-time is the rate discipline, and it costs a
+    page a few seconds, not an IP a few hours.
+
+    An empty pool answers ``[]``: there was nothing to price, which is not a
+    failure.
+    """
+    rows: list[PoolQuoteRead] = []
+    for entry in repository.current(connection):
+        symbol = Symbol(market=entry.market, code=entry.code)
+        rows.append(
+            PoolQuoteRead(
+                market=entry.market,
+                code=entry.code,
+                display=symbol.full,
+                quote=market_data.get_realtime(symbol),
+            )
+        )
+    return rows
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, summary="Follow an instrument")

@@ -227,6 +227,34 @@ export function listWatchlist(): Promise<WatchlistEntry[]> {
 }
 
 /**
+ * One pool row paired with its own fetch outcome.
+ *
+ * The batch has no status of its own — the server prices each followed
+ * instrument independently and reports each truth separately, so "three
+ * priced, one refused, one not quoted" survives the trip. Keyed by
+ * `(market, code)` because the code alone is not an instrument (000001 is
+ * both an index and a bank).
+ */
+export interface PoolQuote {
+  market: string
+  code: string
+  display: string
+  quote: QuoteResult
+}
+
+/**
+ * Price every instrument currently followed.
+ *
+ * The second of the pool page's two requests, for the same reason the
+ * instrument page splits record from price: the list is local and cannot
+ * fail, this one crosses the network and will. Merging them would let a
+ * source outage blank the page where the user's own reasons live.
+ */
+export function getWatchlistQuotes(): Promise<PoolQuote[]> {
+  return request<PoolQuote[]>('/api/v1/watchlist/quotes')
+}
+
+/**
  * The three writes. Each takes an optional `market`.
  *
  * It is optional rather than required because a code like `600519` can only be

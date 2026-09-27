@@ -38,6 +38,13 @@ export function formatPrice(value: number): string {
 
 export type Tone = 'up' | 'down' | 'flat'
 
+/** Tone → CSS class. Lived in InstrumentPage until a second page needed it. */
+export const TONE_CLASS: Record<Tone, string> = {
+  up: 'text-up',
+  down: 'text-down',
+  flat: 'text-ink-soft',
+}
+
 /**
  * Rule 3 — direction is carried by **colour and sign together**.
  *

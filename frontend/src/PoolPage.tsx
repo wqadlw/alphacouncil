@@ -2,17 +2,27 @@ import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import {
   ApiError,
   addToWatchlist,
+  getWatchlistQuotes,
   listWatchlist,
   removeFromWatchlist,
+  type PoolQuote,
+  type QuoteResult,
   type WatchlistEntry,
 } from './api'
-import { displayCode, formatMoment } from './format'
+import { TONE_CLASS, displayCode, formatMoment } from './format'
+import { summarizeQuote } from './quoteSummary'
 import { instrumentHref } from './routing'
 
 export default function PoolPage() {
   const [entries, setEntries] = useState<WatchlistEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+
+  // The pool's second request. `null` means "not here yet" — the list renders
+  // without it, because the record never waits on the network.
+  const [quotes, setQuotes] = useState<PoolQuote[] | null>(null)
+  const [quotesError, setQuotesError] = useState<string | null>(null)
+  const [refreshingQuotes, setRefreshingQuotes] = useState(false)
 
   const [ticker, setTicker] = useState('')
   const [reason, setReason] = useState('')
@@ -32,6 +42,20 @@ export default function PoolPage() {
     }
   }, [])
 
+  const refreshQuotes = useCallback(async () => {
+    setRefreshingQuotes(true)
+    try {
+      setQuotesError(null)
+      setQuotes(await getWatchlistQuotes())
+    } catch (error) {
+      // The list above is untouched by this failure — it is the whole point of
+      // the two-request split. The page says so instead of going blank.
+      setQuotesError(error instanceof ApiError ? error.message : '行情未能读取。')
+    } finally {
+      setRefreshingQuotes(false)
+    }
+  }, [])
+
   // `refresh` sets state, so this trips React's `set-state-in-effect` rule.
   // The rule points at the right long-term answer — TanStack Query, which the
   // frontend spec already names — rather than at a bug: fetching *is* the
@@ -40,10 +64,16 @@ export default function PoolPage() {
   // is due to move.
   useEffect(() => {
     void refresh()
-  }, [refresh])
+    void refreshQuotes()
+  }, [refresh, refreshQuotes])
 
   const tickerMissing = ticker.trim().length === 0
   const reasonMissing = reason.trim().length === 0
+
+  // Keyed by the composite (market, code) — a bare code is not an instrument.
+  const quoteByKey = new Map(
+    (quotes ?? []).map((row) => [`${row.market}:${row.code}`, row.quote]),
+  )
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -149,7 +179,16 @@ export default function PoolPage() {
       <section className="mt-6">
         <div className="flex items-baseline justify-between">
           <h2 className="serif text-[17px]">关注中</h2>
-          <span className="num text-[12px] text-ink-faint">{entries.length} 个标的</span>
+          <div className="flex items-baseline gap-3">
+            <span className="num text-[12px] text-ink-faint">{entries.length} 个标的</span>
+            <button
+              type="button"
+              onClick={() => void refreshQuotes()}
+              disabled={refreshingQuotes || entries.length === 0}
+            >
+              {refreshingQuotes ? '读取中…' : '刷新行情'}
+            </button>
+          </div>
         </div>
 
         {loading && <p className="mt-4 text-ink-faint">读取中…</p>}
@@ -159,6 +198,15 @@ export default function PoolPage() {
             <p className="text-up">{loadError}</p>
             <p className="text-[12px] text-ink-soft">
               后端未启动时会出现这一行 —— 它不会静默显示成「空」。
+            </p>
+          </div>
+        )}
+
+        {quotesError && (
+          <div className="mark mt-4 border-l-2 border-l-up py-1">
+            <p className="text-up">{quotesError}</p>
+            <p className="text-[12px] text-ink-soft">
+              行情没能读取，但关注池本身不受影响 —— 记录与报价是两个请求。
             </p>
           </div>
         )}
@@ -193,6 +241,7 @@ export default function PoolPage() {
                     {formatMoment(entry.since)} 加入 · 最新事件 #{entry.last_event_id}
                   </p>
                 </div>
+                <QuoteCell result={quoteByKey.get(`${entry.market}:${entry.code}`)} />
                 <button
                   type="button"
                   onClick={() => void handleRemove(entry)}
@@ -213,9 +262,48 @@ export default function PoolPage() {
       </section>
 
       <footer className="mt-10 border-t border-rule pt-4 text-[12px] text-ink-faint">
-        这一页只显示事实：你关注了什么、为什么、什么时候。
+        这一页只显示事实：你关注了什么、为什么、什么时候、现在什么价。
         <span className="text-ink-soft"> 它不显示收益率，也不给你推荐。</span>
+        <br />
+        行情是打开页面或点「刷新行情」时的一次快照，不自动刷新 —— 会自己跳动
+        的价格把记录页变成盯盘终端。
       </footer>
+    </div>
+  )
+}
+
+/**
+ * The row's right column: what the instrument is worth right now, or the
+ * row's word for why it does not know.
+ *
+ * Presentation only — every decision about copy, tone and staleness was made
+ * by `summarizeQuote`, where it is tested. Hovering holds the provenance (data
+ * time and source) or the reason a number is absent; the full four-state
+ * sentence lives one click away on the instrument page.
+ */
+function QuoteCell({ result }: { result: QuoteResult | undefined }) {
+  const cell = summarizeQuote(result)
+
+  if (cell.note) {
+    return (
+      <p
+        className={`shrink-0 self-center text-[13px] ${cell.emphasis === 'warn' ? 'text-warn' : 'text-ink-faint'}`}
+        title={cell.detail ?? undefined}
+      >
+        {cell.note}
+      </p>
+    )
+  }
+
+  return (
+    <div className="num shrink-0 self-center text-right" title={cell.detail ?? undefined}>
+      <p className="text-[15px] leading-tight">{cell.price}</p>
+      <p className="text-[12px] leading-tight">
+        <span className={cell.change ? TONE_CLASS[cell.change.tone] : undefined}>
+          {cell.change?.text}
+        </span>
+        {cell.stale && <span className="text-warn"> · 旧</span>}
+      </p>
     </div>
   )
 }
