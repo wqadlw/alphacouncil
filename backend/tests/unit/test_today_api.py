@@ -11,14 +11,29 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterator
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from alphacouncil.api.app import create_app
-from alphacouncil.domain.decision import ComparisonOperator, DecisionAction, KillCriterion
+from alphacouncil.core.error_codes import ErrorCode
+from alphacouncil.domain.decision import (
+    ComparisonOperator,
+    DecisionAction,
+    KillCriterion,
+)
+from alphacouncil.domain.trading import verdict_for
+from alphacouncil.models.market import (
+    AssetType,
+    DataResult,
+    Market,
+    Quote,
+    RealtimeQuote,
+    Symbol,
+)
+from alphacouncil.providers.base import Dataset, ProviderCapabilities
 from alphacouncil.storage.db import connect
 from alphacouncil.storage.repositories import decisions as decision_repository
 
@@ -27,6 +42,7 @@ pytestmark = pytest.mark.unit
 TODAY = "/api/v1/today"
 DECISIONS = "/api/v1/decisions"
 
+STAMP = datetime(2026, 9, 27, 12, 0, tzinfo=UTC)
 YESTERDAY = date.today() - timedelta(days=1)
 TOMORROW = date.today() + timedelta(days=1)
 
@@ -51,9 +67,81 @@ def body(**overrides: Any) -> dict[str, Any]:
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
-    """A client over the isolated database, with migrations already applied."""
-    with TestClient(create_app()) as test_client:
+    """A client whose probe never touches the network.
+
+    The today route now consults the market-data router for the trading-day
+    probe; left on the default router, every one of these unit tests would
+    make a live request (conftest's network rule exists to prevent exactly
+    that). The stub refuses everything, which lands the verdict on the
+    ``unknown``/weekend path the domain tests cover independently.
+    """
+    app = create_app()
+    app.state.market_data = _SilentProbe()
+    with TestClient(app) as test_client:
         yield test_client
+
+
+class _SilentProbe:
+    """Refuses every fetch, so the probe degrades to ``unknown`` — no network."""
+
+    name = "silent"
+    capabilities = ProviderCapabilities(datasets=frozenset({Dataset.DAILY, Dataset.REALTIME}))
+
+    def get_daily(
+        self,
+        symbol: Symbol,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+    ) -> DataResult[list[Quote]]:
+        return DataResult.error(
+            ErrorCode.DATA_SOURCE_UNAVAILABLE, source=self.name, fetched_at=STAMP
+        )
+
+    def get_realtime(self, symbol: Symbol) -> DataResult[RealtimeQuote]:
+        return DataResult.error(
+            ErrorCode.DATA_SOURCE_UNAVAILABLE, source=self.name, fetched_at=STAMP
+        )
+
+
+class _FixedBars:
+    """Answers the probe with a fixed newest bar (or with a failure for ``None``)."""
+
+    name = "fixed"
+    capabilities = ProviderCapabilities(datasets=frozenset({Dataset.DAILY}))
+
+    def __init__(self, last_bar: date | None) -> None:
+        self._last_bar = last_bar
+
+    def get_daily(
+        self,
+        symbol: Symbol,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+    ) -> DataResult[list[Quote]]:
+        if self._last_bar is None:
+            return DataResult.error(
+                ErrorCode.DATA_SOURCE_UNAVAILABLE, source=self.name, fetched_at=STAMP
+            )
+        bar = Quote(
+            symbol=Symbol(market=Market.SH, code="000001", asset_type=AssetType.INDEX),
+            trade_date=self._last_bar,
+            open=3888.0,
+            high=3900.0,
+            low=3880.0,
+            close=3888.37,
+            volume=1.0,
+            amount=1.0,
+            source=self.name,
+            fetched_at=STAMP,
+        )
+        return DataResult.ok([bar], source=self.name, fetched_at=STAMP)
+
+    def get_realtime(self, symbol: Symbol) -> DataResult[RealtimeQuote]:
+        return DataResult.error(
+            ErrorCode.DATA_SOURCE_UNAVAILABLE, source=self.name, fetched_at=STAMP
+        )
 
 
 @pytest.fixture
@@ -226,3 +314,64 @@ def criterion_domain(as_of: date, metric: str = "revenue_yoy") -> KillCriterion:
         threshold=0.55,
         as_of=as_of,
     )
+
+
+# ---------------------------------------------------------------------------
+# the trading-day probe (spec 007)
+# ---------------------------------------------------------------------------
+
+
+def make_client(probe: object) -> TestClient:
+    """A client whose market-data router is the given probe stub."""
+    app = create_app()
+    app.state.market_data = probe
+    return TestClient(app)
+
+
+def test_the_market_status_carries_the_verdict_with_its_basis() -> None:
+    """The route composes probe → domain rule; the oracle is the rule itself,
+    whose rows are pinned with dead expectations by test_trading.py."""
+    probe = _FixedBars(date.today())
+    with make_client(probe) as test_client:
+        response = test_client.get(TODAY)
+
+    assert response.status_code == 200, response.text
+    status = response.json()["market_status"]
+    expected_verdict, expected_basis = verdict_for(
+        now=datetime.now().astimezone(), last_trading_date=date.today()
+    )
+    assert status["verdict"] == expected_verdict.value
+    assert status["basis"] == expected_basis.value
+    assert status["last_trading_date"] == date.today().isoformat()
+    assert status["checked_at"].endswith("Z")
+
+
+def test_a_failed_probe_reads_as_unknown_without_breaking_the_page() -> None:
+    """One source's bad morning may not take the today page with it."""
+    with make_client(_SilentProbe()) as test_client:
+        response = test_client.get(TODAY)
+
+    assert response.status_code == 200, response.text
+    status = response.json()["market_status"]
+    expected_verdict, expected_basis = verdict_for(
+        now=datetime.now().astimezone(), last_trading_date=None
+    )
+    assert status["verdict"] == expected_verdict.value
+    assert status["basis"] == expected_basis.value
+    assert status["last_trading_date"] is None
+
+
+def test_the_attention_blocks_keep_working_when_the_probe_refuses(
+    client: TestClient,
+) -> None:
+    """The probe rides along in the same response; a refusal must not blank
+    the attention block, the way any other failure must not blank its page."""
+    recorded = client.post(DECISIONS, json=body(kill_criteria=[criterion(YESTERDAY)]))
+    assert recorded.status_code == 201, recorded.text
+
+    response = client.get(TODAY)
+
+    assert response.status_code == 200, response.text
+    body_json = response.json()
+    assert len(body_json["attention"]) == 1
+    assert body_json["attention"][0]["item"]["decision_id"] == recorded.json()["id"]

@@ -267,9 +267,24 @@ export interface AttentionItem {
   }
 }
 
+/** Whether the market opens today — or that the probe could not tell. */
+export type TradingDayVerdict = 'trading_day' | 'non_trading_day' | 'unknown'
+
+/** What the verdict rests on. `none` accompanies `unknown` only. */
+export type TradingDayBasis = 'probe' | 'weekend' | 'none'
+
+export interface MarketStatus {
+  verdict: TradingDayVerdict
+  basis: TradingDayBasis
+  /** The newest date with a daily bar — the fact behind 「休市」. */
+  last_trading_date: string | null
+  checked_at: string
+}
+
 export interface Today {
   generated_at: string
   attention: AttentionItem[]
+  market_status: MarketStatus
 }
 
 /**

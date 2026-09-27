@@ -235,9 +235,20 @@ class TencentProvider:
         if not node:
             raise ProviderEmptyError("symbol not present in response")
 
-        rows = node.get("qfqday")
-        if rows is None:
-            raise ProviderProtocolError("qfqday missing; refusing to substitute raw prices")
+        # Tencent files stock series under ``qfqday`` (forward-adjusted) and
+        # index series under ``day`` — an index has no adjustment basis at
+        # all, so ``day`` *is* the only correct series for it, not a
+        # substitute for one (that refusal stays in force for stocks).
+        if symbol.asset_type is AssetType.INDEX:
+            rows = node.get("day")
+            if rows is None:
+                raise ProviderProtocolError("index daily series ('day') missing from payload")
+            adjustment = 1.0
+        else:
+            rows = node.get("qfqday")
+            if rows is None:
+                raise ProviderProtocolError("qfqday missing; refusing to substitute raw prices")
+            adjustment = 1.0  # series is already forward-adjusted (qfq)
         if not rows:
             raise ProviderEmptyError("no bars in the requested range")
 
@@ -255,7 +266,7 @@ class TencentProvider:
                     low=float(row[4]),
                     volume=float(row[5]) * 100.0,  # lots -> shares
                     amount=None,  # this endpoint publishes no turnover
-                    adj_factor=1.0,  # series is already forward-adjusted (qfq)
+                    adj_factor=adjustment,
                     source="tencent",
                     fetched_at=fetched_at,
                 )

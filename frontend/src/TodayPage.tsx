@@ -10,7 +10,7 @@ import {
   type Today,
   type WatchlistEntry,
 } from './api'
-import { ACTION_LABEL, formatPredicate, todayLabel } from './format'
+import { ACTION_LABEL, formatDay, formatPredicate, todayLabel } from './format'
 import { POOL_HREF, instrumentHref } from './routing'
 import QuoteCell from './QuoteCell'
 
@@ -67,7 +67,16 @@ export default function TodayPage() {
     <div className="mx-auto max-w-[860px] px-8 py-10">
       <header className="border-b border-rule pb-5">
         <h1 className="serif text-[26px] leading-tight">今天 · {todayLabel(new Date())}</h1>
-        <p className="mt-1 text-ink-soft">
+        {today?.market_status.verdict === 'non_trading_day' && (
+          <p className="mark mt-2 border-l-2 border-l-navy py-1 text-[13px] text-navy">
+            休市 · 最后交易日 {formatDay(today.market_status.last_trading_date)}
+            <span className="text-ink-faint">
+              {' '}
+              —— 下列价格不会变化，这不是故障，也不是过期的数据。
+            </span>
+          </p>
+        )}
+        <p className="mt-2 text-ink-soft">
           打开就能看到的东西：<span className="text-ink">到期的失效条件、你关注的标的、现价</span>。
           <span className="text-ink-faint"> 没有推荐，没有成绩单。</span>
         </p>

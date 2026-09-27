@@ -20,6 +20,7 @@ import pytest
 
 from alphacouncil.core.error_codes import ErrorCode
 from alphacouncil.models.market import (
+    AssetType,
     DataResult,
     DataStatus,
     Market,
@@ -190,6 +191,58 @@ class TestTencentParsing:
 
         with pytest.raises(ProviderProtocolError, match="qfqday missing"):
             TencentProvider.parse_daily(payload, _moutai(), fetched_at=STAMP)
+
+    def test_index_daily_is_read_from_the_day_key(self) -> None:
+        """An index has no adjustment basis — its series *is* ``day``.
+
+        Real payload shape, captured 2026-09-27 (SSE Composite). The refusal
+        above stays in force for stocks; for an index, ``day`` is not a
+        substitute for an adjusted series, it is the only series there is.
+        The trading-day probe depends on this endpoint being honest about
+        which days the market actually traded.
+        """
+        payload = json.dumps(
+            {
+                "code": 0,
+                "data": {
+                    "sh000001": {
+                        "day": [
+                            [
+                                "2026-09-23",
+                                "3936.520",
+                                "3936.520",
+                                "3952.510",
+                                "3930.020",
+                                "520325799.000",
+                            ],
+                            [
+                                "2026-09-24",
+                                "3925.320",
+                                "3888.370",
+                                "3930.500",
+                                "3888.370",
+                                "438530412.000",
+                            ],
+                        ]
+                    }
+                },
+            }
+        )
+        index = Symbol(market=Market.SH, code="000001", asset_type=AssetType.INDEX)
+
+        bars = TencentProvider.parse_daily(payload, index, fetched_at=STAMP)
+
+        assert len(bars) == 2
+        assert bars[-1].trade_date == date(2026, 9, 24)
+        assert bars[-1].close == pytest.approx(3888.37)
+        assert all(bar.adj_factor == 1.0 for bar in bars)
+
+    def test_an_index_missing_its_day_key_is_refused(self) -> None:
+        payload = json.dumps({"code": 0, "data": {"sh000001": {"qfqday": []}}})
+        index = Symbol(market=Market.SH, code="000001", asset_type=AssetType.INDEX)
+
+        with pytest.raises(ProviderProtocolError, match="index daily series"):
+            TencentProvider.parse_daily(payload, index, fetched_at=STAMP)
 
     def test_empty_range_is_no_data_not_an_error(self) -> None:
         payload = json.dumps({"code": 0, "data": {"sh600519": {"qfqday": []}}})
