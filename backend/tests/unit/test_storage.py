@@ -371,10 +371,11 @@ class TestTheLedgerMatchesTheSchema:
         """Guards the reader: if the extractor found nothing, the two set
         comparisons above would agree on two empty sets and pass."""
         bodies = {name for ddl in _table_ddl().values() for name in _constraint_bodies(ddl)}
-        # 4 tables from 0001 + market_cache from 0002 = 4 + 4 + 12 + ... — the
-        # number is written dead on purpose (constitution 8.3): a new migration
-        # changes it, and that is exactly when a human should look.
-        assert len(bodies) == 28, f"expected 28 named constraints, found {len(bodies)}"
+        # 4 tables from 0001 + market_cache from 0002 + cards, card_symbols from 0003
+        # = 28 + 14 + 3 = 45 — the number is written dead on purpose
+        # (constitution 8.3): a new migration changes it, and that is exactly
+        # when a human should look.
+        assert len(bodies) == 45, f"expected 45 named constraints, found {len(bodies)}"
 
     def test_every_constraint_uses_a_declared_category(self) -> None:
         for table, constraints in _ledger_constraints().items():

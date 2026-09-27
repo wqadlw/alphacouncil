@@ -39,6 +39,8 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
 from alphacouncil.api.deps import DatabaseConnection, MarketData
+from alphacouncil.api.routes.cards import CardRead
+from alphacouncil.api.routes.cards import to_read as card_to_read
 from alphacouncil.api.routes.decisions import DecisionRead
 from alphacouncil.api.routes.decisions import to_read as decision_to_read
 from alphacouncil.domain.instrument import TickerAmbiguousError, parse_ticker
@@ -50,6 +52,7 @@ from alphacouncil.models.market import (
     RealtimeQuote,
     Symbol,
 )
+from alphacouncil.storage.repositories import cards as card_repository
 from alphacouncil.storage.repositories import decisions as decision_repository
 from alphacouncil.storage.repositories import instruments as instrument_repository
 from alphacouncil.storage.repositories import watchlist as watchlist_repository
@@ -192,6 +195,14 @@ class InstrumentDetailRead(BaseModel):
             "read newest-first it is a list of unrelated trades."
         ),
     )
+    cards: list[CardRead] = Field(
+        default_factory=list,
+        description=(
+            "Every knowledge card tied to this instrument, newest first (K1). "
+            "Read with the decisions it is a page that shows what you believed, "
+            "why you acted, and where you said it came from."
+        ),
+    )
 
 
 def _resolve_path(
@@ -246,6 +257,7 @@ def detail(
     events = watchlist_repository.history(connection, symbol)
     newest = events[-1] if events else None
     decisions = decision_repository.for_symbol(connection, symbol)
+    cards = card_repository.list_for_symbol(connection, symbol)
 
     if newest is None:
         status = FollowStatus.NEVER
@@ -278,6 +290,7 @@ def detail(
             for event in events
         ],
         decisions=[decision_to_read(recorded) for recorded in decisions],
+        cards=[card_to_read(card) for card in cards],
     )
 
 

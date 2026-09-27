@@ -197,6 +197,7 @@ export function instrumentDetail(): Body {
         thesis_id: null,
       },
     ],
+    cards: [],
   }
 }
 

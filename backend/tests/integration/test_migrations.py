@@ -752,9 +752,9 @@ class TestTheRealSecondMigration:
 
         report = migrate.apply(connection, database_path=database)
 
-        assert report.applied == (2,)
+        assert report.applied == (2, 3)
         assert report.from_version == 1
-        assert migrate.schema_version(connection) == 2
+        assert migrate.schema_version(connection) == 3
         row = connection.execute(
             "SELECT reason FROM watchlist_events WHERE code = ?", ("600519",)
         ).fetchone()
@@ -808,3 +808,49 @@ class TestTheRealSecondMigration:
             assert rows == 1
         finally:
             snapshot.close()
+
+
+
+class TestTheRealThirdMigration:
+    """The shipped 2→3 upgrade, creating knowledge cards with user rows intact."""
+
+    def test_a_version_two_database_upgrades_to_version_three(
+        self, tmp_path: Path, connect: Connect
+    ) -> None:
+        database = tmp_path / "alphacouncil.db"
+        connection = connect(database)
+        all_migrations = {item.version: item for item in migrate.load_migrations()}
+        # Apply version 1 and 2
+        for v in (1, 2):
+            for statement in migrate.split_statements(
+                all_migrations[v].up.read_text(encoding="utf-8")
+            ):
+                connection.execute(statement)
+        connection.execute("PRAGMA user_version = 2")
+        _add_an_instrument_and_a_reason(connection)
+
+        report = migrate.apply(connection, database_path=database)
+
+        assert report.applied == (3,)
+        assert report.from_version == 2
+        assert migrate.schema_version(connection) == 3
+        # Watchlist row preserved
+        row = connection.execute(
+            "SELECT reason FROM watchlist_events WHERE code = ?", ("600519",)
+        ).fetchone()
+        assert row is not None
+        assert row[0] == "估值到了我算得出来的区间"
+
+        # Cards table exists and accepts valid card
+        now_ts = "2026-09-27T10:00:00.000Z"
+        connection.execute(
+            "INSERT INTO cards (id, content, claim_type, source_url, source_title, "
+            "captured_at, origin, priority, status, created_at) "
+            "VALUES ('card_1', '白酒领先指标', 'supporting', 'https://example.com/r1', "
+            "'调研报告', ?, 'user_written', 3, 'active', ?)",
+            (now_ts, now_ts),
+        )
+        card_row = connection.execute("SELECT content FROM cards WHERE id = 'card_1'").fetchone()
+        assert card_row is not None
+        assert card_row[0] == "白酒领先指标"
+

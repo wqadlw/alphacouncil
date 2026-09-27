@@ -22,6 +22,7 @@ import {
   formatVolume,
 } from './format'
 import { POOL_HREF } from './routing'
+import CardSection from './CardSection'
 import DecisionSection from './DecisionSection'
 
 const FOLLOW_LABEL: Record<string, string> = {
@@ -151,8 +152,9 @@ export default function InstrumentPage({ market, code }: Props) {
           )}
         </div>
         <p className="mt-1 text-ink-soft">
-          这一页只回答四个问题：<span className="text-ink">现在是什么样</span>、
+          这一页只回答五个问题：<span className="text-ink">现在是什么样</span>、
           <span className="text-ink">我为什么关注它</span>、
+          <span className="text-ink">我对它说过什么</span>、
           <span className="text-ink">我对它做过什么</span>、
           <span className="text-ink">我对它下过什么判断</span>。
         </p>
@@ -267,6 +269,13 @@ export default function InstrumentPage({ market, code }: Props) {
               </div>
             )}
           </section>
+
+          <CardSection
+            market={market}
+            code={code}
+            cards={detail.cards}
+            onRecorded={() => void refresh()}
+          />
 
           <DecisionSection
             market={market}
@@ -447,12 +456,12 @@ function NotBuiltYet() {
       <p className="mt-2 text-ink-soft">
         这一页最终要同时装下三层：<span className="text-ink">数据</span>、
         <span className="text-ink">知识卡片</span>、<span className="text-ink">决策记录</span>。
-        第一层和决策的<strong className="text-ink">记录</strong>已经有了，
-        决策的<strong className="text-ink">对质</strong>还没有。
+        三层里的<strong className="text-ink">记录</strong>都已经有了 ——
+        卡片能记能查（K1），决策能记（J1）—— 决策的<strong className="text-ink">对质</strong>还没有。
       </p>
       <ul className="mt-2 text-[13px] text-ink-faint">
         <li className="mark border-l-2 border-l-rule py-1">
-          知识卡片（K1–K4）—— 还没有建表，所以这里既没有卡片，也没有复习队列。
+          卡片复习与淘汰（K2）—— 卡片只有「记」没有「复习」；「哪张卡可以淘汰」还要靠人眼。
         </li>
         <li className="mark border-l-2 border-l-rule py-1">
           持仓（D2）—— 没有成本与数量，所以上面那个止损计算器要你自己填亏损比例，

@@ -91,6 +91,33 @@
         "market_cache_payload_required_check": "required",
         "market_cache_payload_json_check": "json"
       }
+    },
+    "cards": {
+      "append_only": false,
+      "constraints": {
+        "cards_id_check": "identity",
+        "cards_content_required_check": "required",
+        "cards_content_length_check": "length",
+        "cards_claim_type_check": "enum",
+        "cards_source_url_required_check": "required",
+        "cards_source_url_format_check": "identity",
+        "cards_source_title_required_check": "required",
+        "cards_source_title_length_check": "length",
+        "cards_captured_at_check": "identity",
+        "cards_as_of_check": "identity",
+        "cards_origin_check": "enum",
+        "cards_priority_check": "enum",
+        "cards_status_check": "enum",
+        "cards_created_at_check": "identity"
+      }
+    },
+    "card_symbols": {
+      "append_only": false,
+      "constraints": {
+        "card_symbols_market_check": "enum",
+        "card_symbols_code_check": "identity",
+        "card_symbols_created_at_check": "identity"
+      }
     }
   }
 }

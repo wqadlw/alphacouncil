@@ -25,6 +25,14 @@
       "down": "0002_market_cache.down.sql",
       "destructive_down": false,
       "down_note": "只丢弃可再生缓存（行情结果），用户记录不受影响。"
+    },
+    {
+      "version": 3,
+      "name": "knowledge_cards",
+      "up": "0003_knowledge_cards.up.sql",
+      "down": "0003_knowledge_cards.down.sql",
+      "destructive_down": true,
+      "down_note": "删除 cards / card_symbols 的全部内容。要退回请从 VACUUM INTO 快照恢复，不要跑 down.sql。"
     }
   ]
 }

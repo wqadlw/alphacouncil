@@ -81,6 +81,64 @@ export interface InstrumentDetail {
    * mind" only reads as an answer if nothing is missing from it.
    */
   decisions: Decision[]
+  /**
+   * Every knowledge card tied to this instrument, newest first (K1).
+   *
+   * Unlike the decisions and the log, this is a filtered view: the card store
+   * is the knowledge layer, and an instrument page shows only the cards that
+   * concern it. "What have I claimed about this company, and where did I say
+   * it came from" reads newest-first, because an older card is not yet
+   * superseded — it still exists, it just answers an older question.
+   */
+  cards: Card[]
+}
+
+/** How a card entered the record. Mirrors `CardOrigin` in `domain/card.py`. */
+export type CardOrigin = 'ai_generated' | 'user_written'
+
+/** Whether the claim is for, against, or neither. Mirrors `ClaimType`. */
+export type ClaimType = 'supporting' | 'challenging' | 'neutral'
+
+/**
+ * One recorded claim with its provenance.
+ *
+ * `id` is the write moment — server-generated, and the request schema refuses
+ * any body that names it (S-06). `captured_at` is the moment the source was
+ * seen, `created_at` the moment the row landed; they differ when a card is
+ * recorded later than the material it quotes. `as_of` is the point-in-time
+ * cutoff of the claim's figures, not a deadline and not a due date.
+ */
+export interface Card {
+  id: string
+  content: string
+  claim_type: ClaimType
+  source_url: string
+  source_title: string
+  captured_at: string
+  as_of: string | null
+  origin: CardOrigin
+  priority: number
+  status: 'active' | 'superseded'
+  created_at: string
+  symbols: CardSymbol[]
+}
+
+/** One instrument a card is attached to, in the conventional form. */
+export interface CardSymbol {
+  market: string
+  code: string
+  display: string
+}
+
+export interface CardInput {
+  content: string
+  claim_type: ClaimType
+  source_url: string
+  source_title: string
+  as_of?: string | null
+  origin?: CardOrigin
+  priority?: number
+  symbols: string[]
 }
 
 /** What was decided. Mirrors the `decisions_action_check` constraint. */
@@ -397,4 +455,57 @@ export function recordDecision(input: DecisionInput): Promise<Decision> {
  */
 export function listRecentDecisions(limit = 50): Promise<Decision[]> {
   return request<Decision[]>(`/api/v1/decisions?limit=${limit}`)
+}
+
+/**
+ * List cards, newest first, optionally filtered to one instrument.
+ *
+ * The instrument page passes its own market and code; a future knowledge view
+ * will call this without them. An empty result is `[]`, not an error.
+ */
+export function listCards(options?: {
+  market?: string
+  code?: string
+  claim_type?: ClaimType
+  origin?: CardOrigin
+  limit?: number
+}): Promise<Card[]> {
+  const params = new URLSearchParams()
+  if (options?.market) params.set('market', options.market)
+  if (options?.code) params.set('code', options.code)
+  if (options?.claim_type) params.set('claim_type', options.claim_type)
+  if (options?.origin) params.set('origin', options.origin)
+  if (options?.limit) params.set('limit', String(options.limit))
+  const query = params.toString()
+  return request<Card[]>(`/api/v1/cards${query ? `?${query}` : ''}`)
+}
+
+/**
+ * Record a card. There is no update and no delete, on purpose.
+ *
+ * A card is a signed statement: `content` is the claim, `source_url` and
+ * `source_title` are where it came from, and the write is one-way because
+ * editing a claim would quietly rewrite the record of what you once believed.
+ * Changing your mind is a new card, never an edit of the old one. `id` is
+ * deliberately absent from the input — it is the write moment, generated
+ * server-side, and the schema rejects any body that names it (S-06).
+ */
+export function createCard(input: CardInput): Promise<Card> {
+  return request<Card>('/api/v1/cards', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+/**
+ * Upgrade an `ai_generated` card to `user_written`.
+ *
+ * The isolation red line: an AI candidate stays flagged until a person has
+ * actually looked at the source. The server refuses this for any card that is
+ * not `ai_generated` (409).
+ */
+export function verifyCard(cardId: string): Promise<Card> {
+  return request<Card>(`/api/v1/cards/${encodeURIComponent(cardId)}/verify`, {
+    method: 'PATCH',
+  })
 }

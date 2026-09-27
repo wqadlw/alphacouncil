@@ -1,0 +1,29 @@
+# Tasks · Spec 012 K1 知识卡片
+
+- [ ] T1: 登记错误码与契约定义
+  - 在 `.ai/error-codes.md` 中登记 `CARD_*` 错误码
+  - 在 `backend/src/alphacouncil/core/error_codes.py` 中更新 `ErrorCode` 枚举
+- [ ] T2: 数据库迁移与约束登记
+  - 编写 `backend/src/alphacouncil/storage/migrations/0003_knowledge_cards.up.sql` 与 `0003_knowledge_cards.down.sql`
+  - 更新 `manifest.json` 与 `constraints.json`
+  - 同步更新 `test_storage.py` 中的预期约束总数并验证通过
+- [ ] T3: 领域层实现与单元测试
+  - 编写 `backend/src/alphacouncil/domain/card.py`（模型、枚举、校验）
+  - 编写 `backend/tests/unit/test_card.py` 覆盖各种合法/非法边界
+- [ ] T4: 仓储层实现与数据访问测试
+  - 编写 `backend/src/alphacouncil/storage/repositories/cards.py`
+  - 编写仓储读写与关联测试
+- [ ] T5: API 路由与标的页集成
+  - 编写 `backend/src/alphacouncil/api/routes/cards.py`
+  - 注册路由至 `backend/src/alphacouncil/api/app.py`
+  - 在 `backend/src/alphacouncil/api/routes/instruments.py` 中返回关联 cards
+  - 编写 `backend/tests/unit/test_cards_api.py`，覆盖创建、查询、S-06 规则、核实升级
+- [ ] T6: 前端组件与页面接入
+  - 在 `frontend/src/api.ts` 中添加卡片模型与 API 函数，扩展 `InstrumentDetail`
+  - 编写 `frontend/src/CardSection.tsx`（含卡片展示、左侧 2px 标线、来源直接展示、录入表单、核实按钮）
+  - 在 `frontend/src/InstrumentPage.tsx` 中挂载 `CardSection`，更新“还没有的部分”说明
+  - 编写前端单元测试
+- [ ] T7: 质量门禁与全流程验证
+  - 运行后端质量门禁：`ruff check`, `mypy`, `pytest tests/unit`, `checks --strict`
+  - 运行前端质量门禁：`typecheck`, `lint`, `vitest run`
+  - 更新 `.ai/status.md`

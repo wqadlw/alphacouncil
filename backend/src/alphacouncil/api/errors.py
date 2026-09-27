@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from alphacouncil.core.error_codes import ErrorCode
+from alphacouncil.domain.card import CardError
 from alphacouncil.domain.decision import DecisionError
 from alphacouncil.domain.instrument import InstrumentError
 from alphacouncil.domain.watchlist import WatchlistError
@@ -34,6 +35,9 @@ _STATUS_BY_CODE: dict[str, int] = {
     ErrorCode.WATCHLIST_NOT_FOLLOWED.value: 404,
     ErrorCode.WATCHLIST_ALREADY_REMOVED.value: 409,
     ErrorCode.INSTRUMENT_ASSET_TYPE_CONFLICT.value: 409,
+    ErrorCode.CARD_NOT_FOUND.value: 404,
+    ErrorCode.CARD_ALREADY_VERIFIED.value: 409,
+
 }
 
 _DEFAULT_STATUS = 400
@@ -83,4 +87,9 @@ def domain_failure(exc: Exception) -> Failure:
 #: failures. A tuple because FastAPI wants one registration per class. Every base
 #: subclasses ``ValueError``, and Starlette picks the most specific handler, so
 #: the plain ``ValueError`` handler still catches everything else.
-CODED_ERRORS: tuple[type[Exception], ...] = (InstrumentError, WatchlistError, DecisionError)
+CODED_ERRORS: tuple[type[Exception], ...] = (
+    InstrumentError,
+    WatchlistError,
+    DecisionError,
+    CardError,
+)

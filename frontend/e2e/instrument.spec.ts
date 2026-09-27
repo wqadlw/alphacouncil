@@ -48,4 +48,13 @@ test.describe('标的页（I1）与红线 12/13', () => {
     await expect(submit).toBeDisabled()
     await expect(page.getByText(/还差：/)).toBeVisible()
   })
+
+  test('the knowledge layer renders on the page (K1)', async ({ page }) => {
+    await page.goto('/#/i/sh/600519')
+
+    // The fifth question the page answers, mounted between price and decisions.
+    await expect(page.getByRole('heading', { name: '我对它说过什么' })).toBeVisible()
+    // With no cards recorded the empty state says so plainly — no fake loading.
+    await expect(page.getByText(/还没有为它写过卡片/)).toBeVisible()
+  })
 })

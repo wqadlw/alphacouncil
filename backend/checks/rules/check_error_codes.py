@@ -68,7 +68,7 @@ ENUM_CLASS = "ErrorCode"
 #: `DATA_SOURCE_RATE_LIMITED`, and the list is otherwise alphabetical so a
 #: missing prefix is visible rather than lost in the middle.
 CODE_PATTERN = re.compile(
-    r"\b(?:AGENT|CHECK|CONTRACT|DATA_SOURCE|DATA|DECISION|INSTRUMENT|MIGRATION|STORAGE|WATCHLIST)"
+    r"\b(?:AGENT|CARD|CHECK|CONTRACT|DATA_SOURCE|DATA|DECISION|INSTRUMENT|MIGRATION|STORAGE|WATCHLIST)"
     r"_[A-Z0-9_]+\b"
 )
 _BACKTICKED = re.compile(r"`([^`\n]+)`")

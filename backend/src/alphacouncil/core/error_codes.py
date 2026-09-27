@@ -58,6 +58,16 @@ class ErrorCode(StrEnum):
     DECISION_KILL_CRITERIA_REQUIRED = "DECISION_KILL_CRITERIA_REQUIRED"
     DECISION_TEXT_TOO_LONG = "DECISION_TEXT_TOO_LONG"
 
+
+    # -- CARD_* : knowledge cards (K1) -------------------------------------
+    CARD_CONTENT_REQUIRED = "CARD_CONTENT_REQUIRED"
+    CARD_SOURCE_URL_REQUIRED = "CARD_SOURCE_URL_REQUIRED"
+    CARD_SOURCE_TITLE_REQUIRED = "CARD_SOURCE_TITLE_REQUIRED"
+    CARD_NOT_FOUND = "CARD_NOT_FOUND"
+    CARD_ALREADY_VERIFIED = "CARD_ALREADY_VERIFIED"
+    CARD_TEXT_TOO_LONG = "CARD_TEXT_TOO_LONG"
+    CARD_PRIORITY_INVALID = "CARD_PRIORITY_INVALID"
+
     # -- WATCHLIST_* : the instrument pool (D1) ----------------------------
     # A separate namespace from DECISION_* because the two rules look alike and
     # are not: one guards a trade, the other guards the reason for watching an

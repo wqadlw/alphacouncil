@@ -17,7 +17,14 @@ from fastapi.responses import JSONResponse, Response
 
 from alphacouncil import __version__
 from alphacouncil.api.errors import CODED_ERRORS, domain_failure
-from alphacouncil.api.routes import capabilities, decisions, instruments, today, watchlist
+from alphacouncil.api.routes import (
+    capabilities,
+    cards,
+    decisions,
+    instruments,
+    today,
+    watchlist,
+)
 from alphacouncil.core.config import Settings, get_settings
 from alphacouncil.core.logging import configure_logging, get_logger
 from alphacouncil.core.trace import TraceWriter, set_current_trace
@@ -170,6 +177,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(decisions.router)
     app.include_router(today.router)
     app.include_router(capabilities.router)
+    app.include_router(cards.router)
 
     @app.get("/health", tags=["ops"], summary="Liveness and configuration probe")
     async def health() -> dict[str, Any]:

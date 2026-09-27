@@ -1,0 +1,341 @@
+import sqlite3
+from collections.abc import Iterator
+from datetime import date
+from pathlib import Path
+
+import pytest
+
+from alphacouncil.domain.card import (
+    CardAlreadyVerifiedError,
+    CardContentRequiredError,
+    CardDraft,
+    CardNotFoundError,
+    CardOrigin,
+    CardPriorityInvalidError,
+    CardSourceTitleRequiredError,
+    CardSourceUrlRequiredError,
+    CardStatus,
+    CardTextTooLongError,
+    ClaimType,
+    build_card_draft,
+)
+from alphacouncil.models.market import Market, Symbol
+from alphacouncil.storage import db, migrate
+from alphacouncil.storage.repositories import cards as repository
+
+pytestmark = pytest.mark.unit
+
+
+def test_valid_card_draft_construction() -> None:
+    symbol = Symbol(market=Market.SH, code="600519")
+    draft = build_card_draft(
+        content="渠道库存是白酒先行指标",
+        claim_type=ClaimType.SUPPORTING,
+        source_url="https://example.com/reports/123",
+        source_title="白酒渠道深度调研",
+        origin=CardOrigin.USER_WRITTEN,
+        priority=4,
+        status=CardStatus.ACTIVE,
+        as_of=date(2026, 6, 30),
+        symbols=(symbol,),
+    )
+    assert draft.content == "渠道库存是白酒先行指标"
+    assert draft.claim_type == ClaimType.SUPPORTING
+    assert draft.source_url == "https://example.com/reports/123"
+    assert draft.source_title == "白酒渠道深度调研"
+    assert draft.origin == CardOrigin.USER_WRITTEN
+    assert draft.priority == 4
+    assert draft.status == CardStatus.ACTIVE
+    assert draft.as_of == date(2026, 6, 30)
+    assert draft.symbols == (symbol,)
+
+
+def test_blank_content_raises() -> None:
+    with pytest.raises(CardContentRequiredError):
+        build_card_draft(
+            content="   ",
+            claim_type=ClaimType.NEUTRAL,
+            source_url="https://example.com",
+            source_title="Report",
+        )
+
+
+def test_overlong_content_raises() -> None:
+    with pytest.raises(CardTextTooLongError):
+        build_card_draft(
+            content="x" * 1001,
+            claim_type=ClaimType.NEUTRAL,
+            source_url="https://example.com",
+            source_title="Report",
+        )
+
+
+def test_blank_source_url_raises() -> None:
+    with pytest.raises(CardSourceUrlRequiredError):
+        build_card_draft(
+            content="Valid statement",
+            claim_type=ClaimType.NEUTRAL,
+            source_url="   ",
+            source_title="Report",
+        )
+
+
+def test_invalid_source_url_scheme_raises() -> None:
+    with pytest.raises(CardSourceUrlRequiredError):
+        build_card_draft(
+            content="Valid statement",
+            claim_type=ClaimType.NEUTRAL,
+            source_url="ftp://example.com",
+            source_title="Report",
+        )
+
+    with pytest.raises(CardSourceUrlRequiredError):
+        build_card_draft(
+            content="Valid statement",
+            claim_type=ClaimType.NEUTRAL,
+            source_url="not-a-url",
+            source_title="Report",
+        )
+
+
+def test_blank_source_title_raises() -> None:
+    with pytest.raises(CardSourceTitleRequiredError):
+        build_card_draft(
+            content="Valid statement",
+            claim_type=ClaimType.NEUTRAL,
+            source_url="https://example.com",
+            source_title="   ",
+        )
+
+
+def test_invalid_priority_raises() -> None:
+    with pytest.raises(CardPriorityInvalidError):
+        build_card_draft(
+            content="Valid statement",
+            claim_type=ClaimType.NEUTRAL,
+            source_url="https://example.com",
+            source_title="Report",
+            priority=0,
+        )
+
+    with pytest.raises(CardPriorityInvalidError):
+        build_card_draft(
+            content="Valid statement",
+            claim_type=ClaimType.NEUTRAL,
+            source_url="https://example.com",
+            source_title="Report",
+            priority=6,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Repository layer (storage/repositories/cards.py).
+# ---------------------------------------------------------------------------
+# These live in the same file as the domain tests because the repository is the
+# second half of the same K1 contract: the domain refuses bad input, the
+# repository must persist and return every field unchanged. Until this section
+# existed the repository had zero coverage — and a CardRow field defect shipped
+# green because nothing ever called ``create`` (constitution 8.1: a defect the
+# tests cannot see is the same as no tests at all).
+
+
+@pytest.fixture
+def database_path(tmp_path: Path) -> Path:
+    """A real database file at the current shipped schema version."""
+    path = tmp_path / "alphacouncil.db"
+    connection = db.connect_for_migration(path)
+    try:
+        migrate.apply(connection, database_path=path)
+    finally:
+        connection.close()
+    return path
+
+
+@pytest.fixture
+def connection(database_path: Path) -> Iterator[sqlite3.Connection]:
+    conn = db.connect(database_path)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def _draft(
+    *,
+    content: str = "渠道库存是白酒先行指标",
+    claim_type: ClaimType = ClaimType.SUPPORTING,
+    origin: CardOrigin = CardOrigin.USER_WRITTEN,
+    symbols: tuple[Symbol, ...] = (),
+) -> CardDraft:
+    return build_card_draft(
+        content=content,
+        claim_type=claim_type,
+        source_url="https://example.com/reports/123",
+        source_title="白酒渠道深度调研",
+        origin=origin,
+        priority=4,
+        status=CardStatus.ACTIVE,
+        symbols=symbols,
+    )
+
+
+def test_create_persists_every_field_and_round_trips(
+    connection: sqlite3.Connection,
+) -> None:
+    sym = Symbol(market=Market.SH, code="600519")
+    row = repository.create(connection, _draft(symbols=(sym,)), now="2026-09-27T12:00:00.000Z")
+
+    assert row.id.startswith("card_")
+    assert row.captured_at == "2026-09-27T12:00:00.000Z"
+    assert row.symbols == (sym,)
+
+    got = repository.get_by_id(connection, row.id)
+    assert got is not None
+    assert got.content == "渠道库存是白酒先行指标"
+    assert got.claim_type is ClaimType.SUPPORTING
+    assert got.source_url == "https://example.com/reports/123"
+    assert got.source_title == "白酒渠道深度调研"
+    assert got.origin is CardOrigin.USER_WRITTEN
+    assert got.priority == 4
+    assert got.status is CardStatus.ACTIVE
+    assert got.created_at == "2026-09-27T12:00:00.000Z"
+    assert got.symbols == (sym,)
+
+
+def test_create_without_symbols_round_trips(connection: sqlite3.Connection) -> None:
+    row = repository.create(connection, _draft(), now="2026-09-27T12:00:00.000Z")
+    assert row.symbols == ()
+    got = repository.get_by_id(connection, row.id)
+    assert got is not None
+    assert got.symbols == ()
+
+
+def test_create_ensures_instrument_rows_exist(connection: sqlite3.Connection) -> None:
+    sym = Symbol(market=Market.SZ, code="000001")
+    repository.create(connection, _draft(symbols=(sym,)), now="2026-09-27T12:00:00.000Z")
+    row = connection.execute(
+        "SELECT market, code FROM instruments WHERE market = ? AND code = ?",
+        ("sz", "000001"),
+    ).fetchone()
+    assert row is not None
+
+
+def test_get_by_id_missing_returns_none(connection: sqlite3.Connection) -> None:
+    assert repository.get_by_id(connection, "card_1") is None
+
+
+def test_query_filters_each_dimension_independently(
+    connection: sqlite3.Connection,
+) -> None:
+    base = Symbol(market=Market.SH, code="600519")
+    c1 = repository.create(
+        connection,
+        _draft(claim_type=ClaimType.SUPPORTING, symbols=(base,)),
+        now="2026-09-27T12:00:00.000Z",
+    )
+    c2 = repository.create(
+        connection,
+        _draft(content="质疑的卡片", claim_type=ClaimType.CHALLENGING, symbols=(base,)),
+        now="2026-09-27T12:00:01.000Z",
+    )
+    c3 = repository.create(
+        connection,
+        _draft(
+            content="中性的卡片",
+            claim_type=ClaimType.NEUTRAL,
+            origin=CardOrigin.AI_GENERATED,
+            symbols=(base,),
+        ),
+        now="2026-09-27T12:00:02.000Z",
+    )
+
+    supporting = repository.query(connection, claim_type=ClaimType.SUPPORTING)
+    assert {c.id for c in supporting} == {c1.id}
+
+    ai = repository.query(connection, origin=CardOrigin.AI_GENERATED)
+    assert {c.id for c in ai} == {c3.id}
+
+    both = repository.query(
+        connection,
+        claim_type=ClaimType.NEUTRAL,
+        origin=CardOrigin.AI_GENERATED,
+    )
+    assert {c.id for c in both} == {c3.id}
+
+    everything = repository.query(connection)
+    assert {c.id for c in everything} == {c1.id, c2.id, c3.id}
+
+
+def test_query_respects_limit(connection: sqlite3.Connection) -> None:
+    for i in range(3):
+        repository.create(
+            connection, _draft(content=f"卡片 {i}"), now=f"2026-09-27T12:00:0{i}.000Z"
+        )
+    one = repository.query(connection, limit=1)
+    assert len(one) == 1
+
+
+def test_list_for_symbol_returns_only_that_symbol(
+    connection: sqlite3.Connection,
+) -> None:
+    moutai = Symbol(market=Market.SH, code="600519")
+    pab = Symbol(market=Market.SZ, code="000001")
+    c1 = repository.create(connection, _draft(symbols=(moutai,)))
+    repository.create(connection, _draft(content="另一只票的卡片", symbols=(pab,)))
+
+    got = repository.list_for_symbol(connection, moutai)
+    assert [c.id for c in got] == [c1.id]
+
+
+def test_duplicate_symbol_association_is_idempotent(
+    connection: sqlite3.Connection,
+) -> None:
+    sym = Symbol(market=Market.SH, code="600519")
+    c1 = repository.create(
+        connection, _draft(symbols=(sym,)), now="2026-09-27T12:00:00.000Z"
+    )
+    c2 = repository.create(
+        connection, _draft(content="第二张", symbols=(sym,)), now="2026-09-27T12:00:01.000Z"
+    )
+
+    got = repository.list_for_symbol(connection, sym)
+    assert {c.id for c in got} == {c1.id, c2.id}
+
+
+def test_verify_upgrades_ai_generated_to_user_written(
+    connection: sqlite3.Connection,
+) -> None:
+    row = repository.create(
+        connection,
+        _draft(origin=CardOrigin.AI_GENERATED),
+        now="2026-09-27T12:00:00.000Z",
+    )
+    assert row.origin is CardOrigin.AI_GENERATED
+
+    verified = repository.verify(connection, row.id)
+    assert verified.origin is CardOrigin.USER_WRITTEN
+
+    # The upgrade persists; a second read agrees with the returned row.
+    again = repository.get_by_id(connection, row.id)
+    assert again is not None
+    assert again.origin is CardOrigin.USER_WRITTEN
+
+
+def test_verify_on_user_written_card_raises(
+    connection: sqlite3.Connection,
+) -> None:
+    row = repository.create(connection, _draft())
+    with pytest.raises(CardAlreadyVerifiedError):
+        repository.verify(connection, row.id)
+
+
+def test_verify_on_missing_card_raises(connection: sqlite3.Connection) -> None:
+    with pytest.raises(CardNotFoundError):
+        repository.verify(connection, "card_999")
+
+
+def test_list_all_orders_by_created_at(connection: sqlite3.Connection) -> None:
+    c1 = repository.create(connection, _draft(), now="2026-09-27T12:00:00.000Z")
+    c2 = repository.create(connection, _draft(content="第二张"), now="2026-09-27T12:00:01.000Z")
+    got = repository.list_all(connection)
+    assert [c.id for c in got] == [c1.id, c2.id]

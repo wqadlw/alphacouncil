@@ -123,6 +123,19 @@ class DataFetchError(RuntimeError): ...
 > **形式**必须结构化（schema 已强制），**没有**要求最少条数。所以这一条停在领域层，
 > 而不是为了一个规格未写明的规则去动表结构。
 
+
+### 2.5 `CARD_*`（知识卡片）
+
+| code | severity | 含义 |
+|---|---|---|
+| `CARD_CONTENT_REQUIRED` | error | 卡片主张内容为空 |
+| `CARD_SOURCE_URL_REQUIRED` | error | 来源 URL 为空或协议非法（红线 4） |
+| `CARD_SOURCE_TITLE_REQUIRED` | error | 来源标题为空 |
+| `CARD_NOT_FOUND` | error | 目标卡片不存在 |
+| `CARD_ALREADY_VERIFIED` | error | 卡片非 `ai_generated`，无法执行核对升级 |
+| `CARD_TEXT_TOO_LONG` | error | 卡片主张内容超过长度上限 |
+| `CARD_PRIORITY_INVALID` | error | 卡片优先级超出 1..5 范围 |
+
 ### 2.5 `AGENT_*`
 
 | code | severity | 含义 |
