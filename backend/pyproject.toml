@@ -133,6 +133,14 @@ ignore = [
 # Narrow on purpose: `RUF001` stays on everywhere else in `src/`, so a lookalike
 # homoglyph in a real identifier is still caught.
 "src/alphacouncil/domain/review.py" = ["RUF001", "RUF002"]
+# `today.py` for a different and narrower reason (2026-09-28, spec 023): it
+# **quotes `项目总纲` §2.1⑤ verbatim** — "一句陈述，无推送、无红点、无催促词" — because
+# that exact wording is the thing this module has to stay inside, and paraphrasing
+# it into English would lose the constraint it is citing. `RUF002` cannot tell a
+# verbatim quotation from a string literal, and **editing a quotation to satisfy a
+# linter is worse than the warning**. The file has no other CJK, so the exemption
+# buys nothing else.
+"src/alphacouncil/api/routes/today.py" = ["RUF001", "RUF002"]
 "src/alphacouncil/__main__.py" = ["T201"]  # CLI entry point may print
 # Developer tooling: printing is the interface, and the subprocess argv is
 # built from constants in this repo, never from user input.

@@ -28,7 +28,10 @@
       "title": "不做预测增强（不给速成答案）",
       "enforcement": "禁止出现「目标价 / 涨跌预测 / 买卖建议」字段与接口",
       "coverage": "full",
-      "verifier": { "kind": "static", "check": "S-03" },
+      "verifier": {
+        "kind": "static",
+        "check": "S-03"
+      },
       "evidence": "S-03 `no-prediction-field` — AST 级禁止目标价/涨跌预测/买卖建议/看好/看空类字段或接口"
     },
     {
@@ -36,7 +39,10 @@
       "title": "只做过程优化，不优化预测",
       "enforcement": "所有评分字段只描述「决策过程」，不描述「结果好坏」",
       "coverage": "partial",
-      "verifier": { "kind": "static", "check": "S-03" },
+      "verifier": {
+        "kind": "static",
+        "check": "S-03"
+      },
       "evidence": "S-03 与红线 1 共用：它能挡住「预测类字段名」",
       "gap": "「一个已存在的评分字段究竟在描述过程还是结果」需要字段级语义审计，没有任何检查做这件事。J3 四象限未实现前，这条红线在已交付能力上无法被违反，也就无法被验证。"
     },
@@ -54,10 +60,21 @@
       "title": "结果之前记录",
       "enforcement": "决策记录主键 = 记录时刻的时间戳，服务端生成，API 不接受客户端传入",
       "coverage": "full",
-      "verifier": { "kind": "static", "check": "S-06" },
+      "verifier": {
+        "kind": "static",
+        "check": "S-06"
+      },
       "also": [
-        { "kind": "static", "check": "S-04" },
-        { "kind": "gate", "gate": "e2e", "file": "frontend/e2e/pool.spec.ts", "selector": "removing says the record stays" }
+        {
+          "kind": "static",
+          "check": "S-04"
+        },
+        {
+          "kind": "gate",
+          "gate": "e2e",
+          "file": "frontend/e2e/pool.spec.ts",
+          "selector": "removing says the record stays"
+        }
       ],
       "evidence": "S-06 `no-client-supplied-id` 挡住 API schema 暴露主键；S-04 `check-append-only-triggers` 保证日志表不可改不可删；E2E 断言移除后记录仍在"
     },
@@ -84,8 +101,16 @@
       "title": "未成熟结果留空（绝不填 0）",
       "enforcement": "字段可空，数据库层禁止默认值 0；统计时显式排除 NULL",
       "coverage": "full",
-      "verifier": { "kind": "static", "check": "S-08" },
-      "also": [{ "kind": "static", "check": "S-02" }],
+      "verifier": {
+        "kind": "static",
+        "check": "S-08"
+      },
+      "also": [
+        {
+          "kind": "static",
+          "check": "S-02"
+        }
+      ],
       "evidence": "S-08 `immature-outcome-blank` 要求未成熟结果的渲染分支输出空而非 0；S-02 `no-boolean-state` 挡住用布尔组合代替状态"
     },
     {
@@ -93,8 +118,18 @@
       "title": "教训必须能再次遇到",
       "enforcement": "每条教训必须生成一条调度项（FSRS）",
       "coverage": "partial",
-      "verifier": { "kind": "static", "check": "S-04" },
-      "also": [{ "kind": "gate", "gate": "test", "file": "backend/tests/unit/test_scheduling.py", "selector": "test_the_fsrs_payload_survives_a_deferral_byte_for_byte" }],
+      "verifier": {
+        "kind": "static",
+        "check": "S-04"
+      },
+      "also": [
+        {
+          "kind": "gate",
+          "gate": "test",
+          "file": "backend/tests/unit/test_scheduling.py",
+          "selector": "test_the_fsrs_payload_survives_a_deferral_byte_for_byte"
+        }
+      ],
       "evidence": "K3（spec 018）落地了排程机制本身：`card_schedule` + append-only `card_reviews` + 领域规则 + 仓储，46 项测试。S-04 保证 `card_reviews` 不可改不可删。",
       "gap": "**机制有了，「每条教训自动生成」还没有。** 本项目目前没有「教训」这个类型（`cards` 表只有 `origin` / `priority` / `status`），J5「教训转卡」未开工，所以**没有任何东西保证一条教训会走进队列** —— 是用户手动排程的。这条红线的强制手段要到 J5 才能写成检查。"
     },
@@ -112,10 +147,23 @@
       "title": "不展示「成绩」，可以展示「事实」",
       "enforcement": "禁止收益率排行 / 跑赢大盘 / 成就徽章 / 连续打卡；允许涨跌 / 估值 / 财务 / 浮盈亏",
       "coverage": "full",
-      "verifier": { "kind": "static", "check": "S-07" },
+      "verifier": {
+        "kind": "static",
+        "check": "S-07"
+      },
       "also": [
-        { "kind": "gate", "gate": "e2e", "file": "frontend/e2e/today.spec.ts", "selector": "no returns metric is rendered anywhere on the page" },
-        { "kind": "gate", "gate": "e2e", "file": "frontend/e2e/pool.spec.ts", "selector": "the page states its own no-returns rule" }
+        {
+          "kind": "gate",
+          "gate": "e2e",
+          "file": "frontend/e2e/today.spec.ts",
+          "selector": "no returns metric is rendered anywhere on the page"
+        },
+        {
+          "kind": "gate",
+          "gate": "e2e",
+          "file": "frontend/e2e/pool.spec.ts",
+          "selector": "the page states its own no-returns rule"
+        }
       ],
       "evidence": "S-07 `home-no-return-rate` 源码级不含「收益率」；两条 E2E 在浏览器里断言整页无收益率指标，且页面自己声明该规则"
     },
@@ -150,16 +198,28 @@
           "node": "tests/unit/test_reviews.py::TestTheFourQuadrants::test_every_quadrant_has_a_line_and_none_mentions_a_number"
         }
       ],
-      "evidence": "三层，每层证明前一层证明不了的事：**模型**（spec 020）`reviews` 无任何金额 / 收益率列，所以没有数字可泄漏到日志、导出或下一个 API 字段；**接口**（spec 021）响应字段名被枚举，加回 `outcome_figure` 即变红（变异 M3 已确认）；**屏幕**（E2E）危险象限下**整页正文不含任何数字**，也不含 %/元/收益率/赚/涨幅。「不美化」由领域层强制下发的句子承担 —— 前端自己拼「干得漂亮」会变红（变异 M4 已确认）。",
-      "gap": "**页面建好了、能从导航点进去了，但产品还是不会自己来找你 —— 差的就是最后一段。** 三点，注意第 ① 条**已解决、且是被别的 spec 解决的**：① ~~`#/retrospective` 没有任何入口链接~~ —— **spec 022 的 `AppShell` 全局导航已补上**（每页都在，E2E 钉住「漏掉任何一页」会变红）；② `项目总纲` §2.1 的原则是「第 ④⑤ 个时刻用户**不会主动来**，所以产品必须主动找他」—— 而**至今没有任何地方提示「有 1 条决策到期该复盘了」**，K3 复习队列同样缺。这需要**今日页枢纽**（spec 023），且形态受红线 8 约束：只能是**一行陈述**，不是通知 / 红点 / 「每日精选」；③ 「不打折」的另一半（不为亏损写「失败但…」式的措辞）**靠人负责**，字段不判断（spec 020 §六）。**剩下 ②③ 都不是能靠加检查解决的，所以仍标 `partial`，而 `partial` 按 T-19 永远不算通过。**"
+      "evidence": "三层，每层证明前一层证明不了的事：**模型**（spec 020）`reviews` 无任何金额 / 收益率列，所以没有数字可泄漏到日志、导出或下一个 API 字段；**接口**（spec 021）响应字段名被枚举，加回 `outcome_figure` 即变红（变异 M3 已确认）；**屏幕**（E2E）危险象限下**整页正文不含任何数字**，也不含 %/元/收益率/赚/涨幅。「不美化」由领域层强制下发的句子承担 —— 前端自己拼「干得漂亮」会变红（变异 M4 已确认）。 **第四层 · 主动来找你**（spec 023）：`GET /api/v1/today` 的 `due` 块 + 今日页那一行，由两条 E2E 守着：逐词禁用 `机会 精选 异动 值得关注 推荐`（红线 8），以及「十一件到期与一件到期渲染出**同一个句子**」—— 计数器的下一个功能一定是阈值，而阈值是披着数字外衣的催促（红线 11）。",
+      "gap": "**只差最后一点，而那一点不是靠加检查能解决的。** 四条里前三条**已被别的 spec 解决**，逐条记下来以免下一个人读到过时理由：① ~~`#/retrospective` 没有入口~~ → **spec 022 `AppShell` 全局导航**（E2E 钉住「漏掉任何一页」会变红）；② ~~产品不会主动来找你~~ → **spec 023 今日页枢纽**：`GET /api/v1/today` 带 `due` 块，今日页说一行「到期要看的：2 条决策 · 3 张卡片」。那行是**关于读者自己承诺的事实**（主语是读者），不是**建议**（主语是产品）—— 这条界线是红线 8 与 `项目总纲` §2.1⑤ 能同时成立的全部原因，E2E 逐词禁用 `机会 精选 异动 值得关注 推荐 快看 别错过`，并钉住「十一件与一件是同一个句子」（阈值升级是披着数字外衣的催促）。**剩下**：③ 「不打折」的另一半（不为亏损写「失败但…」式的措辞）**靠人负责**，字段不判断（spec 020 §六）—— 需要 NLP，刻意不做；④ `项目总纲` §2.1⑤ 的「**三天未处理**」阈值**判据未定义**，刻意未实现（第四天该说什么不一样吗？逾期更久要不要说得更重？没写。而「逾期越久越重」本身就是催促机制，直接撞红线 11）。**③④ 都不是能靠加检查解决的，所以仍标 `partial`，而 `partial` 按 T-19 永远不算通过。**"
     },
     {
       "id": 11,
       "title": "不鼓励频繁操作",
       "enforcement": "禁止任何促使用户「动起来」的设计；「写下回答花了多久」只用于自省，不做排名 / 打卡",
       "coverage": "partial",
-      "verifier": { "kind": "gate", "gate": "e2e", "file": "frontend/e2e/review.spec.ts", "selector": "no streak and no progress bar" },
-      "also": [{ "kind": "gate", "gate": "e2e", "file": "frontend/e2e/review.spec.ts", "selector": "the page reports a count but never a progress fraction" }],
+      "verifier": {
+        "kind": "gate",
+        "gate": "e2e",
+        "file": "frontend/e2e/review.spec.ts",
+        "selector": "no streak and no progress bar"
+      },
+      "also": [
+        {
+          "kind": "gate",
+          "gate": "e2e",
+          "file": "frontend/e2e/review.spec.ts",
+          "selector": "the page reports a count but never a progress fraction"
+        }
+      ],
       "evidence": "复习页 E2E 断言页面**不出现**「连续 / 打卡 / streak / 已复习 / N / M」等字样（spec 019）。`duration_ms` 由服务端测量、客户端提交会被 422 拒绝（有 API 测试）。",
       "gap": "**只覆盖了复习页。** 仓库里没有任何检查能发现「别处」出现促使用户的设计 —— 推送、每日提醒、把 `duration_ms` 汇总成统计，都还没有守卫。也没有一条检查能证明「不鼓励频繁操作」在其他页面（今日页 / 标的页）没有被违反。"
     },
@@ -168,9 +228,17 @@
       "title": "必须显示「时间的成本」",
       "enforcement": "止损触发时显示「恢复所需年数」",
       "coverage": "full",
-      "verifier": { "kind": "static", "check": "S-09" },
+      "verifier": {
+        "kind": "static",
+        "check": "S-09"
+      },
       "also": [
-        { "kind": "gate", "gate": "e2e", "file": "frontend/e2e/instrument.spec.ts", "selector": "the stop-loss panel must state the years needed to recover" }
+        {
+          "kind": "gate",
+          "gate": "e2e",
+          "file": "frontend/e2e/instrument.spec.ts",
+          "selector": "the stop-loss panel must state the years needed to recover"
+        }
       ],
       "evidence": "S-09 `time-cost-in-stop-loss` 要求止损组件必含恢复年数行；E2E 在浏览器里断言该面板确实说出年数"
     },
@@ -179,9 +247,19 @@
       "title": "不讨好用户（不在用户做错事时发糖）",
       "enforcement": "满意度 / 使用时长 / 愉悦感不是目标函数",
       "coverage": "partial",
-      "verifier": { "kind": "gate", "gate": "e2e", "file": "frontend/e2e/pool.spec.ts", "selector": "an empty reason keeps the submit disabled and names the rule" },
+      "verifier": {
+        "kind": "gate",
+        "gate": "e2e",
+        "file": "frontend/e2e/pool.spec.ts",
+        "selector": "an empty reason keeps the submit disabled and names the rule"
+      },
       "also": [
-        { "kind": "gate", "gate": "e2e", "file": "frontend/e2e/instrument.spec.ts", "selector": "the decision form refuses to submit until its required fields exist" }
+        {
+          "kind": "gate",
+          "gate": "e2e",
+          "file": "frontend/e2e/instrument.spec.ts",
+          "selector": "the decision form refuses to submit until its required fields exist"
+        }
       ],
       "evidence": "两条 E2E 钉住了「不迁就」的一个具体机制：必填项没写完就不给提交",
       "gap": "「不以愉悦感为目标函数」没有可检查的对应物 —— 它是一条**目标声明**，代码里没有它可以违反的地方。真正可查的部分（不给糖的交互）已由上面两条覆盖。"

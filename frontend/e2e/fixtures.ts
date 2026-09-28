@@ -91,6 +91,20 @@ function errorResult(): Body {
 }
 
 /** The today page's server block: one due criterion, market closed (weekend). */
+/**
+ * The `due` block, and nothing but a count per queue.
+ *
+ * Deliberately mirrors the server contract exactly: `queue` is a logical name,
+ * not a path, because the route table is the frontend's single source of truth
+ * (spec 022) and a URL here would be a second copy of it.
+ */
+export function due(cards = 0, reviews = 0): Body {
+  return {
+    cards: { queue: 'cards', count: cards },
+    reviews: { queue: 'reviews', count: reviews },
+  }
+}
+
 export function todayClosed(): Body {
   return {
     generated_at: STAMP,
@@ -107,6 +121,7 @@ export function todayClosed(): Body {
         },
       },
     ],
+    due: due(),
     market_status: {
       verdict: 'non_trading_day',
       basis: 'weekend',
@@ -116,11 +131,12 @@ export function todayClosed(): Body {
   }
 }
 
-/** Today with no due criteria and an undecidable market status. */
+/** Today with no due criteria, nothing due in either queue, undecidable market. */
 export function todayEmpty(): Body {
   return {
     generated_at: STAMP,
     attention: [],
+    due: due(),
     market_status: {
       verdict: 'unknown',
       basis: 'none',

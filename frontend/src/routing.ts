@@ -153,6 +153,24 @@ export const POOL_HREF = definitionFor('pool').href
 export const REVIEW_HREF = definitionFor('review').href
 export const RETROSPECTIVE_HREF = definitionFor('retrospective').href
 
+/**
+ * Map a server-side **queue name** to the view that shows it.
+ *
+ * The API sends `cards` / `reviews`, not paths, on purpose (spec 023): a URL in a
+ * response would be a second copy of the route table, and the two would
+ * eventually disagree. So the mapping lives here, next to the table it derives
+ * from, and the server is left with no opinion about where anything lives.
+ *
+ * Exhaustive over `QueueName` **by construction** — the parameter is the union, so
+ * adding a queue server-side without adding a route here is a compile error
+ * rather than a link that 404s.
+ */
+export type QueueName = 'cards' | 'reviews'
+
+export function queueHref(queue: QueueName): string {
+  return queue === 'cards' ? REVIEW_HREF : RETROSPECTIVE_HREF
+}
+
 export function useRoute(): Route {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash))
 

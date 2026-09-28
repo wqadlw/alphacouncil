@@ -11,7 +11,12 @@ import {
   type WatchlistEntry,
 } from './api'
 import { ACTION_LABEL, formatDay, formatPredicate, todayLabel } from './format'
-import { POOL_HREF, instrumentHref } from './routing'
+import {
+  POOL_HREF,
+  instrumentHref,
+  queueHref,
+  type QueueName,
+} from './routing'
 import QuoteCell from './QuoteCell'
 import { WidePage } from './ui'
 import { useResource } from './useResource'
@@ -68,6 +73,8 @@ export default function TodayPage() {
         </p>
       </header>
 
+      <DueLine due={today.data?.due} />
+
       <SectionOne
         today={today.data}
         todayError={today.error}
@@ -102,6 +109,63 @@ export default function TodayPage() {
         <span className="text-ink-soft"> 它安静，是因为催促会让你动作变多。</span>
       </footer>
     </WidePage>
+  )
+}
+
+/**
+ * ⭐ The line that makes the product come and find the reader.
+ *
+ * `项目总纲` §2.1 says the 4th and 5th moments are ones the user will **not** come
+ * for, so the product has to go to them — and this is that, in one sentence.
+ *
+ * The boundary it must not cross is narrow, and everything about the shape follows
+ * from it: **a statement about something the reader already committed to**,
+ * never **a suggestion about something they might want**. "2 条决策 · 3 张卡片" has
+ * the reader as its subject and is a fact about their own calendar. "今天有 3 个
+ * 机会" has the *product* as its subject and is a judgement about the market,
+ * which is what red line 8 forbids.
+ *
+ * So, concretely, what is **not** here:
+ *
+ * - no badge, no red dot, no "new" tag, no count on the nav (red line 11 — the nav
+ *   is already pinned digit-free by `nav.spec.ts`, and that is not an accident)
+ * - no ordering, no "most overdue", no per-item list (a ranking the reader can
+ *   feel; the detail belongs to the queue page, which is one click away)
+ * - no "out of N", no completion fraction (ADR-0028 lists that as a thing the
+ *   card page deliberately refuses)
+ * - no escalation at a threshold — "11" must not become "很多" (a nudge wearing
+ *   a number's clothes; `项目总纲` §2.1⑤ says 一句陈述, no 催促词)
+ * - **nothing at all when both are zero** — "0 条决策到期" is still a sentence
+ *   about the reader, and being told you owe yourself nothing is not worth a line
+ * - ⭐ **no "three days overdue" threshold.** `项目总纲` ⑤ mentions three days,
+ *   but nothing defines what would be said differently on day four, or how much
+ *   louder. Inventing it is the same mistake as inventing a 90-day review
+ *   interval (spec 020), and the failure mode is worse: "louder the longer you
+ *   ignore it" *is* nagging, which is red line 11.
+ */
+function DueLine({ due }: { due: Today['due'] | undefined }) {
+  if (!due) return null
+  const parts: { queue: QueueName; count: number; label: string }[] = []
+  if (due.reviews.count > 0) {
+    parts.push({ queue: 'reviews', count: due.reviews.count, label: '条决策' })
+  }
+  if (due.cards.count > 0) {
+    parts.push({ queue: 'cards', count: due.cards.count, label: '张卡片' })
+  }
+  if (parts.length === 0) return null
+
+  return (
+    <p className="mt-4 text-[13px] text-ink-soft" data-testid="today-due">
+      到期要看的：
+      {parts.map((part, index) => (
+        <span key={part.queue}>
+          {index > 0 ? ' · ' : ''}
+          <a href={queueHref(part.queue)} className="text-navy" data-testid={`today-due-${part.queue}`}>
+            {part.count} {part.label}
+          </a>
+        </span>
+      ))}
+    </p>
   )
 }
 

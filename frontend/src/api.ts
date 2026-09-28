@@ -517,9 +517,41 @@ export interface MarketStatus {
   checked_at: string
 }
 
+/**
+ * Which queue a count belongs to — a **logical name**, not a path.
+ *
+ * The server deliberately does not send a URL. The route table (`routing.ts`) is
+ * the single source of truth for where a view lives (spec 022), and a path in an
+ * API response would be a second copy of that fact — the kind that works in dev
+ * and 404s in prod, with nothing to grep.
+ */
+export type QueueName = 'cards' | 'reviews'
+
+/** A count and nothing else. No due date, no title, no ordering, no link. */
+export interface DueCount {
+  queue: QueueName
+  /**
+   * How many have come round now.
+   *
+   * Not a score: nothing here is summed, compared against a target, or turned
+   * into a completion fraction. See spec 023 §二 for why a count of the reader's
+   * *own commitments* is a statement of fact, and why that is the only kind of
+   * thing red line 8 lets the product interrupt with.
+   */
+  count: number
+}
+
 export interface Today {
   generated_at: string
   attention: AttentionItem[]
+  /**
+   * The second thing the today page is allowed to bring: how many of the reader's
+   * own review commitments have come round. The first is `attention` above.
+   */
+  due: {
+    cards: DueCount
+    reviews: DueCount
+  }
   market_status: MarketStatus
 }
 
