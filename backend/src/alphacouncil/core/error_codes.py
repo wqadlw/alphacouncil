@@ -84,6 +84,17 @@ class ErrorCode(StrEnum):
     CARD_ALREADY_SCHEDULED = "CARD_ALREADY_SCHEDULED"
     CARD_TIMESTAMP_NOT_UTC = "CARD_TIMESTAMP_NOT_UTC"
 
+    # -- REVIEW_* : decision reviews and the four quadrants (J3) ------------
+    # Added 2026-09-28 (spec 020). REVIEW_NOT_DUE is the one that matters most:
+    # it is the hard gate from `项目总纲` P0-3 — an outcome may not be scored
+    # before the review is due, because scoring early is hindsight. The schema
+    # enforces it too; this code is what the failure looks like when it arrives
+    # through our own door rather than as a raw IntegrityError.
+    REVIEW_SCORE_INVALID = "REVIEW_SCORE_INVALID"
+    REVIEW_NOT_DUE = "REVIEW_NOT_DUE"
+    REVIEW_NOTE_BLANK = "REVIEW_NOTE_BLANK"
+    REVIEW_STATE_MISSING = "REVIEW_STATE_MISSING"
+
     # -- WATCHLIST_* : the instrument pool (D1) ----------------------------
     # A separate namespace from DECISION_* because the two rules look alike and
     # are not: one guards a trade, the other guards the reason for watching an

@@ -9,16 +9,17 @@
   },
   "baseline": {
     "date": "2026-09-28",
-    "pass": 5,
+    "pass": 6,
     "total": 15,
-    "full": 5,
-    "partial": 2,
-    "none": 8,
-    "pass_rate": 0.3333,
-    "note": "First honest measurement. Recorded before anything was fixed, so the number cannot be inflated by the act of measuring it. `pass` equals `full` by construction: a `partial` red line never passes."
+    "full": 6,
+    "partial": 5,
+    "none": 4,
+    "pass_rate": 0.4,
+    "note": "Bumped 2026-09-28 with spec 020 (J3): red line 5 went none → full, red line 10 went none → partial. `pass` moved 5 → 6 because red line 5 is now guarded by an executed test. **Red line 10 is deliberately `partial`, so it still does not count** — the mechanism exists and is tested, but no review page means the user has not yet faced the data, and `partial` never passes by construction. Two bookkeeping slips happened while writing this note and are recorded rather than quietly fixed: the previous breakdown read 2 / 8 when the measurement said 4 / 6, and the first draft of this bump read `partial 4 / none 5` because red line 10's move to `partial` was not carried through. Both were invisible to the gate because the pinning test only compared `pass` and `total`; it now compares all four counts."
   },
   "verifier_kinds": {
-    "static": "A rule in `.ai/checks/static/` (S-01..S-12). `eval` executes it now via `python -m checks --json` and requires the rule to have run (not skipped) with zero error findings.",
+    "static": "A rule in `.ai/checks/static/` (S-01..S-13). `eval` executes it now via `python -m checks --json` and requires the rule to have run (not skipped) with zero error findings.",
+    "test": "A `pytest` node id. `eval` RUNS it now and requires it to pass. Added 2026-09-28 (spec 020): red lines 5 and 10 are enforced by runtime behaviour — a blank outcome before the due date, a `reviews` table with no figure column — and neither is expressible as a static rule or a gate entry. A node that collects zero tests is a FAILURE (pytest exits 5), because a red line whose test silently vanished has not passed.",
     "gate": "A test enforced by a gate in `scripts/dev.py` CHECK. `eval` verifies the gate is in CHECK and that the named test still exists in source. `eval` does NOT execute it — that is the gate's job, every run."
   },
   "redlines": [
@@ -64,10 +65,19 @@
       "id": 5,
       "title": "过程分与结果分独立",
       "enforcement": "两张表 / 两组字段，不得合并为单一评分",
-      "coverage": "none",
-      "verifier": null,
-      "evidence": null,
-      "gap": "无检查。`reviews` 与 `decision_review_state` 两表都未建（D2 / J3 未实现），所以「不得合并」目前没有可被违反的对象。"
+      "coverage": "full",
+      "verifier": {
+        "kind": "test",
+        "node": "tests/unit/test_reviews.py::TestTheGateSurvivesBypassingTheDomain"
+      },
+      "also": [
+        {
+          "kind": "test",
+          "node": "tests/unit/test_reviews.py::TestTheFourQuadrants"
+        }
+      ],
+      "evidence": "`reviews` 的 `process_score` 与 `outcome` 是两组独立字段，宪法 5 允许的「两组字段」那一支；`reviews_not_scored_early_check` 让结果分在到期前**物理上无法写入**，所以两个分数不可能被合成一个 —— 没有可以合并的对象。变异 M2（把 `bad` 当成好结果）与 M1（3 分算好过程）均已被测试抓住。",
+      "gap": "无。API 与界面属切片 2，但红线 5 约束的是**模型**，模型已由迁移 0006 定死。"
     },
     {
       "id": 6,
@@ -113,10 +123,23 @@
       "id": 10,
       "title": "必须让用户面对不舒服的数据",
       "enforcement": "不美化、不打折；「坏决策 + 好结果」时不显示盈利数字",
-      "coverage": "none",
-      "verifier": null,
-      "evidence": null,
-      "gap": "无检查。「坏决策 + 好结果时隐藏盈利数字」是 J3 四象限的 UI 行为，四象限未实现。**注意**：这条与红线 5 共享同一个未实现依赖。"
+      "coverage": "partial",
+      "verifier": {
+        "kind": "test",
+        "node": "tests/unit/test_reviews.py::TestTheModelHoldsNoFigure"
+      },
+      "also": [
+        {
+          "kind": "test",
+          "node": "tests/unit/test_reviews.py::TestTheFourQuadrants::test_the_dangerous_quadrant_says_the_reason_does_not_hold"
+        },
+        {
+          "kind": "test",
+          "node": "tests/unit/test_reviews.py::TestTheFourQuadrants::test_every_quadrant_has_a_line_and_none_mentions_a_number"
+        }
+      ],
+      "evidence": "「坏决策+好结果时不显示盈利数字」**由数据模型保证而不是渲染时隐藏**：`reviews` 没有任何金额 / 收益率列（`TestTheModelHoldsNoFigure` 枚举真实列名，加回 `profit` 列即变红 —— 变异 M4 已确认），所以没有数字可泄漏到日志、导出或下一个 API 字段。「不美化」由 `Quadrant.DANGEROUS` 那句被强制住在领域层的文案承担，并被「文案里不得出现数字」这一条钉住。",
+      "gap": "**没有界面，所以用户还没有真正「面对」过这些数据。** 机制齐了（模型 + 判定 + 文案 + 测试），但红线 10 的落点是用户眼前那一屏 —— 复盘页属切片 2。所以标 `partial`，而 `partial` 按 T-19 永远不算通过。"
     },
     {
       "id": 11,

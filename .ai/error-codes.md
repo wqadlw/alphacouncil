@@ -141,7 +141,20 @@ class DataFetchError(RuntimeError): ...
 | `CARD_ALREADY_SCHEDULED` | error | 该卡已在复习队列上 —— 重复排程会把旧课的稳定性清零（K3） |
 | `CARD_TIMESTAMP_NOT_UTC` | error | 复习相关时间戳不是带时区的 UTC（K3；`fsrs` 本身也拒绝，但那条会以库内部错误的形式冒到 API） |
 
-### 2.5 `AGENT_*`
+### 2.6 `REVIEW_*`（决策复盘 / 四象限，J3）
+
+| code | severity | 含义 |
+|---|---|---|
+| `REVIEW_SCORE_INVALID` | error | 过程分不在 1..5，或复盘备注超长 —— **系统不会代填过程分**（红线 15） |
+| `REVIEW_NOT_DUE` | error | **结果分到期前被填写**（`项目总纲` P0-3 硬门禁；提前打分就是用结果污染决策评价） |
+| `REVIEW_NOTE_BLANK` | error | 复盘备注只给了空白字符 |
+| `REVIEW_STATE_MISSING` | error | 该决策没有复盘槽位，所以「是否已复盘」无解（不是分数错，是问题不同） |
+
+> **⭐ `REVIEW_NOT_DUE` 被挡了两次**：领域层给出这条码，`reviews_not_scored_early_check`
+> 在数据库里独立再挡一次 —— 后者连绕过领域层的写入也躲不过（宪法第零条 0.2）。
+> 测试 `TestTheGateSurvivesBypassingTheDomain` 走裸 SQL 证明第二次拦截真的生效。
+
+### 2.7 `AGENT_*`
 
 | code | severity | 含义 |
 |---|---|---|
@@ -149,7 +162,7 @@ class DataFetchError(RuntimeError): ...
 | `AGENT_DRAFT_NOT_COMMITTED` | info | 草稿未提交（正常流程） |
 | `AGENT_WRITE_DENIED` | error | 越权写入（**最高优先级缺陷**） |
 
-### 2.6 `MIGRATION_*` / `STORAGE_*`
+### 2.8 `MIGRATION_*` / `STORAGE_*`
 
 | code | severity | 含义 | `fix` |
 |---|---|---|---|
@@ -158,11 +171,17 @@ class DataFetchError(RuntimeError): ...
 | `STORAGE_DB_NEWER_THAN_APP` | error | 库版本 > 程序版本 | "**请升级程序**（不支持降级）" |
 | `STORAGE_DB_NO_UPGRADE_PATH` | error | 无迁移路径 | "该库版本无法升级到当前程序版本" |
 
-### 2.7 `CHECK_*`（检查脚本的诊断码）
+### 2.9 `CHECK_*`（检查脚本的诊断码）
 
-> **一条静态规则一个码**（`S-01` ~ `S-12`），外加两个**不属于任何单条规则**的运行器码。
+> **一条静态规则一个码**（`S-01` ~ `S-13`），外加两个**不属于任何单条规则**的运行器码。
 > 实现：`backend/checks/`（`checks/rules/<slug>.py` 的 `CODE` 常量）。
-> **`S-12` 保证本表与 `checks/registry.py` 双向一致** —— 文档列了但代码没实现、或代码实现了但文档没登记，都会让构建失败。
+> **`S-12` 保证 `.ai/checks/static/README.md` 与 `checks/registry.py` 双向一致** ——
+> 文档列了但代码没实现、或代码实现了但文档没登记，都会让构建失败。
+>
+> ⚠️ **`S-12` 看的是那份 README，不是本表。** 本表靠 `S-05` 守，但 `S-05` 只认
+> `error_codes.py` 里的 `ErrorCode` 枚举成员 —— `CHECK_*` 这批码**不在那个枚举里**，
+> 所以「规则加了、本表忘了登记」这类漂移没有任何检查看得见。
+> `S-13` 就是这么漏进来的（2026-09-28 补记）。**补规则时必须同时改本表。**
 
 | code | severity | 规则 | 含义 |
 |---|---|---|---|
@@ -178,6 +197,7 @@ class DataFetchError(RuntimeError): ...
 | `CHECK_PRINT_STATEMENT` | error | S-10 | 产品代码里出现 `print()`（宪法 7.4） |
 | `CHECK_BARE_EXCEPT` | error | S-11 | 裸 `except:` 或空 body 的 `except Exception:`（宪法 7.3） |
 | `CHECK_DOC_DRIFT` | error / warning | S-12 | `.ai/checks/static/README.md` 的规则清单与代码不一致 |
+| `CHECK_TOOL_ENCODING_UNGUARDED` | error | S-13 | 开发者工具会往控制台打印，却没先 `use_utf8()` —— 中文 Windows（GBK）上**打印即崩** |
 | `CHECK_TOOL_ENCODING_UNGUARDED` | error | S-13 | 开发者工具打印人类可读输出却没调 `use_utf8()`（回归 0004；cp936 控制台上会中途崩溃并把绿灯报成退出码 1） |
 | `CHECK_EXEMPTION_UNREASONED` | error | —（运行器） | `# noqa: S-xx` 没写理由 —— **豁免必须有理由** |
 | `CHECK_RUNNER_ERROR` | error | —（运行器） | 规则脚本自身崩溃 —— **崩溃与通过无法区分，必须报** |
@@ -185,7 +205,7 @@ class DataFetchError(RuntimeError): ...
 > ⚠️ **`CHECK_EXEMPTION_UNREASONED` 与 `CHECK_RUNNER_ERROR` 不归属任何单条规则**，
 > 因此它们的 `target` 指向脚本自身或那一行豁免注释，而不是产品代码。
 
-### 2.8 `WATCHLIST_*`
+### 2.10 `WATCHLIST_*`
 
 > 关注池（D1）的理由规则。**与 `DECISION_*` 分开** —— 两者形状相似但不是同一件事：
 > 一个守的是"已经发生的交易"，另一个守的是"还没有交易、只是先关注"。
@@ -210,7 +230,7 @@ class DataFetchError(RuntimeError): ...
 > `api/errors.py` 的 `_STATUS_BY_CODE` 里映射（其余一律 400）。这样同一个失败
 > 不会因为"哪一层先发现"而变成两种形状。
 
-### 2.9 `INSTRUMENT_*`
+### 2.11 `INSTRUMENT_*`
 
 > 关于**标的本身**，而不是用户与它的关系。实现：
 > `backend/src/alphacouncil/domain/instrument.py` +

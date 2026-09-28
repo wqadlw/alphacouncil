@@ -41,12 +41,26 @@ Two tiers of verifier, and the difference is not cosmetic:
 Claiming a ``gate`` tier is ``executed`` would be exactly the kind of
 overstatement this project keeps punishing, so the output labels them
 separately.
+
+``test``
+    A ``pytest`` node id. **Executed now**, by running that node — which is what
+    separates it from ``gate``: ``gate`` only proves the declaration has not rotted,
+    while ``test`` proves the red line holds *at the moment it is measured*.
+
+    Added 2026-09-28 with spec 020 (J3). Red lines 5 and 10 are enforced by
+    behaviour — a blank outcome before the due date, a ``reviews`` table with no
+    figure column — and neither is expressible as a static rule or a gate entry.
+    They were previously filed ``none`` with a ``gap`` saying so, which was honest
+    but wrong about *why*: the harness could not name the mechanism, not the
+    mechanism missing. Extending the instrument was cheaper than writing a fake
+    static check to satisfy it.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -58,6 +72,7 @@ from _console import use_utf8
 BACKEND = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND.parent
 REGISTRY = REPO_ROOT / ".ai" / "eval" / "redlines.json"
+_PY = str(Path(sys.executable))
 
 Verdict = Literal["pass", "fail"]
 
@@ -148,6 +163,54 @@ def _static_ok(check_id: str) -> tuple[bool, str]:
     return True, f"{check_id} ran clean"
 
 
+def _test_ok(spec: dict[str, Any]) -> tuple[bool, str]:
+    """Run a ``pytest`` node and report whether it passes **right now**.
+
+    Unlike the ``gate`` tier this does not merely check that a declaration has not
+    rotted; it executes the red line. That is the difference worth having, and it
+    is also why it is the honest tier for J3: "the process score and the outcome
+    score are independent" is a claim about runtime behaviour, and the only thing
+    that settles it is running the thing.
+
+    A pass needs **both** a zero exit code **and** a non-zero count of tests
+    actually run. The second half is not belt-and-braces: a verdict built on the
+    exit code alone would have to hardcode which code means "nothing ran", and
+    that answer is version-dependent — pytest 9.1.1 exits **4** (`USAGE_ERROR`,
+    "not found") for a node id that does not exist, not the 5 that older versions
+    used for ``NO_TESTS_COLLECTED``. Writing either constant in would have been a
+    guess dressed as knowledge, and a red line whose test silently stopped
+    existing is exactly the ``0002`` failure mode. So the count is read from the
+    run instead, and no version's exit-code table is assumed.
+    """
+    node = str(spec.get("node", ""))
+    if not node:
+        return False, "test verifier has no node id"
+    # `S603` is already ignored for `scripts/**` in pyproject (the argv is built
+    # from constants in this repo), so a `noqa` here would be dead weight that
+    # `RUF100` rightly flags.
+    proc = subprocess.run(
+        [_PY, "-m", "pytest", node, "-q", "--no-header", "-p", "no:cacheprovider"],
+        cwd=BACKEND,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    out = (proc.stdout or "").strip()
+    summary = out.splitlines()[-1].strip() if out else ""
+    ran = sum(
+        int(n)
+        for n, word in re.findall(
+            r"(\d+)\s+(passed|failed|error|errors|skipped|warnings?)", summary
+        )
+    )
+    if proc.returncode != 0 or ran == 0:
+        why = summary or f"exit {proc.returncode}"
+        return False, f"{node} did not pass ({why}) — a red line whose test vanished has not passed"
+    return True, f"{node} passed just now ({ran} tests)"
+
+
 def _gate_ok(spec: dict[str, Any]) -> tuple[bool, str]:
     """Is a gate-backed declaration still true?
 
@@ -201,6 +264,9 @@ def evaluate() -> tuple[list[Result], dict[str, Any]]:
         kind = verifier["kind"]
         if kind == "static":
             ok, why = _static_ok(verifier["check"])
+            tier = "executed"
+        elif kind == "test":
+            ok, why = _test_ok(verifier)
             tier = "executed"
         elif kind == "gate":
             ok, why = _gate_ok(verifier)

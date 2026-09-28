@@ -252,6 +252,92 @@ class TestGateVerdictRules:
         assert ok is True, why
 
 
+class TestTheTestTier:
+    """`test` verifiers are executed, so they have to be honest about failure.
+
+    The distinction from `gate` matters: `gate` proves a declaration has not
+    rotted, `test` proves the red line holds *now*. That only counts if the
+    failure modes are all failures — including the quiet one.
+    """
+
+    def test_a_live_node_passes(self) -> None:
+        ok, why = runner._test_ok({"node": "tests/unit/test_reviews.py::TestTheModelHoldsNoFigure"})
+        assert ok is True, why
+
+    def test_a_node_that_collects_nothing_is_a_failure(self) -> None:
+        """The dangerous case: nothing ran, so nothing failed.
+
+        A verdict built on "did anything fail?" would call a deleted red line
+        green — the `0002` failure mode (a ledger nothing parses) in a new hat.
+        Note the exit code is **not** asserted here: pytest 9.1.1 uses 4
+        (`USAGE_ERROR`) for a missing node, not the 5 older versions used. The
+        implementation reads the test count instead of trusting a constant, and
+        this test checks the behaviour that makes that necessary.
+        """
+        ok, why = runner._test_ok(
+            {"node": "tests/unit/test_reviews.py::AClassThatWasRenamed"}
+        )
+        assert ok is False
+        assert "did not pass" in why
+
+    def test_a_failing_node_is_a_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Simulated rather than real: there is no failing test to point at.
+
+        Writing one on purpose would mean committing a red test, and the `test`
+        gate runs the whole unit suite. Patched on `subprocess.run` itself rather
+        than on ``runner.subprocess`` — reaching through the module would need a
+        re-export the type checker rightly refuses to grant.
+        """
+
+        class Result:
+            returncode = 1
+            stdout = "1 failed, 3 passed in 0.10s"
+
+        def fake_run(*_args: object, **_kwargs: object) -> Result:
+            return Result()
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+        ok, why = runner._test_ok({"node": "tests/unit/test_reviews.py::Whatever"})
+        assert ok is False
+        assert "1 failed" in why
+
+    def test_a_run_that_reports_nothing_is_rejected_even_on_exit_zero(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The precise trap: exit 0, no failures, and no tests.
+
+        This is why the count is read from the output rather than inferred from
+        the exit code. A fake exit 0 with an empty summary must not be a pass.
+        """
+
+        class Result:
+            returncode = 0
+            stdout = "no tests ran in 0.01s"
+
+        def fake_run(*_args: object, **_kwargs: object) -> Result:
+            return Result()
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+        ok, _ = runner._test_ok({"node": "tests/unit/test_reviews.py::Gone"})
+        assert ok is False
+
+    def test_a_verifier_with_no_node_is_rejected(self) -> None:
+        ok, why = runner._test_ok({})
+        assert ok is False
+        assert "no node id" in why
+
+    def test_the_registry_uses_the_test_tier_for_red_lines_5_and_10(self) -> None:
+        """The tier is only worth having if something actually declares it."""
+        data = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+        by_id = {entry["id"]: entry for entry in data["redlines"]}
+        for redline_id in (5, 10):
+            entry = by_id[redline_id]
+            assert entry["verifier"]["kind"] == "test", redline_id
+            assert entry["verifier"]["node"], redline_id
+
+
 class TestPartialNeverPasses:
     def test_a_partial_entry_is_forced_to_fail(self, registry: dict[str, Any]) -> None:
         """The invariant, exercised directly rather than through the whole run.
@@ -293,6 +379,15 @@ class TestTheBaselineIsEarned:
             "deliberately; if it is a break, fix the verifier."
         )
         assert counts["total"] == baseline["total"]
+        # The coverage breakdown used to go unchecked, and it rotted: the baseline
+        # said `partial 2 / none 8` while the measurement said `4 / 6`, and the
+        # only reason it was ever noticed is that someone read the numbers. A
+        # number nobody checks is a number that drifts (constitution 8.3).
+        for key in ("full", "partial", "none"):
+            assert counts[key] == baseline[key], (
+                f"{key} is {counts[key]}, baseline says {baseline[key]} "
+                f"({baseline['date']}) — bump the baseline deliberately"
+            )
 
     def test_the_baseline_is_not_a_claim_of_completion(self) -> None:
         data = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))

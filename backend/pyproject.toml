@@ -120,6 +120,19 @@ ignore = [
     "RUF001", # fixtures carry Chinese UI strings on purpose
     "RUF002",
 ]
+# The one module that carries product copy on purpose, and it is a **new
+# precedent** (2026-09-28, spec 020) — no other `src/` file holds CJK literals,
+# because display wording has always lived in `frontend/`.
+#
+# `QuadrantJudgement.guidance()` is here rather than in `ReviewPage.tsx` because
+# the dangerous quadrant's sentence is **product policy, not presentation**:
+# red line 10 forbids 美化 here, and a UI-authored version of that warning is one
+# careless PR away from "congratulations, good call!". Putting it next to the
+# rule makes the wording reviewable in the same diff as the rule, and gives
+# `test_every_quadrant_has_a_line_and_none_mentions_a_number` something to hold.
+# Narrow on purpose: `RUF001` stays on everywhere else in `src/`, so a lookalike
+# homoglyph in a real identifier is still caught.
+"src/alphacouncil/domain/review.py" = ["RUF001", "RUF002"]
 "src/alphacouncil/__main__.py" = ["T201"]  # CLI entry point may print
 # Developer tooling: printing is the interface, and the subprocess argv is
 # built from constants in this repo, never from user input.

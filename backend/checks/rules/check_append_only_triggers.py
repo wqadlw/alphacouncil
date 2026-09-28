@@ -73,6 +73,13 @@ META = CheckMeta(
 APPEND_ONLY_TABLES = frozenset(
     {
         "decisions",
+        # reviews (J3, spec 020; already required by constitution 5.4.1 as "the
+        # review conclusions", implemented for real in migration 0006). Commented
+        # here because the name collides with `card_reviews` below, and a decision
+        # review is the only place the user records how they reasoned about an
+        # outcome — editing one edits the evidence that the process was ever
+        # honestly graded. ADR-0014: it is a separate table precisely so it never
+        # writes back onto `decisions`.
         "reviews",
         "thesis_versions",
         "audit_log",

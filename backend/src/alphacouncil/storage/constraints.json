@@ -160,6 +160,32 @@
         "card_reviews_from_state_check": "enum",
         "card_reviews_to_state_check": "enum"
       }
+    },
+    "decision_review_state": {
+      "append_only": false,
+      "constraints": {
+        "decision_review_state_due_required_check": "required",
+        "decision_review_state_reviewed_blank_or_real_check": "conditional_required",
+        "decision_review_state_created_at_check": "identity",
+        "decision_review_state_updated_at_check": "identity",
+        "decision_review_state_not_reviewed_early_check": "comparison"
+      }
+    },
+    "reviews": {
+      "append_only": true,
+      "constraints": {
+        "reviews_id_check": "identity",
+        "reviews_decision_required_check": "required",
+        "reviews_process_score_check": "comparison",
+        "reviews_outcome_shape_check": "conditional_required",
+        "reviews_not_scored_early_check": "comparison",
+        "reviews_outcome_needs_reviewed_at_check": "conditional_required",
+        "reviews_due_snapshot_required_check": "required",
+        "reviews_note_shape_check": "conditional_required",
+        "reviews_note_length_check": "length",
+        "reviews_reviewed_at_check": "identity",
+        "reviews_created_at_check": "identity"
+      }
     }
   }
 }

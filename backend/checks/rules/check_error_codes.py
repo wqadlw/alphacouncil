@@ -67,8 +67,14 @@ ENUM_CLASS = "ErrorCode"
 #: `DATA_SOURCE` precedes `DATA` so the alternation cannot stop short on
 #: `DATA_SOURCE_RATE_LIMITED`, and the list is otherwise alphabetical so a
 #: missing prefix is visible rather than lost in the middle.
+#:
+#: ⚠️ **Adding a prefix here is a two-place edit**, and getting it wrong is quiet:
+#: a new `REVIEW_*` code that is declared and documented but absent from this
+#: pattern simply does not match, so the document row is invisible and the check
+#: reports all four codes as unregistered (2026-09-28, spec 020). The failure is
+#: loud, at least — which is the only reason it was found the same day.
 CODE_PATTERN = re.compile(
-    r"\b(?:AGENT|CARD|CHECK|CONTRACT|DATA_SOURCE|DATA|DECISION|INSTRUMENT|MIGRATION|STORAGE|WATCHLIST)"
+    r"\b(?:AGENT|CARD|CHECK|CONTRACT|DATA_SOURCE|DATA|DECISION|INSTRUMENT|MIGRATION|REVIEW|STORAGE|WATCHLIST)"
     r"_[A-Z0-9_]+\b"
 )
 _BACKTICKED = re.compile(r"`([^`\n]+)`")

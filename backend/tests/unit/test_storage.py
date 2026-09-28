@@ -82,12 +82,15 @@ CATEGORY_MARKERS: dict[str, tuple[tuple[str, ...], ...]] = {
     # the two are separate substrings, which is why both appear here.
     "conditional_required": (("IS NOT NULL",), ("IS NULL",)),
     "required": (("trim(",),),
-    # A range or an ordering between two columns. Added 2026-09-28 with K3:
-    # `card_schedule.fsrs_card_id > 0` and `updated_at >= enrolled_at` are real
-    # constraints that match none of the six shapes above, and filing them under
-    # a near-miss category would have made the ledger *wrong* rather than merely
-    # incomplete — which is worse than a gap, because a gap is visible.
-    "comparison": ((">=",), (" > ",)),
+    # A range or an ordering. Added 2026-09-28 with K3: `card_schedule.fsrs_card_id > 0`
+    # and `updated_at >= enrolled_at` are real constraints that match none of the six
+    # shapes above, and filing them under a near-miss category would have made the
+    # ledger *wrong* rather than merely incomplete — which is worse than a gap,
+    # because a gap is visible.
+    # `BETWEEN` joined it with 0006 (`reviews.process_score BETWEEN 1 AND 5`): a
+    # range between two constants is the same kind of statement as an ordering
+    # between two columns — neither says what the value *is*, only where it sits.
+    "comparison": ((">=",), (" > ",), ("BETWEEN",)),
 }
 
 #: ``required`` is the one category that must *not* mention NULL: it says the
@@ -377,11 +380,14 @@ class TestTheLedgerMatchesTheSchema:
         """Guards the reader: if the extractor found nothing, the two set
         comparisons above would agree on two empty sets and pass."""
         bodies = {name for ddl in _table_ddl().values() for name in _constraint_bodies(ddl)}
-        # 4 tables from 0001 + market_cache from 0002 + cards, card_symbols from 0003
-        # = 28 + 14 + 3 = 45 — the number is written dead on purpose
-        # (constitution 8.3): a new migration changes it, and that is exactly
-        # when a human should look.
-        assert len(bodies) == 71, f"expected 71 named constraints, found {len(bodies)}"
+        # Written dead on purpose (constitution 8.3): a new migration changes it,
+        # and that is exactly when a human should look. The running total is
+        # written out so the jump can be attributed to a migration rather than
+        # merely admired — the arithmetic note that used to sit here had itself
+        # gone stale, which is the failure this file exists to prevent:
+        #   0001 +24 = 24 · 0002 +4 = 28 · 0003 +17 = 45 · 0004 +7 = 52
+        #   0005 +19 = 71 · 0006 +16 = 87
+        assert len(bodies) == 87, f"expected 87 named constraints, found {len(bodies)}"
 
     def test_every_constraint_uses_a_declared_category(self) -> None:
         for table, constraints in _ledger_constraints().items():
@@ -457,9 +463,18 @@ class TestAppendOnlyIsDeclaredOnceAndEnforcedOnce:
         assert declared == existing
 
     def test_the_static_rule_still_expects_the_tables_that_do_not_exist_yet(self) -> None:
-        """Documents the gap rather than letting it look like agreement."""
+        """Documents the gap rather than letting it look like agreement.
+
+        ``reviews`` left this set on 2026-09-28 (migration 0006, spec 020) — it had
+        been listed as append-only since the rule was written, because constitution
+        §5.4.1 names "the review conclusions" and ADR-0014 designs the table. **The
+        ledger had been right about a table that did not exist yet**, which is the
+        whole reason a forward declaration is worth keeping: it records the intent
+        before there is code to check, so the rule cannot be quietly narrowed later.
+        ``thesis_versions`` is still outstanding (ADR-0013).
+        """
         missing = APPEND_ONLY_TABLES - set(_table_ddl())
-        assert missing == {"reviews", "thesis_versions"}
+        assert missing == {"thesis_versions"}
 
 
 def _is_append_only(entry: dict[str, Any]) -> bool:

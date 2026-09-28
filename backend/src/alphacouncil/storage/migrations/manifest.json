@@ -49,6 +49,14 @@
       "down": "0005_card_scheduling.down.sql",
       "destructive_down": true,
       "down_note": "删除 card_schedule（每张卡的当前排程）与 card_reviews（全部复习流水）。cards / card_events 不受影响，但「这张卡什么时候该复习、复习过几次」会永久丢失。要退回请从快照恢复，不要跑 down.sql。"
+    },
+    {
+      "version": 6,
+      "name": "review_quadrants",
+      "up": "0006_review_quadrants.up.sql",
+      "down": "0006_review_quadrants.down.sql",
+      "destructive_down": true,
+      "down_note": "删除 reviews（全部复盘流水）与 decision_review_state（到期与已复盘状态）。decisions 不受影响 —— 用户当初写下的原始记录还在，但「我复盘过」这件事没了，而那正是这两张表存在的理由。要退回请从快照恢复，不要跑 down.sql。"
     }
   ]
 }
