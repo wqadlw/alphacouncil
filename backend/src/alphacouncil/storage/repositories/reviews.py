@@ -225,7 +225,34 @@ def due_reviews(
     as_of: datetime,
     limit: int = 50,
 ) -> tuple[ReviewStateRow, ...]:
-    """Decisions whose review has come round, oldest due first.
+    """Decisions whose review has come round **and has not been done**, oldest first.
+
+    ⭐ **The ``reviewed_at IS NULL`` filter is a defect fix (regression 0007), and
+    the reason it was missing is worth keeping.** The card queue needs no such
+    filter, because FSRS pushes a reviewed card's ``due_at`` forward — the date
+    moves, so the row stops matching. A decision's ``due_at`` is set once, when
+    the user says when they want to come back, and **nothing ever moves it**. So
+    without this filter a reviewed decision stayed in the queue for ever: the
+    count on the today page read "1 条决策" before *and* after the review, and
+    would keep saying it for ever after.
+
+    That is worse than a wrong number. A line that still claims there is work after
+    the work is done teaches the reader to ignore the one line on the default page
+    that is sometimes true — the same failure the today page already guards against
+    in the other direction, where a zero count renders nothing.
+
+    **The filter is on the completion stamp, not on "has a review row".** A
+    process score alone leaves ``reviewed_at`` NULL, because a half-review is a
+    legitimate state and outstanding work must not hide behind a row the reader
+    already wrote.
+
+    ⚠️ **Consequence worth stating: a decision is reviewed once.** Nothing
+    re-queues it — there is no reschedule for ``decision_review_state``, and
+    inventing a second interval would be inventing policy (spec 020 §六, and the
+    same reason the "three days overdue" threshold was left undefined in spec 023).
+    Looking at a decision again means a *new* decision, or a lesson that becomes a
+    card with its own schedule (J5). If a second review is ever wanted, it needs a
+    due date that moves, and an ADR.
 
     ``as_of`` is injected, so the boundary is testable and a replay answers the
     same question. Ordered by due date alone — same reasoning as the K3 queue
@@ -234,7 +261,7 @@ def due_reviews(
     """
     rows = connection.execute(
         "SELECT decision_id, due_at, reviewed_at, created_at, updated_at "
-        "FROM decision_review_state WHERE due_at <= ? "
+        "FROM decision_review_state WHERE due_at <= ? AND reviewed_at IS NULL "
         "ORDER BY due_at ASC, decision_id ASC LIMIT ?",
         (as_of.isoformat(), limit),
     ).fetchall()
