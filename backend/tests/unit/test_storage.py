@@ -555,15 +555,21 @@ class TestTheLedgerMatchesTheSchema:
         # gone stale, which is the failure this file exists to prevent:
         #   0001 +24 = 24 · 0002 +4 = 28 · 0003 +17 = 45 · 0004 +7 = 52
         #   0005 +19 = 71 · 0006 +16 = 87
-        #   0007 +19 = 106  (spec 026 · notes +19 = notes 8 · note_note_symbols 3
+        #   0007 +19 = 106  (spec 026 · notes 8 · note_note_symbols 3
         #                   · note_tags 4 · note_links 4)
+        #   0008 +0  = 106  (spec 027 · notes_fts is a virtual table and cannot
+        #                   carry a CHECK, so it adds no *named* constraints at all
+        #                   — it does add five shadow tables, which is why the
+        #                   declared-table filter exists)
+        #   0009 +21 = 127  (spec 028 · note_schedule 8 · note_reviews 13, of which
+        #                   two pairs are the note-specific `reset` guards)
         #
         # 0007 also **widened the category set** by two — `forbidden_value` and
         # `referential` — because two of its constraints match none of the
         # original seven. Filing them under a near-miss would have made the
         # ledger wrong rather than merely incomplete, which is the worse failure
         # precisely because it is invisible.
-        assert len(bodies) == 106, f"expected 106 named constraints, found {len(bodies)}"
+        assert len(bodies) == 127, f"expected 127 named constraints, found {len(bodies)}"
 
     def test_every_constraint_uses_a_declared_category(self) -> None:
         for table, constraints in _ledger_constraints().items():

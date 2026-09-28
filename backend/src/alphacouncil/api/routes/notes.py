@@ -28,14 +28,15 @@ record.
 
 from __future__ import annotations
 
-from datetime import date
-from typing import Annotated
+from datetime import date, datetime
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi import status as http_status
 from pydantic import BaseModel, ConfigDict, Field
 
 from alphacouncil.api.deps import DatabaseConnection
+from alphacouncil.core.time import utc_millis
 from alphacouncil.domain.instrument import parse_ticker
 from alphacouncil.domain.note import (
     MAX_BODY_CHARS,
@@ -45,10 +46,23 @@ from alphacouncil.domain.note import (
     NoteDraft,
     NoteNotFoundError,
 )
+from alphacouncil.domain.note_recall import NoteNotScheduledError
+from alphacouncil.domain.scheduling import ReviewRating
 from alphacouncil.storage.db import transaction
+from alphacouncil.storage.repositories import note_recall as recall_repository
 from alphacouncil.storage.repositories import notes as repository
 
 router = APIRouter(prefix="/api/v1/notes", tags=["notes"])
+
+
+def _now() -> datetime:
+    """The current moment, as an aware UTC datetime.
+
+    Named so the queue's "what is due?" is visibly a question about *now* at the
+    call site, rather than a `datetime.now(UTC)` buried in a default argument where
+    it would be evaluated once and shared.
+    """
+    return datetime.fromisoformat(utc_millis().replace("Z", "+00:00"))
 
 
 class NoteLinkRead(BaseModel):
@@ -208,6 +222,60 @@ def list_tags(connection: DatabaseConnection) -> list[str]:
     return repository.all_tags(connection)
 
 
+# ⭐ These two models are declared **above** the handlers that annotate with
+# them, and that is load-bearing too. `from __future__ import annotations` makes
+# every annotation a string, and FastAPI resolves a return type when it
+# *decorates* the function — so a `list[NoteScheduleRead]` pointing at a class
+# further down raises `TypeAdapter[...ForwardRef...] is not fully defined`. The
+# first version of the reorder moved the handler alone and hit exactly that.
+
+class NoteScheduleRead(BaseModel):
+    note_id: str
+    state: str
+    due_at: str
+    enrolled_at: str
+    updated_at: str
+
+
+class NoteReviewRead(BaseModel):
+    id: str
+    note_id: str
+    outcome: str
+    rating: str | None
+    reviewed_at: str
+    duration_ms: int | None
+    from_due_at: str
+    to_due_at: str
+    from_state: str
+    to_state: str
+
+
+# ⭐ This handler is declared **above** `/{note_id}` on purpose, and that is
+# load-bearing rather than cosmetic: FastAPI matches in declaration order, so
+# `/{note_id}` declared first swallows `/due` and the queue answers
+# 「没有这条笔记：due」. That is what happened, and  # noqa: RUF003
+# `test_the_due_route_is_not_captured_by_the_note_id_route` failed on its first
+# run to say so. The card queue hit the same trap and answered it with a
+# second prefix (`/api/v1/card-reviews`); a prefix is not needed here because
+# the noun is already correct, so the constraint is kept local to the handler
+# it constrains.
+@router.get("/due", summary="The notes you asked to be brought back to")
+def due_notes(
+    connection: DatabaseConnection,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> list[NoteScheduleRead]:
+    """The queue, oldest due first.
+
+    ⭐ **No count is returned.** The product's rule is 「一句陈述，无推送、无红点、
+    无催促词」, and a length here would become the number the reader is trying to
+    clear. The page says what is due; it does not grade how much of it is left.
+    """
+    return [
+        _schedule_read(row)
+        for row in recall_repository.due_notes(connection, as_of=_now(), limit=limit)
+    ]
+
+
 @router.get("/{note_id}", summary="One note")
 def get_note(note_id: str, connection: DatabaseConnection) -> NoteRead:
     try:
@@ -255,3 +323,125 @@ def add_link(
             connection, note_id, Link(to_kind=payload.to_kind, to_id=payload.to_id)
         )
         return _to_read(repository.get_by_id(connection, note_id))
+
+
+# ── the recall queue (spec 028) ─────────────────────────────────────────────
+#
+# ⭐ **`/due` is declared before `/{note_id}`**, and that ordering is the whole
+# reason this block sits here rather than at the end of the file. FastAPI matches
+# in declaration order, so `GET /due` registered after `GET /{note_id}` is
+# captured by it and answers 404 with a message about a note whose id is "due".
+# The card router hit precisely this and gave its queue a separate prefix
+# (`reviews.py`); here the prefix is already right, so the fix is ordering — and
+# `test_the_due_route_is_not_captured_by_the_note_id_route` is what keeps it.
+
+
+class NoteReviewRequest(BaseModel):
+    """A rating for a re-read.
+
+    ⭐ For a note `again` means 「**我的想法已经变了**」, not 「我忘了」. The wire
+    format cannot express the difference — it is the same string — so the wording
+    that carries it lives in the UI, and `notesContract.test.ts` pins that the
+    client is given something to say other than "again".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    rating: ReviewRating
+    duration_ms: int | None = Field(default=None, gt=0)
+
+
+class DeferRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    days: int = Field(default=7, gt=0, le=90)
+
+
+def _schedule_read(row: Any) -> NoteScheduleRead:
+    return NoteScheduleRead(
+        note_id=row.note_id,
+        state=row.state.value,
+        due_at=row.due_at.isoformat(),
+        enrolled_at=row.enrolled_at.isoformat(),
+        updated_at=row.updated_at.isoformat(),
+    )
+
+
+def _review_read(row: Any) -> NoteReviewRead:
+    return NoteReviewRead(
+        id=row.id,
+        note_id=row.note_id,
+        outcome=row.outcome.value,
+        rating=None if row.rating is None else row.rating.value,
+        reviewed_at=row.reviewed_at.isoformat(),
+        duration_ms=row.duration_ms,
+        from_due_at=row.from_due_at.isoformat(),
+        to_due_at=row.to_due_at.isoformat(),
+        from_state=row.from_state.value,
+        to_state=row.to_state.value,
+    )
+
+
+@router.post("/{note_id}/schedule", summary="Ask for a note to come back")
+def enroll(note_id: str, connection: DatabaseConnection) -> NoteScheduleRead:
+    """Put a note on the recall queue.
+
+    ⭐ **Explicit, and never automatic.** Enrolling everything the reader ever
+    wrote builds a backlog nobody drains.
+
+    ⭐ The note is looked up **first** so a bad id answers 404. Without it the
+    foreign key does the refusing, and a caller mistake surfaces as a
+    ``sqlite3.IntegrityError`` — a 500 for something it got wrong, and a stack
+    trace naming a constraint instead of the note.
+    """
+    try:
+        repository.get_by_id(connection, note_id)
+    except NoteNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    with transaction(connection):
+        row = recall_repository.enroll(connection, note_id)
+    return _schedule_read(row)
+
+
+@router.get("/{note_id}/schedule", summary="One note's schedule")
+def read_schedule(note_id: str, connection: DatabaseConnection) -> NoteScheduleRead:
+    try:
+        return _schedule_read(recall_repository.get_schedule(connection, note_id))
+    except NoteNotScheduledError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/{note_id}/reviews", summary="Everything that happened to a note's schedule")
+def read_reviews(note_id: str, connection: DatabaseConnection) -> list[NoteReviewRead]:
+    """The history, oldest first — **including the resets**.
+
+    This is the function that answers 「我复习过好几次，为什么今天又来?」, so a
+    rewrite that restarted the schedule is in it rather than invisible.
+    """
+    return [_review_read(row) for row in recall_repository.list_reviews(connection, note_id)]
+
+
+@router.post("/{note_id}/review", summary="Record a re-read")
+def review(
+    note_id: str, payload: NoteReviewRequest, connection: DatabaseConnection
+) -> NoteReviewRead:
+    """Record a re-read and move the schedule. One transaction, both or neither."""
+    with transaction(connection):
+        row = recall_repository.record_review(
+            connection, note_id, payload.rating, duration_ms=payload.duration_ms
+        )
+    return _review_read(row)
+
+
+@router.post("/{note_id}/defer", summary="Postpone: 我的想法还没定")
+def defer(
+    note_id: str, payload: DeferRequest, connection: DatabaseConnection
+) -> NoteReviewRead:
+    """Postpone a note without touching its memory.
+
+    ⭐ 「还没想清楚」 is not a failure. A note pushed three times must not come back
+    angrier each time, so ``state_json`` is written back byte-identical.
+    """
+    with transaction(connection):
+        row = recall_repository.defer(connection, note_id, days=payload.days)
+    return _review_read(row)

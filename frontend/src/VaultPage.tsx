@@ -38,16 +38,19 @@
  * queryable; the panels are not built. See `.ai/specs/026-knowledge-vault/spec.md` §6.
  */
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   addNoteTag,
   createNote,
+  enrollNote,
   listNoteTags,
   listNotes,
   type Note,
   type NoteDraft,
+  readNoteSchedule,
   removeNoteTag,
 } from './notes'
+import RecallView from './components/knowledge/RecallView'
 import { displayCode, formatMoment } from './format'
 import { ApiError } from './api'
 import { Badge, Button, Input, Rule, Textarea } from './components/ui'
@@ -55,12 +58,16 @@ import { DataTable, type Column } from './components/data/DataTable'
 import { useResource } from './useResource'
 
 /** The three things a note may be, in the order a reader looks for them. */
-type View = 'notes' | 'cards' | 'all'
+type View = 'notes' | 'cards' | 'all' | 'recall'
 
 const VIEWS: { key: View; label: string }[] = [
   { key: 'all', label: '全部' },
   { key: 'notes', label: '笔记' },
   { key: 'cards', label: '卡片' },
+  // ⭐ A filter, not a route. The queue is notes; the vault is where notes live.
+  // A separate `#/recall` would split one subject across two URLs and two nav
+  // entries, and the nav is deliberately count-free and short.
+  { key: 'recall', label: '该复习' },
 ]
 
 export default function VaultPage() {
@@ -215,7 +222,9 @@ export default function VaultPage() {
         />
       </div>
 
-      {notes.loading ? (
+      {view === 'recall' ? (
+        <RecallView onDone={() => void notes.reload()} />
+      ) : notes.loading ? (
         <p className="px-4 py-3 text-[13px] text-ink-faint">读取中…</p>
       ) : (
         <>
@@ -460,10 +469,37 @@ function CardList() {
 function NoteDetail({ note, onChanged }: { note: Note; onChanged: () => void }) {
   const [newTag, setNewTag] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // `null` = not asked yet, `false` = not on the queue, `true` = on it. Three
+  // states because "we have not looked" and "it is not enrolled" call for
+  // different copy, and collapsing them means showing a button that then fails.
+  const [enrolled, setEnrolled] = useState<boolean | null>(null)
 
   const refresh = useCallback(async () => {
     onChanged()
   }, [onChanged])
+
+  useEffect(() => {
+    // Asking whether a note is on the queue is a read, and the answer decides
+    // which button the reader sees, so it happens when the note changes rather
+    // than on every render.
+    let live = true
+    void readNoteSchedule(note.id)
+      .then(() => live && setEnrolled(true))
+      .catch(() => live && setEnrolled(false))
+    return () => {
+      live = false
+    }
+  }, [note.id])
+
+  async function enrol() {
+    setError(null)
+    try {
+      await enrollNote(note.id)
+      setEnrolled(true)
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : '加入复习队列失败。')
+    }
+  }
 
   async function addTag() {
     if (newTag.trim() === '') return
@@ -551,6 +587,34 @@ function NoteDetail({ note, onChanged }: { note: Note; onChanged: () => void }) 
             ))}
           </p>
         ) : null}
+
+        <div className="mt-3 border-t border-rule-soft pt-2">
+          {/*
+            ⭐ **Enrolment is explicit, so the control lives here.** The spec's
+            reasoning: enrolling every note the reader ever wrote builds a backlog
+            nobody drains, and 「你欠 N 条」 is the feeling the red lines reject.
+
+            Two things this control deliberately lacks: a count of notes *not* yet
+            enrolled (the vault never computes one, because computing it would
+            mean inventing a tally in order to refuse to show it), and an
+            "enrol all" (which would undo the per-note decision the design is for).
+          */}
+          {enrolled === null ? (
+            <span className="text-[12px] text-ink-faint">在查它是不是在队列上…</span>
+          ) : enrolled ? (
+            <p className="text-[12px] text-ink-soft" data-testid="note-enrolled">
+              这条在复习队列上 —— 到时候它会自己回来找你。
+            </p>
+          ) : (
+            <Button
+              size="sm"
+              onClick={() => void enrol()}
+              data-testid="note-enrol"
+            >
+              到时候提醒我再读一遍
+            </Button>
+          )}
+        </div>
 
         {error ? <p className="mt-1 text-[12px] text-[color:var(--color-up)]">{error}</p> : null}
       </div>

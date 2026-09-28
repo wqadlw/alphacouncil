@@ -73,6 +73,14 @@
       "down": "0008_notes_search.down.sql",
       "destructive_down": false,
       "down_note": "删除 notes_fts 全文索引与它的三个同步触发器。**这是派生索引，每个字节都能从 notes 重新算出来，用户写下的文字一个字都不会少** —— 与 0007 不同，那一条 down 会删掉笔记本身。要重建索引：INSERT INTO notes_fts(note_id, title, body) SELECT id, title, body FROM notes"
+    },
+    {
+      "version": 9,
+      "name": "note_schedule",
+      "up": "0009_note_schedule.up.sql",
+      "down": "0009_note_schedule.down.sql",
+      "destructive_down": true,
+      "down_note": "删除 note_schedule（每条笔记的当前排程）与 note_reviews（全部重读 / 评分 / 推迟 / 重写流水）。**notes / note_tags / note_note_symbols / note_links 全部不受影响 —— 笔记本身一个字都不会少**，与 0008 不同，那一条丢的只是可重建的派生索引。丢的是「笔记的复习史」，而学习的尝试史就是这个产品本身。要退回请从快照恢复，不要跑 down.sql。"
     }
   ]
 }

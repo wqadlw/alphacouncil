@@ -130,3 +130,89 @@ export interface VaultCard {
   priority: number
   created_at: string
 }
+
+/* ── the recall queue (spec 028) ───────────────────────────────────────────
+ *
+ * ⭐ **The queue carries no length, and this client never asks for one.** The
+ * product's rule is 「一句陈述，无推送、无红点、无催促词」, and a count is the one
+ * number a reader could start trying to clear. The endpoint returns a bare array,
+ * so there is no field to reach for.
+ */
+
+/**
+ * How well the note still holds up.
+ *
+ * ⭐ **`again` does not mean 「我忘了」.** For a *card* it does — the claim could
+ * not be recalled. For a *note* it means **「我的想法已经变了」**, and that is the
+ * most valuable answer this product can get: it says a note has been overtaken by
+ * its own author's thinking, which is exactly the moment it should be rewritten,
+ * marked, or let converge.
+ *
+ * The wire format cannot carry that difference — both are `"again"` — so it has to
+ * be said in the UI. Dressing it up as a failure would throw away the best
+ * feedback the reader gives.
+ */
+export type ReviewRating = 'again' | 'hard' | 'good' | 'easy'
+
+export interface NoteSchedule {
+  note_id: string
+  state: 'learning' | 'review' | 'relearning' | 'deferred'
+  due_at: string
+  enrolled_at: string
+  updated_at: string
+}
+
+export interface NoteReview {
+  id: string
+  note_id: string
+  outcome: 'reviewed' | 'deferred' | 'reset'
+  rating: ReviewRating | null
+  reviewed_at: string
+  duration_ms: number | null
+  from_due_at: string
+  to_due_at: string
+  from_state: string
+  to_state: string
+}
+
+/** The queue. A bare list, oldest due first — no count, by design. */
+export function listDueNotes(): Promise<NoteSchedule[]> {
+  return request<NoteSchedule[]>('/api/v1/notes/due')
+}
+
+export function enrollNote(id: string): Promise<NoteSchedule> {
+  return request<NoteSchedule>(`/api/v1/notes/${id}/schedule`, { method: 'POST' })
+}
+
+export function readNoteSchedule(id: string): Promise<NoteSchedule> {
+  return request<NoteSchedule>(`/api/v1/notes/${id}/schedule`)
+}
+
+/**
+ * The whole history, including the resets.
+ *
+ * ⭐ This is what answers 「我复习过好几次，为什么今天又来?」 — a rewrite restarts
+ * the schedule, and without a row for it the question has no answer.
+ */
+export function listNoteReviews(id: string): Promise<NoteReview[]> {
+  return request<NoteReview[]>(`/api/v1/notes/${id}/reviews`)
+}
+
+export function reviewNote(
+  id: string,
+  rating: ReviewRating,
+  durationMs?: number,
+): Promise<NoteReview> {
+  return request<NoteReview>(`/api/v1/notes/${id}/review`, {
+    method: 'POST',
+    body: JSON.stringify({ rating, duration_ms: durationMs ?? null }),
+  })
+}
+
+/** Postpone: 「我的想法还没定」. Touches no memory strength. */
+export function deferNote(id: string, days = 7): Promise<NoteReview> {
+  return request<NoteReview>(`/api/v1/notes/${id}/defer`, {
+    method: 'POST',
+    body: JSON.stringify({ days }),
+  })
+}

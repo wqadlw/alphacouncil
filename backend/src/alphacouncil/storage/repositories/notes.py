@@ -47,7 +47,12 @@ from alphacouncil.domain.note import (
 )
 from alphacouncil.models.market import Market, Symbol
 from alphacouncil.storage.db import require_open_transaction
-from alphacouncil.storage.repositories import instruments
+
+# ⭐ Imported here, not lazily inside the function, so the seam is visible at
+# the top of the file: editing a note on the recall queue restarts its
+# schedule (spec 028). A local import would hide the one line in this module
+# that makes the queue trustworthy.
+from alphacouncil.storage.repositories import instruments, note_recall
 
 __all__ = [
     "add_link",
@@ -362,6 +367,17 @@ def update_body(
 ) -> NoteRow:
     """Edit a note in place.
 
+    ⭐ **An edit restarts the recall schedule** (spec 028). A card is immutable, so
+    its schedule can only move forward. A note is not, and that breaks an assumption
+    the card queue never had to make: FSRS stability would stay attached to text
+    that no longer exists, and the note would resurface months later asking the
+    reader to recall something they have never read. So an edit rebuilds the FSRS
+    card — due now, stability nothing — and appends a ``reset`` row. Earlier reviews
+    are untouched; the history is append-only.
+
+    A note that is **not** on the queue causes no reset row and no schedule write:
+    most notes never are, and the common path must not pay for the interesting one.
+
     ⭐ **Unlike `cards`, a note is mutable and does not grow an event stream.**
     Cards are append-only because a claim you later retract must leave a trace —
     that is the anti-hindsight mechanism, and it is not up for reuse. A note is
@@ -379,6 +395,23 @@ def update_body(
 
     stamp = now if now is not None else utc_millis()
     connection.execute(_UPDATE_NOTE, (new_title, new_body, stamp, note_id))
+
+    # The seam. `update_body` runs inside the caller's transaction, and so does
+    # `reset_on_edit`, so the new text and the restarted schedule commit together:
+    # a queue that says 「come back now」 while the text is still the old one would be
+    # the same lie in a different order.
+    # ⭐ The moment is **handed through**, not left to the wall clock.
+    # `update_body` takes `now` as a string stamp and `reset_on_edit` wants a
+    # datetime, and the first version of this call passed neither — so the reset
+    # stamped itself with whatever time the test happened to run. In production
+    # that is right by accident; in a test it makes the reset's position in the
+    # history unknowable. An injected `now` that the code it calls ignores is not
+    # an injected `now`.
+    note_recall.reset_on_edit(
+        connection,
+        note_id,
+        now=datetime.fromisoformat(stamp.replace("Z", "+00:00")),
+    )
 
     return get_by_id(connection, note_id)
 

@@ -89,6 +89,13 @@ APPEND_ONLY_TABLES = frozenset(
         # user's memory, and re-writing one would let a past recall be edited into
         # a better past recall — the same reason the other six tables are here.
         "card_reviews",
+        # note_reviews (spec 028): the same argument, one step further. A card
+        # review answers 「did I recall this claim?」 and a note review answers
+        # 「do I still hold this view?」 — and the second question is the one the
+        # product's thesis is built on. Editing a past answer would let a changed
+        # mind be retrofitted into never having held the old one, which is exactly
+        # the hindsight bias the whole record is meant to survive.
+        "note_reviews",
     }
 )
 

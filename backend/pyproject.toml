@@ -141,6 +141,11 @@ ignore = [
 # linter is worse than the warning**. The file has no other CJK, so the exemption
 # buys nothing else.
 "src/alphacouncil/api/routes/today.py" = ["RUF001", "RUF002"]
+# The notes API (spec 026/028) for the same reason as `today.py`: it quotes
+# the product rules it enforces — 「一句陈述，无推送、无红点、无催促词」 and
+# 「我的想法还没定」 — because paraphrasing them into English would lose the
+# constraint being cited, and `RUF002` cannot tell a quotation from a string.
+"src/alphacouncil/api/routes/notes.py" = ["RUF001", "RUF002"]
 # The notes layer (spec 026) for the same reason as `today.py`, one step up the
 # stack: `domain/note.py` **quotes two specifications verbatim** — the provenance
 # rule from `基础功能打磨与AI桥接` §2.1 (「不是笔记。笔记可以没有来源；卡片必须有」) and
@@ -154,6 +159,13 @@ ignore = [
 # else in `src/`, so a lookalike homoglyph in a real identifier is still caught.
 "src/alphacouncil/domain/note.py" = ["RUF001", "RUF002"]
 "src/alphacouncil/storage/repositories/notes.py" = ["RUF001"]
+# The note recall queue (spec 028) for the same reason as the note modules
+# above: it quotes the spec's own sentences (「我的思想还没定」, the reset
+# rationale) because the exact wording is the constraint being cited, and
+# `RUF002` cannot tell a quotation from a string literal. The same file's
+# sibling `note_recall.py` is exempted for the identical reason; `RUF001` is
+# on because the reader-facing refusals are Chinese.
+"src/alphacouncil/storage/repositories/note_recall.py" = ["RUF001", "RUF002"]
 "src/alphacouncil/__main__.py" = ["T201"]  # CLI entry point may print
 # Developer tooling: printing is the interface, and the subprocess argv is
 # built from constants in this repo, never from user input.

@@ -164,7 +164,9 @@ class DataFetchError(RuntimeError): ...
 | `NOTE_NOT_FOUND` | error | 目标笔记不存在 |
 | `NOTE_TAG_INVALID` | error | 标签为空、超长，或**含逗号**（逗号串是这张表要避开的形状，禁掉它，一个「顺手改成逗号串」的迁移就写不出来） |
 | `NOTE_LINK_SELF` | error | 一条笔记链接到自己 |
-| `NOTE_LINK_TARGET_UNKNOWN` | error | 链接目标不存在。⭐ **`note_links.to_id` 故意没有外键** —— 它指向五张表，SQLite 无法约束多态引用，所以这个校验放在 Python 层。**目标表还不存在时（`LESSON`，等 J5 教训转卡）同样报这一条**：解不开的链接就是不该写的链接 |
+| `NOTE_LINK_TARGET_UNKNOWN` | error | | `NOTE_NOT_SCHEDULED` | error | 该笔记不在复习队列上，无法记录重读或推迟（spec 028）。**与 `CARD_NOT_SCHEDULED` 分开，因为两者回答的是不同的问题**：卡片是「我回忆起来这条主张了吗」，笔记是「我还持持这个看法吗」 |
+| `NOTE_ALREADY_SCHEDULED` | error | 该笔记已在队列上 —— 重复入队会把它变成刚学习的，而它可能已经复习过五次（spec 028） |
+ 链接目标不存在。⭐ **`note_links.to_id` 故意没有外键** —— 它指向五张表，SQLite 无法约束多态引用，所以这个校验放在 Python 层。**目标表还不存在时（`LESSON`，等 J5 教训转卡）同样报这一条**：解不开的链接就是不该写的链接 |
 
 ### 2.6 `REVIEW_*`（决策复盘 / 四象限，J3）
 

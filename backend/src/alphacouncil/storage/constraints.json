@@ -231,6 +231,37 @@
     "notes_fts": {
       "append_only": false,
       "constraints": {}
+    },
+    "note_schedule": {
+      "append_only": false,
+      "constraints": {
+        "note_schedule_note_required_check": "required",
+        "note_schedule_fsrs_id_check": "comparison",
+        "note_schedule_state_check": "enum",
+        "note_schedule_state_json_valid_check": "json",
+        "note_schedule_due_at_check": "required",
+        "note_schedule_enrolled_at_check": "identity",
+        "note_schedule_updated_at_check": "identity",
+        "note_schedule_updated_not_before_enrolled_check": "comparison"
+      }
+    },
+    "note_reviews": {
+      "append_only": true,
+      "constraints": {
+        "note_reviews_id_check": "identity",
+        "note_reviews_note_required_check": "required",
+        "note_reviews_outcome_check": "enum",
+        "note_reviews_rating_shape_check": "enum",
+        "note_reviews_reviewed_needs_rating_check": "conditional_required",
+        "note_reviews_deferred_has_no_rating_check": "conditional_required",
+        "note_reviews_deferred_has_no_duration_check": "conditional_required",
+        "note_reviews_reset_has_no_rating_check": "conditional_required",
+        "note_reviews_reset_has_no_duration_check": "conditional_required",
+        "note_reviews_duration_positive_check": "conditional_required",
+        "note_reviews_reviewed_at_check": "identity",
+        "note_reviews_from_state_check": "enum",
+        "note_reviews_to_state_check": "enum"
+      }
     }
   }
 }

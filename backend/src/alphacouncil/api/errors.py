@@ -24,6 +24,7 @@ from alphacouncil.domain.card import CardError
 from alphacouncil.domain.decision import DecisionError
 from alphacouncil.domain.instrument import InstrumentError
 from alphacouncil.domain.note import NoteError
+from alphacouncil.domain.note_recall import NoteRecallError
 from alphacouncil.domain.review import ReviewError
 from alphacouncil.domain.scheduling import SchedulingError
 from alphacouncil.domain.watchlist import WatchlistError
@@ -123,6 +124,13 @@ CODED_ERRORS: tuple[type[Exception], ...] = (
     # is the one that most needs to say *which* rule was broken, because the whole
     # feature rests on "a note may skip the rules a card may not".
     NoteError,
+    # Spec 028. The fourth time this has been missed (K3, J3, notes, and now the
+    # recall queue): a new domain error class gets an enum entry and a doc row,
+    # and the one place that maps class -> coded envelope is forgotten. The
+    # symptom is always the same — a bare 400 with no `code`, so a client cannot
+    # tell 「这条笔记不在队列上」 from 「标题是空的」. Worth
+    # remembering as a step, not rediscovering as a bug.
+    NoteRecallError,
     # K3. Without this the review queue's failures fall through to the plain
     # `ValueError` handler and every one of them answers **400** — which is how
     # "this card is already on the queue" ends up looking like a malformed

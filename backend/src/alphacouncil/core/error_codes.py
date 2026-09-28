@@ -120,6 +120,16 @@ class ErrorCode(StrEnum):
     NOTE_LINK_SELF = "NOTE_LINK_SELF"
     NOTE_LINK_TARGET_UNKNOWN = "NOTE_LINK_TARGET_UNKNOWN"
 
+    # -- NOTE_* scheduling (spec 028) --------------------------------------
+    # Separate from the card codes (CARD_NOT_SCHEDULED / CARD_ALREADY_SCHEDULED)
+    # for the same reason the whole note namespace is separate: a note review is
+    # a **re-read and re-affirm** (「我的思想变了」), while a card review is a
+    # check against a source. Merging them would make "how often does a user
+    # still hold a view they wrote down" unanswerable — and that is the number
+    # the whole 「经验无法从历史中学习」 thesis rests on.
+    NOTE_NOT_SCHEDULED = "NOTE_NOT_SCHEDULED"
+    NOTE_ALREADY_SCHEDULED = "NOTE_ALREADY_SCHEDULED"
+
     # -- REVIEW_* : decision reviews and the four quadrants (J3) ------------
     # Added 2026-09-28 (spec 020). REVIEW_NOT_DUE is the one that matters most:
     # it is the hard gate from `项目总纲` P0-3 — an outcome may not be scored
