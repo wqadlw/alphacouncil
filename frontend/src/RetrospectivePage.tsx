@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   ApiError,
   getDecisionReview,
@@ -10,6 +10,8 @@ import {
   type ReviewState,
 } from './api'
 import { instrumentHref, TODAY_HREF } from './routing'
+import { EmptyState, ErrorNote, Page, PageSkeleton } from './ui'
+import { useResource } from './useResource'
 
 /**
  * The retrospective queue (J3) — where red line 10 actually happens.
@@ -38,9 +40,9 @@ import { instrumentHref, TODAY_HREF } from './routing'
  *    would be the defect, not the feature, and the E2E spec asserts the rendered
  *    text contains no digits in that case.
  *
- * 3. **No praise, no score, no progress bar.** `你复盘了 3 / 8` turns draining the
- *    backlog into a number the user can feel (red lines 11 and 13). How many are
- *    waiting is a plain sentence, exactly as on the card queue.
+ * 3. **No praise, no progress bar.** `你复盘了 3 / 8` turns draining the backlog
+ *    into a number the user can feel (red lines 11 and 13). The count of what is
+ *    waiting is a plain sentence, and it is **not** on the nav bar either.
  *
  * **The quadrant sentence is rendered, not written here.** It arrives from the
  * domain through the API, so the wording is reviewed in the same diff as the rule
@@ -48,74 +50,59 @@ import { instrumentHref, TODAY_HREF } from './routing'
  * "干得漂亮".
  */
 export default function RetrospectivePage() {
-  const [queue, setQueue] = useState<ReviewState[]>([])
+  const describeQueue = useCallback(
+    (cause: unknown) => (cause instanceof ApiError ? cause.message : '无法读取复盘队列。'),
+    [],
+  )
+  const { data: rows, error: loadError, loading, reload } = useResource<ReviewState[]>(
+    getDueDecisionReviews,
+    [],
+    describeQueue,
+  )
+
   const [index, setIndex] = useState(0)
-  const [decision, setDecision] = useState<Decision | null>(null)
-  const [review, setReview] = useState<DecisionReview | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
   /** The score picked but not yet submitted — the outcome choice completes it. */
   const [picked, setPicked] = useState<number | null>(null)
   /** The one thing shown after a submission: the verdict, in the domain's words. */
   const [verdict, setVerdict] = useState<DecisionReview | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
-  const refresh = useCallback(async () => {
-    try {
-      setLoadError(null)
-      setQueue(await getDueDecisionReviews())
-      setIndex(0)
-      setPicked(null)
-      setVerdict(null)
-    } catch (error) {
-      setLoadError(error instanceof ApiError ? error.message : '无法读取复盘队列。')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
-
+  const queue = rows ?? []
   const current = queue[index] ?? null
   const currentId = current?.decision_id ?? null
 
-  useEffect(() => {
-    if (currentId === null) {
-      setDecision(null)
-      setReview(null)
-      return
-    }
-    let cancelled = false
-    void getDecisionReview(currentId)
-      .then((body) => {
-        if (cancelled) return
-        setDecision(body.decision)
-        setReview(body.latest)
-      })
-      .catch(() => {
-        // A decision that cannot be read is shown as nothing rather than as a
-        // half-card: a review without the text it grades would be a verdict
-        // about a memory, which is the failure this page exists to prevent.
-        if (!cancelled) {
-          setDecision(null)
-          setReview(null)
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [currentId])
+  /**
+   * The decision's own words, fetched per queue position.
+   *
+   * The server sends the decision **with** its review state on purpose: a page
+   * that could render a review without the text would be grading from memory,
+   * which is the hindsight this feature exists to prevent (spec 021 §五).
+   */
+  const describeOne = useCallback(
+    (cause: unknown) => (cause instanceof ApiError ? cause.message : '无法读取这条决策。'),
+    [],
+  )
+  const loadOne = useCallback(
+    () =>
+      currentId === null
+        ? Promise.resolve<{ decision: Decision; latest: DecisionReview | null } | null>(null)
+        : getDecisionReview(currentId),
+    [currentId],
+  )
+  const { data: detail } = useResource(loadOne, [currentId], describeOne)
+  const decision = detail?.decision ?? null
+  const previous = detail?.latest ?? null
 
   const submit = useCallback(
     async (body: { process_score: number; outcome?: DecisionOutcome }) => {
       if (!current) return
       setSubmitting(true)
+      setSubmitError(null)
       try {
         setVerdict(await recordDecisionReview({ decision_id: current.decision_id, ...body }))
-      } catch (error) {
-        setLoadError(error instanceof ApiError ? error.message : '无法记录这次复盘。')
+      } catch (cause) {
+        setSubmitError(cause instanceof ApiError ? cause.message : '无法记录这次复盘。')
       } finally {
         setSubmitting(false)
       }
@@ -123,9 +110,17 @@ export default function RetrospectivePage() {
     [current],
   )
 
+  const refresh = useCallback(() => {
+    setIndex(0)
+    setPicked(null)
+    setVerdict(null)
+    setSubmitError(null)
+    reload()
+  }, [reload])
+
   const next = useCallback(() => {
     if (index + 1 >= queue.length) {
-      void refresh()
+      refresh()
       return
     }
     setIndex(index + 1)
@@ -134,58 +129,56 @@ export default function RetrospectivePage() {
   }, [index, queue.length, refresh])
 
   if (loading) {
-    return (
-      <div className="mx-auto max-w-[720px] px-8 py-10">
-        {/* Skeleton, not a spinner: financial software does not animate. */}
-        <div className="h-6 w-40 bg-rule" />
-      </div>
-    )
+    return <PageSkeleton label="读取复盘队列" />
   }
 
   if (loadError && queue.length === 0) {
     return (
-      <div className="mx-auto max-w-[720px] px-8 py-10">
-        <p className="text-ink-soft">{loadError}</p>
-      </div>
+      <Page>
+        <ErrorNote message={loadError} />
+      </Page>
     )
   }
 
   if (queue.length === 0) {
     return (
-      <div className="mx-auto max-w-[720px] px-8 py-10" data-testid="retro-empty">
-        <h1 className="serif text-[26px] leading-tight">现在没有到期的复盘</h1>
-        <p className="mt-2 text-ink-soft">
-          记决策的时候写下「什么时候回来看看」，到期了它会自己出现在这里。没写就不来。
-        </p>
-        <p className="mt-4">
-          <a href={TODAY_HREF} className="text-navy">
-            ← 回到今天
-          </a>
-        </p>
-      </div>
+      <Page>
+        <EmptyState
+          title="现在没有到期的复盘"
+          body="记决策的时候写下「什么时候回来看看」，到期了它会自己出现在这里。没写就不来。"
+          action={{ href: TODAY_HREF, label: '回到今天' }}
+        />
+      </Page>
     )
   }
 
   if (verdict) {
     return (
-      <div
-        className="mx-auto max-w-[720px] px-8 py-10"
-        data-testid="retro-verdict"
-        data-quadrant={verdict.quadrant}
-      >
-        {/*
-          The verdict, in the domain's words. Rendered, never composed here. In
-          the dangerous quadrant this is the *only* line: there is no figure to
-          show, because none was ever recorded. That is red line 10 resting on
-          the data model rather than on this component's restraint.
-        */}
-        <p className="serif text-[18px] leading-relaxed" data-testid="retro-guidance">
-          {verdict.guidance}
-        </p>
-        <button type="button" className="mt-4 text-navy" onClick={next} data-testid="retro-next">
-          {index + 1 >= queue.length ? '看看还有没有' : '下一条'}
-        </button>
-      </div>
+      <Page>
+        <div
+          data-testid="retro-verdict"
+          data-quadrant={verdict.quadrant}
+          data-active="false"
+        >
+          {/*
+            The verdict, in the domain's words. Rendered, never composed here. In
+            the dangerous quadrant this is the *only* line: there is no figure to
+            show, because none was ever recorded. That is red line 10 resting on
+            the data model rather than on this component's restraint.
+          */}
+          <p className="serif text-[18px] leading-relaxed" data-testid="retro-guidance">
+            {verdict.guidance}
+          </p>
+          <button
+            type="button"
+            className="mt-4 text-navy"
+            onClick={next}
+            data-testid="retro-next"
+          >
+            {index + 1 >= queue.length ? '看看还有没有' : '下一条'}
+          </button>
+        </div>
+      </Page>
     )
   }
 
@@ -204,7 +197,7 @@ export default function RetrospectivePage() {
   }
 
   return (
-    <div className="mx-auto max-w-[720px] px-8 py-10">
+    <Page>
       {/* A count in a sentence, not a progress bar (red line 11). */}
       <h1 className="text-[13px] tracking-wide text-ink-faint">
         到期要看的 {queue.length} 条决策
@@ -293,11 +286,17 @@ export default function RetrospectivePage() {
         </p>
       )}
 
-      {review ? (
+      {previous ? (
         <p className="mt-4 text-[12px] text-ink-faint" data-testid="retro-previous">
-          你在 {review.reviewed_at.slice(0, 10)} 写过一条。
+          你在 {previous.reviewed_at.slice(0, 10)} 写过一条。
         </p>
       ) : null}
-    </div>
+
+      {submitError ? (
+        <p className="mt-4 text-[12px] text-ink-soft" data-testid="retro-error">
+          {submitError}
+        </p>
+      ) : null}
+    </Page>
   )
 }

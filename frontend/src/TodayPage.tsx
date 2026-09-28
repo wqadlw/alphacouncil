@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback } from 'react'
 import {
   ApiError,
   getToday,
@@ -13,63 +13,49 @@ import {
 import { ACTION_LABEL, formatDay, formatPredicate, todayLabel } from './format'
 import { POOL_HREF, instrumentHref } from './routing'
 import QuoteCell from './QuoteCell'
+import { WidePage } from './ui'
+import { useResource } from './useResource'
 
 export default function TodayPage() {
-  // Three independent requests, because they have three independent failure
-  // modes: attention is local, prices cross the network, and the list is the
-  // page's floor. One request for all three would let the flakiest decide
-  // what the reader gets to see.
-  const [today, setToday] = useState<Today | null>(null)
-  const [todayError, setTodayError] = useState<string | null>(null)
-  const [entries, setEntries] = useState<WatchlistEntry[]>([])
-  const [listError, setListError] = useState<string | null>(null)
-  const [quotes, setQuotes] = useState<PoolQuote[] | null>(null)
-  const [quotesError, setQuotesError] = useState<string | null>(null)
+  /**
+   * Three independent requests, because they have three independent failure
+   * modes: attention is local, prices cross the network, and the list is the
+   * page's floor. One request for all three would let the flakiest decide what
+   * the reader gets to see.
+   *
+   * Each is its own `useResource`, so one failing does not blank the other two —
+   * and the reader sees a sentence about the part that failed while the rest of
+   * the page stays true.
+   */
+  const today = useResource<Today>(
+    getToday,
+    [],
+    useCallback((cause: unknown) => (cause instanceof ApiError ? cause.message : '无法读取今日待办。'), []),
+  )
+  const list = useResource<WatchlistEntry[]>(
+    listWatchlist,
+    [],
+    useCallback((cause: unknown) => (cause instanceof ApiError ? cause.message : '无法读取关注池。'), []),
+  )
+  const prices = useResource<PoolQuote[]>(
+    getWatchlistQuotes,
+    [],
+    useCallback((cause: unknown) => (cause instanceof ApiError ? cause.message : '行情未能读取。'), []),
+  )
 
-  const refreshToday = useCallback(async () => {
-    try {
-      setTodayError(null)
-      setToday(await getToday())
-    } catch (error) {
-      setTodayError(error instanceof ApiError ? error.message : '无法读取今日待办。')
-    }
-  }, [])
-
-  const refreshList = useCallback(async () => {
-    try {
-      setListError(null)
-      setEntries(await listWatchlist())
-    } catch (error) {
-      setListError(error instanceof ApiError ? error.message : '无法读取关注池。')
-    }
-  }, [])
-
-  const refreshQuotes = useCallback(async () => {
-    try {
-      setQuotesError(null)
-      setQuotes(await getWatchlistQuotes())
-    } catch (error) {
-      setQuotesError(error instanceof ApiError ? error.message : '行情未能读取。')
-    }
-  }, [])
-
-  useEffect(() => {
-    void refreshToday()
-    void refreshList()
-    void refreshQuotes()
-  }, [refreshToday, refreshList, refreshQuotes])
-
+  const quotes = prices.data
+  const entries = list.data ?? []
   const quoteByKey = new Map(
     (quotes ?? []).map((row) => [`${row.market}:${row.code}`, row.quote]),
   )
 
   return (
-    <div className="mx-auto max-w-[860px] px-8 py-10">
+    <WidePage>
       <header className="border-b border-rule pb-5">
         <h1 className="serif text-[26px] leading-tight">今天 · {todayLabel(new Date())}</h1>
-        {today?.market_status.verdict === 'non_trading_day' && (
+        {today.data?.market_status.verdict === 'non_trading_day' && (
           <p className="mark mt-2 border-l-2 border-l-navy py-1 text-[13px] text-navy">
-            休市 · 最后交易日 {formatDay(today.market_status.last_trading_date)}
+            休市 · 最后交易日 {formatDay(today.data.market_status.last_trading_date)}
             <span className="text-ink-faint">
               {' '}
               —— 下列价格不会变化，这不是故障，也不是过期的数据。
@@ -83,16 +69,16 @@ export default function TodayPage() {
       </header>
 
       <SectionOne
-        today={today}
-        todayError={todayError}
-        onRetry={() => void refreshToday()}
+        today={today.data}
+        todayError={today.error}
+        onRetry={today.reload}
       />
 
       <SectionTwo
         entries={entries}
-        listError={listError}
+        listError={list.error}
         quoteByKey={quoteByKey}
-        quotesError={quotesError}
+        quotesError={prices.error}
       />
 
       <section className="mt-8">
@@ -115,7 +101,7 @@ export default function TodayPage() {
         这一页只陈列事实，不陈列成绩：没有收益率、没有排行、没有打卡。
         <span className="text-ink-soft"> 它安静，是因为催促会让你动作变多。</span>
       </footer>
-    </div>
+    </WidePage>
   )
 }
 

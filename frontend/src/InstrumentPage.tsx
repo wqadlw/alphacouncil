@@ -24,6 +24,7 @@ import {
 import { POOL_HREF } from './routing'
 import CardSection from './CardSection'
 import DecisionSection from './DecisionSection'
+import { useResource } from './useResource'
 
 const FOLLOW_LABEL: Record<string, string> = {
   followed: '关注中',
@@ -37,10 +38,37 @@ interface Props {
 }
 
 export default function InstrumentPage({ market, code }: Props) {
-  const [detail, setDetail] = useState<InstrumentDetail | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [quote, setQuote] = useState<QuoteResult | null>(null)
-  const [quoteError, setQuoteError] = useState<string | null>(null)
+  /**
+   * The record and the price, fetched separately and on purpose.
+   *
+   * The record is the floor — it is local and it is what the page is *for*. The
+   * price crosses the network and may fail, and when it does the record stays on
+   * screen with a sentence about the price. One request for both would let a
+   * flaky quote hide a decision record, which is the one thing this page must
+   * never do.
+   */
+  const record = useResource<InstrumentDetail>(
+    useCallback(() => getInstrument(market, code), [market, code]),
+    [market, code],
+    useCallback(
+      (cause: unknown) => (cause instanceof ApiError ? cause.message : '无法读取这个标的。'),
+      [],
+    ),
+  )
+  const price = useResource<QuoteResult>(
+    useCallback(() => getQuote(market, code), [market, code]),
+    [market, code],
+    useCallback(
+      (cause: unknown) =>
+        cause instanceof ApiError ? cause.message : '报价请求失败 —— 记录部分不受影响。',
+      [],
+    ),
+  )
+
+  const detail = record.data
+  const loadError = record.error
+  const quote = price.data
+  const quoteError = price.error
 
   const [reasonDraft, setReasonDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -49,44 +77,31 @@ export default function InstrumentPage({ market, code }: Props) {
     null,
   )
 
-  const refresh = useCallback(async () => {
-    try {
-      setLoadError(null)
-      const loaded = await getInstrument(market, code)
-      setDetail(loaded)
-      setReasonDraft(loaded.follow.reason ?? '')
-    } catch (error) {
-      setLoadError(error instanceof ApiError ? error.message : '无法读取这个标的。')
-    }
-  }, [market, code])
-
-  const refreshQuote = useCallback(async () => {
-    try {
-      setQuoteError(null)
-      setQuote(await getQuote(market, code))
-    } catch (error) {
-      setQuote(null)
-      setQuoteError(
-        error instanceof ApiError ? error.message : '报价请求失败 —— 记录部分不受影响。',
-      )
-    }
-  }, [market, code])
-
-  // Trips React's `set-state-in-effect` rule — same deliberate warning as on the
-  // pool page, where the full reasoning is written down. Left visible for the
-  // same reason: it is the signal that the data layer is due to move to
-  // TanStack Query, not a bug to be silenced.
+  /**
+   * The reason draft is seeded from the record once it arrives.
+   *
+   * ⭐ **This is the one `set-state-in-effect` warning left in the app, and it is
+   * left deliberately** rather than silenced. The draft is a genuine second copy
+   * of a value the record owns — the reader edits it, so it cannot simply be
+   * derived — and the honest fix is to move the form into its own component keyed
+   * on the loaded reason, so it initialises instead of syncing. That is a real
+   * refactor of a five-hundred-line page and belongs on its own, not smuggled in
+   * here.
+   *
+   * What would *not* be honest: deleting the warning without doing that, or
+   * pretending the remaining cascade does not exist. The other six warnings this
+   * file used to raise were genuine and are gone; this one is real and named.
+   */
   useEffect(() => {
-    void refresh()
-  }, [refresh])
+    if (record.data) setReasonDraft(record.data.follow.reason ?? '')
+  }, [record.data])
 
-  // Fetched once, and never on a timer. A price that refreshes itself turns a
-  // record into a terminal, and a terminal is what this product is not: red
-  // line 11 forbids anything that nudges the reader to act more often. There is
-  // a button instead, which requires a decision to look.
-  useEffect(() => {
-    void refreshQuote()
-  }, [refreshQuote])
+  const refresh = record.reload
+
+  // The price is fetched once, and never on a timer. A price that refreshes
+  // itself turns a record into a terminal, and a terminal is what this product is
+  // not: red line 11 forbids anything that nudges the reader to act more often.
+  // `price.reload()` is a button, which requires a decision to look.
 
   const followed = detail?.follow.status === 'followed'
   const reasonMissing = reasonDraft.trim().length === 0
@@ -171,7 +186,7 @@ export default function InstrumentPage({ market, code }: Props) {
 
       {detail && (
         <>
-          <QuoteStrip quote={quote} error={quoteError} onRefresh={() => void refreshQuote()} />
+          <QuoteStrip quote={quote} error={quoteError} onRefresh={price.reload} />
 
           <section className="mt-8">
             <div className="flex items-baseline justify-between border-b border-rule pb-2">

@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useState } from 'react'
+import { type FormEvent, useCallback, useState } from 'react'
 import {
   ApiError,
   addToWatchlist,
@@ -11,17 +11,40 @@ import {
 import { displayCode, formatMoment } from './format'
 import { TODAY_HREF, instrumentHref } from './routing'
 import QuoteCell from './QuoteCell'
+import { useResource } from './useResource'
 
 export default function PoolPage() {
-  const [entries, setEntries] = useState<WatchlistEntry[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
+  /**
+   * Two requests, kept apart on purpose: the list is the page's floor and is
+   * local, the prices cross the network. A failure to price must not blank the
+   * list — that split is the whole reason a reader can still act during an
+   * outage.
+   */
+  const list = useResource<WatchlistEntry[]>(
+    listWatchlist,
+    [],
+    useCallback(
+      (cause: unknown) => (cause instanceof ApiError ? cause.message : '无法读取关注池。'),
+      [],
+    ),
+  )
+  const prices = useResource<PoolQuote[]>(
+    getWatchlistQuotes,
+    [],
+    useCallback(
+      (cause: unknown) => (cause instanceof ApiError ? cause.message : '行情未能读取。'),
+      [],
+    ),
+  )
 
-  // The pool's second request. `null` means "not here yet" — the list renders
-  // without it, because the record never waits on the network.
-  const [quotes, setQuotes] = useState<PoolQuote[] | null>(null)
-  const [quotesError, setQuotesError] = useState<string | null>(null)
-  const [refreshingQuotes, setRefreshingQuotes] = useState(false)
+  const entries = list.data ?? []
+  const loading = list.loading
+  const loadError = list.error
+  // `null` means "not here yet" — the list renders without it, because the
+  // record never waits on the network.
+  const quotes = prices.data
+  const quotesError = prices.error
+  const refreshingQuotes = prices.loading
 
   const [ticker, setTicker] = useState('')
   const [reason, setReason] = useState('')
@@ -30,41 +53,8 @@ export default function PoolPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
 
-  const refresh = useCallback(async () => {
-    try {
-      setLoadError(null)
-      setEntries(await listWatchlist())
-    } catch (error) {
-      setLoadError(error instanceof ApiError ? error.message : '无法读取关注池。')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  const refreshQuotes = useCallback(async () => {
-    setRefreshingQuotes(true)
-    try {
-      setQuotesError(null)
-      setQuotes(await getWatchlistQuotes())
-    } catch (error) {
-      // The list above is untouched by this failure — it is the whole point of
-      // the two-request split. The page says so instead of going blank.
-      setQuotesError(error instanceof ApiError ? error.message : '行情未能读取。')
-    } finally {
-      setRefreshingQuotes(false)
-    }
-  }, [])
-
-  // `refresh` sets state, so this trips React's `set-state-in-effect` rule.
-  // The rule points at the right long-term answer — TanStack Query, which the
-  // frontend spec already names — rather than at a bug: fetching *is* the
-  // "synchronise with an external system" case an effect exists for. Left
-  // visible on purpose: silencing it would hide the signal that the data layer
-  // is due to move.
-  useEffect(() => {
-    void refresh()
-    void refreshQuotes()
-  }, [refresh, refreshQuotes])
+  const refresh = list.reload
+  const refreshQuotes = prices.reload
 
   const tickerMissing = ticker.trim().length === 0
   const reasonMissing = reason.trim().length === 0

@@ -178,7 +178,10 @@ test.describe('复盘队列', () => {
     await routeApi(page, { '/api/v1/decision-reviews/due': [] })
     await page.goto('/#/retrospective')
 
-    await expect(page.getByTestId('retro-empty')).toBeVisible()
+    // `empty-state` rather than a page-specific id: the empty state is now a
+    // shared component (`ui.tsx`), and the point of a shared component is that
+    // every page's reads the same way — so the test names the shared one.
+    await expect(page.getByTestId('empty-state')).toBeVisible()
     // And the empty state must not be a progress nag — red line 11.
     const text = await page.locator('body').innerText()
     expect(text).not.toMatch(/连续|打卡|完成率|%/)

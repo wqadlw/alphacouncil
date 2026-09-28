@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   ApiError,
   getCard,
@@ -9,6 +9,8 @@ import {
   type Schedule,
 } from './api'
 import { TODAY_HREF } from './routing'
+import { EmptyState, ErrorNote, Page, PageSkeleton } from './ui'
+import { useResource } from './useResource'
 
 /**
  * The review queue (K3).
@@ -28,6 +30,8 @@ import { TODAY_HREF } from './routing'
  * - no "连续复习 5 天", no streak, no check-in (red line 11)
  * - no "已复习 3 / 8" progress bar — turning "drain the backlog" into a gameable
  *   number is the same objection one layer down (red line 11)
+ * - no count on the nav bar either — see `ui.tsx`; the queue's length is a fact
+ *   you learn by opening this page, not a number advertised in advance
  * - after rating `again`, **one line**: when it returns. No reassurance, no red
  *   badge, no "you have forgotten this 3 times". The product records the
  *   interaction and does not comment on it (red line 13)
@@ -39,65 +43,61 @@ import { TODAY_HREF } from './routing'
  * tool).
  */
 export default function ReviewPage() {
-  const [queue, setQueue] = useState<Schedule[]>([])
-  const [index, setIndex] = useState(0)
-  const [claim, setClaim] = useState<Card | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
+  const describeQueue = useCallback(
+    (cause: unknown) => (cause instanceof ApiError ? cause.message : '无法读取复习队列。'),
+    [],
+  )
+  const { data: rows, error: loadError, loading, reload } = useResource<Schedule[]>(
+    getDueCards,
+    [],
+    describeQueue,
+  )
 
+  const [index, setIndex] = useState(0)
   /**
    * The one piece of feedback this page gives. A date — a fact about time, not a
    * verdict about the person reading it. `null` before the first answer.
    */
   const [returnedAt, setReturnedAt] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [answerError, setAnswerError] = useState<string | null>(null)
 
-  const refresh = useCallback(async () => {
-    try {
-      setLoadError(null)
-      setQueue(await getDueCards())
-      setIndex(0)
-      setReturnedAt(null)
-    } catch (error) {
-      setLoadError(error instanceof ApiError ? error.message : '无法读取复习队列。')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
-
+  const queue = rows ?? []
   const current = queue[index] ?? null
   const currentId = current?.card_id ?? null
 
-  useEffect(() => {
-    if (currentId === null) return
-    let cancelled = false
-    void getCard(currentId)
-      .then((card: Card) => {
-        if (!cancelled) setClaim(card)
-      })
-      .catch(() => {
-        if (!cancelled) setClaim(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [currentId])
+  /**
+   * The claim is a second resource rather than part of the queue's.
+   *
+   * A failure to read one card must not blank the queue — the reader came for the
+   * list, and the list is still true. Folding them together made one bad card
+   * indistinguishable from a broken page.
+   */
+  const describeCard = useCallback(() => '无法读取这张卡片。', [])
+  const loadClaim = useCallback(
+    () => (currentId === null ? Promise.resolve(null) : getCard(currentId)),
+    [currentId],
+  )
+  const { data: claim } = useResource<Card | null>(loadClaim, [currentId], describeCard)
+
+  const refresh = useCallback(() => {
+    setIndex(0)
+    setReturnedAt(null)
+    setAnswerError(null)
+    reload()
+  }, [reload])
 
   const answer = useCallback(
     async (body: Parameters<typeof recordReview>[1]) => {
       if (!current) return
       setSubmitting(true)
+      setAnswerError(null)
       try {
         const receipt = await recordReview(current.card_id, body)
         // The entire response. No score, no count, no praise — a date.
         setReturnedAt(receipt.next_due_at)
-        setClaim(null)
-      } catch (error) {
-        setLoadError(error instanceof ApiError ? error.message : '无法记录这次复习。')
+      } catch (cause) {
+        setAnswerError(cause instanceof ApiError ? cause.message : '无法记录这次复习。')
       } finally {
         setSubmitting(false)
       }
@@ -107,7 +107,7 @@ export default function ReviewPage() {
 
   const next = useCallback(() => {
     if (index + 1 >= queue.length) {
-      void refresh()
+      refresh()
       return
     }
     setIndex(index + 1)
@@ -115,52 +115,45 @@ export default function ReviewPage() {
   }, [index, queue.length, refresh])
 
   if (loading) {
-    return (
-      <div className="mx-auto max-w-[720px] px-8 py-10">
-        {/* Skeleton, not a spinner: financial software does not animate. */}
-        <div className="h-6 w-40 bg-rule" />
-      </div>
-    )
+    return <PageSkeleton label="读取复习队列" />
   }
 
   if (loadError && queue.length === 0) {
     return (
-      <div className="mx-auto max-w-[720px] px-8 py-10">
-        <p className="text-ink-soft">{loadError}</p>
-      </div>
+      <Page>
+        <ErrorNote message={loadError} />
+      </Page>
     )
   }
 
   if (queue.length === 0) {
     return (
-      <div className="mx-auto max-w-[720px] px-8 py-10">
-        <h1 className="serif text-[26px] leading-tight">今天没有到期的卡片</h1>
-        <p className="mt-2 text-ink-soft">
-          还没加入复习的卡片不会出现在这里。到期的会自己回来。
-        </p>
-        <p className="mt-4">
-          <a href={TODAY_HREF} className="text-navy">
-            ← 回到今天
-          </a>
-        </p>
-      </div>
+      <Page>
+        <EmptyState
+          title="今天没有到期的卡片"
+          body="还没加入复习的卡片不会出现在这里。到期的会自己回来。"
+          action={{ href: TODAY_HREF, label: '回到今天' }}
+        />
+      </Page>
     )
   }
 
   if (returnedAt) {
     return (
-      <div className="mx-auto max-w-[720px] px-8 py-10" data-testid="review-receipt">
+      <Page>
         {/* The whole confirmation. A date and a button. Nothing about the user. */}
-        <p className="text-ink-soft">记下了。下次 {returnedAt.slice(0, 10)} 再来。</p>
-        <button
-          type="button"
-          className="mt-4 text-navy"
-          onClick={next}
-          data-testid="review-next"
-        >
-          {index + 1 >= queue.length ? '看看还有没有' : '下一张'}
-        </button>
-      </div>
+        <div data-testid="review-receipt">
+          <p className="text-ink-soft">记下了。下次 {returnedAt.slice(0, 10)} 再来。</p>
+          <button
+            type="button"
+            className="mt-4 text-navy"
+            onClick={next}
+            data-testid="review-next"
+          >
+            {index + 1 >= queue.length ? '看看还有没有' : '下一张'}
+          </button>
+        </div>
+      </Page>
     )
   }
 
@@ -169,7 +162,7 @@ export default function ReviewPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[720px] px-8 py-10">
+    <Page>
       {/* A count, not a progress bar. Red line 11: there is no "3 / 8". */}
       <h1 className="text-[13px] tracking-wide text-ink-faint">
         今天要过一遍的 {queue.length} 张
@@ -252,6 +245,12 @@ export default function ReviewPage() {
           现在不是时候
         </button>
       </div>
-    </div>
+
+      {answerError ? (
+        <p className="mt-4 text-[12px] text-ink-soft" data-testid="answer-error">
+          {answerError}
+        </p>
+      ) : null}
+    </Page>
   )
 }

@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
+  activeHref,
+  definitionFor,
   instrumentHref,
   parseHash,
   POOL_HREF,
   RETROSPECTIVE_HREF,
   REVIEW_HREF,
+  ROUTES,
+  titleFor,
   TODAY_HREF,
 } from './routing'
 
@@ -90,5 +94,86 @@ describe('TODAY_HREF', () => {
 describe('POOL_HREF', () => {
   it('parses back to the pool', () => {
     expect(parseHash(POOL_HREF)).toEqual({ name: 'pool' })
+  })
+})
+
+/**
+ * The route table is the single source of truth (spec 022), so these assert the
+ * *properties* the rest of the app relies on rather than restating its contents.
+ * A test that copied the table would still pass after the table rotted.
+ */
+describe('ROUTES, the one place a view is declared', () => {
+  it('every entry parses back to its own name', () => {
+    // The round trip that caught a real bug: the name used to be derived by
+    // slicing `#/` off the href, which yields `''` for the today page.
+    for (const entry of ROUTES) {
+      expect(parseHash(entry.href)).toEqual({ name: entry.name })
+    }
+  })
+
+  it('no two entries share a hash', () => {
+    const hashes = ROUTES.map((entry) => entry.href)
+    expect(new Set(hashes).size).toBe(hashes.length)
+  })
+
+  it('every label and title is free of digits', () => {
+    /**
+     * Not a style rule. Three E2E specs assert on the **whole page body** — the
+     * dangerous quadrant contains no digit at all (red line 10) — and the nav is
+     * part of that body. A digit here breaks a red-line test somewhere else, which
+     * is the worst possible place to discover a label.
+     */
+    for (const entry of ROUTES) {
+      expect(entry.label, entry.href).not.toMatch(/[0-9]/)
+      expect(entry.title, entry.href).not.toMatch(/[0-9]/)
+    }
+  })
+
+  it('no label uses a word the whole-page red-line tests forbid', () => {
+    // `% 正确率 记住率 掌握度 评分 得分` from review.spec.ts, `收益率` from
+    // today.spec.ts. `评分` is why the process score is called 过程分 everywhere.
+    const forbidden = ['%', '正确率', '记住率', '掌握度', '评分', '得分', '收益率']
+    for (const entry of ROUTES) {
+      for (const word of forbidden) {
+        expect(entry.label.includes(word), `${entry.label} contains ${word}`).toBe(false)
+        expect(entry.title.includes(word), `${entry.title} contains ${word}`).toBe(false)
+      }
+    }
+  })
+
+  it('looks up a definition by name', () => {
+    expect(definitionFor('retrospective').href).toBe(RETROSPECTIVE_HREF)
+  })
+})
+
+describe('activeHref', () => {
+  it('marks the current enumerated view', () => {
+    expect(activeHref({ name: 'pool' })).toBe(POOL_HREF)
+  })
+
+  it('marks nothing on an instrument page', () => {
+    // An instrument page is not in the nav, so nothing should read as current —
+    // highlighting "今天" there would claim the reader is on the today page.
+    expect(activeHref({ name: 'instrument', market: 'sh', code: '600519' })).toBe('')
+  })
+
+  it('marks nothing on an unknown address', () => {
+    // It has just said it does not know where it is; lighting up a nav item would
+    // contradict that in the same breath.
+    expect(activeHref({ name: 'unknown', raw: '#/nonsense' })).toBe('')
+  })
+})
+
+describe('titleFor', () => {
+  it('uses the table title for an enumerated view', () => {
+    expect(titleFor({ name: 'retrospective' })).toBe(definitionFor('retrospective').title)
+  })
+
+  it('names the instrument on an instrument page', () => {
+    expect(titleFor({ name: 'instrument', market: 'sh', code: '600519' })).toBe('600519.SH')
+  })
+
+  it('says so on an unknown address', () => {
+    expect(titleFor({ name: 'unknown', raw: '#/x' })).toBe('这个地址看不懂')
   })
 })

@@ -1,44 +1,96 @@
 /**
- * Routing — three views, in the URL, with no dependency.
+ * Routing — one table, and everything else derived from it.
  *
- * The URL is a hash (`#/i/sh/600519`) rather than a path so that the whole thing
- * keeps working when the frontend is served as a static bundle with no rewrite
- * rules in front of it — which is how a desktop build ships it.
+ * **Why a table and not a bigger if-chain.** Before this there were three places
+ * that each had to learn about a new page: `parseHash` (an if-chain), a
+ * `HREF` constant, and a nested ternary computing `document.title`. Adding a
+ * view meant editing all three, and **missing one produced no error at all** — a
+ * page you cannot reach, with a title borrowed from another page. That is exactly
+ * the failure this project treats as a defect everywhere else: it looks like it
+ * worked.
  *
- * `#/` is the today page (product definition §六: opening lands on today), and
- * the pool lives at `#/pool`. Both are named constants, never raw strings at
- * the call sites, so a route rename is one line with the compiler finding the
- * rest.
+ * So `ROUTES` below is the only place a view is declared. Navigation, hash
+ * parsing, page titles and the `HREF` constants are all read off it, and adding a
+ * view is one entry.
  *
- * **This is an interim answer, and it is marked as one.** The frontend spec names
- * TanStack Router alongside TanStack Query, and both belong to the same change:
- * moving off hand-rolled data fetching and hand-rolled navigation is one
- * deliberate migration of the data layer, not two half-migrations. Twenty lines
- * here are honest about being temporary; a half-installed router would not be.
+ * **The URL is a hash** (`#/i/sh/600519`) rather than a path, because the whole
+ * thing ships as a static bundle with no rewrite rules in front of it — which is
+ * how a desktop build loads it. SSR is explicitly out (constitution §3), so
+ * Next.js is excluded, and the routing layer stays small enough to read.
  *
- * An unrecognised hash becomes `unknown` rather than falling back to the today
- * page. Silently showing the wrong page for a mistyped link is the kind of
- * failure that looks like success, which this project treats as a defect
- * everywhere else.
+ * **An unrecognised hash becomes `unknown`** rather than falling back to today.
+ * Silently showing the wrong page for a mistyped link is the kind of failure
+ * that looks like success, and the backend reports an ambiguous ticker instead of
+ * picking a market for you for the same reason.
+ *
+ * **The nav is generated from this table, and it carries no counts.** See
+ * `ui.tsx` for why: `项目总纲` §2.1⑤ asks for "一句陈述，无推送、无红点、无催促词",
+ * and a badge on a nav item turns "you owe three cards" into a number you can
+ * see and climb.
  */
 
 import { useEffect, useState } from 'react'
 
+/** A view the app can be on. Instrument pages are parsed, not enumerated. */
+export type RouteName = 'today' | 'pool' | 'review' | 'retrospective'
+
+export interface RouteDef {
+  /**
+   * The union member this view parses to.
+   *
+   * Written out rather than derived from `href` by slicing off `#/`: for the today
+   * page that slice yields `''`, not `'today'`, and a name is not recoverable from
+   * a string that happens to share a prefix with it. Deriving it looked clever
+   * and was wrong in exactly one case — which is the worst ratio of cleverness to
+   * bugs.
+   */
+  name: RouteName
+  href: string
+  /** Short label. **No digits, ever** — see `ui.tsx`. */
+  label: string
+  /** `document.title` suffix. Also digit-free. */
+  title: string
+}
+
+/**
+ * Every enumerated view, in the order the nav shows them.
+ *
+ * The order is not alphabetical and not historical: it goes **from the general to
+ * the specific**, with the two queues last because they are where the user lands
+ * when something has come due — which is the point of the product.
+ */
+export const ROUTES: readonly RouteDef[] = [
+  { name: 'today', href: '#/', label: '今天', title: '今天' },
+  { name: 'pool', href: '#/pool', label: '关注池', title: '关注池' },
+  { name: 'review', href: '#/review', label: '复习', title: '复习' },
+  { name: 'retrospective', href: '#/retrospective', label: '复盘', title: '复盘' },
+]
+
+/**
+ * Where the app is.
+ *
+ * Carries the **name only** for enumerated views, not the whole `RouteDef`: the
+ * definition is looked up from `ROUTES` when something needs a label or a title,
+ * and duplicating it into every parsed route would be two copies of the same
+ * fact — one of which could be edited without the other.
+ */
 export type Route =
-  | { name: 'today' }
-  | { name: 'pool' }
-  | { name: 'review' }
-  | { name: 'retrospective' }
+  | { name: RouteName }
   | { name: 'instrument'; market: string; code: string }
   | { name: 'unknown'; raw: string }
 
 const INSTRUMENT = /^#\/i\/([a-z]{2})\/([0-9]{6})$/
 
+const BY_HREF = new Map(ROUTES.map((route) => [route.href, route]))
+const BY_NAME = new Map(ROUTES.map((route) => [route.name, route]))
+
 export function parseHash(hash: string): Route {
-  if (hash === '' || hash === '#' || hash === '#/') return { name: 'today' }
-  if (hash === '#/pool') return { name: 'pool' }
-  if (hash === '#/review') return { name: 'review' }
-  if (hash === '#/retrospective') return { name: 'retrospective' }
+  // `#`, `` and `#/` all mean today, and `#/` is the canonical spelling — so the
+  // table stores that one form and the other two are normalised onto it before
+  // lookup. Without that, the nav would not light up on `#` and `#/`.
+  const normalised = hash === '' || hash === '#' ? '#/' : hash
+  const known = BY_HREF.get(normalised)
+  if (known) return { name: known.name }
   const match = INSTRUMENT.exec(hash)
   if (match) return { name: 'instrument', market: match[1], code: match[2] }
   return { name: 'unknown', raw: hash }
@@ -48,27 +100,58 @@ export function instrumentHref(market: string, code: string): string {
   return `#/i/${market}/${code}`
 }
 
-export const TODAY_HREF = '#/'
-
-export const POOL_HREF = '#/pool'
+/** The table entry behind an enumerated route name. */
+export function definitionFor(name: RouteName): RouteDef {
+  const found = BY_NAME.get(name)
+  if (found === undefined) {
+    // Unreachable while the table and the `RouteName` union agree, and the throw
+    // is the point: if someone adds a union member without a table entry, this
+    // fires at import in every test rather than rendering a dead link.
+    throw new Error(`no route table entry for ${name}`)
+  }
+  return found
+}
 
 /**
- * The review queue's address.
+ * The nav href that should read as "you are here", or `''` when none applies.
  *
- * A named constant for the same reason the other two are: a route rename is one
- * line, and the compiler finds the call sites.
+ * A named helper rather than an inline check, because the union has **three**
+ * members and excluding one leaves the other two — so TypeScript cannot narrow it
+ * and the property access does not compile. Naming the "none of them" case once is
+ * clearer than a cast.
+ *
+ * An instrument page has no nav entry, and an unknown address deliberately has
+ * **no active item either**: lighting one up would claim the app knows where it
+ * is when it has just said it does not.
  */
-export const REVIEW_HREF = '#/review'
+export function activeHref(route: Route): string {
+  return route.name === 'instrument' || route.name === 'unknown'
+    ? ''
+    : definitionFor(route.name).href
+}
+
+export function titleFor(route: Route): string {
+  switch (route.name) {
+    case 'instrument':
+      return `${route.code}.${route.market.toUpperCase()}`
+    case 'unknown':
+      return '这个地址看不懂'
+    default:
+      return definitionFor(route.name).title
+  }
+}
 
 /**
- * The retrospective queue's address.
+ * Named hrefs, **derived from the table** rather than typed out.
  *
- * **`#/retrospective`, not `#/decision-review`** — the latter is three characters
- * from `#/review`, and the two are genuinely different things: one is recalling
- * a claim, the other is grading your own reasoning about a past decision. 复盘 is
- * the product's own word for the second, and it cannot be mistaken for the first.
+ * They stay exported because call sites read better as `TODAY_HREF` than as
+ * `ROUTES[0].href` — but there is now only one place a value can come from, so
+ * the two can never drift.
  */
-export const RETROSPECTIVE_HREF = '#/retrospective'
+export const TODAY_HREF = definitionFor('today').href
+export const POOL_HREF = definitionFor('pool').href
+export const REVIEW_HREF = definitionFor('review').href
+export const RETROSPECTIVE_HREF = definitionFor('retrospective').href
 
 export function useRoute(): Route {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash))

@@ -4,55 +4,56 @@ import PoolPage from './PoolPage'
 import RetrospectivePage from './RetrospectivePage'
 import ReviewPage from './ReviewPage'
 import TodayPage from './TodayPage'
-import { POOL_HREF, useRoute } from './routing'
+import { POOL_HREF, titleFor, useRoute } from './routing'
+import { AppShell } from './ui'
 
 export default function App() {
   const route = useRoute()
+  const name = titleFor(route)
 
+  // The title comes off the route table now. It was a nested ternary here, which
+  // meant a new view silently inherited another view's title and nothing
+  // complained.
   useEffect(() => {
-    document.title =
-      route.name === 'instrument'
-        ? `${route.code}.${route.market.toUpperCase()} · AlphaCouncil`
-        : route.name === 'pool'
-          ? 'AlphaCouncil · 关注池'
-          : route.name === 'review'
-            ? 'AlphaCouncil · 复习'
-            : route.name === 'retrospective'
-              ? 'AlphaCouncil · 复盘'
-              : 'AlphaCouncil · 今天'
-  }, [route])
+    document.title = `${name} · AlphaCouncil`
+  }, [name])
 
-  if (route.name === 'instrument') {
-    // Keyed on the instrument so switching targets remounts the page: without
-    // it React would reuse the component, and the previous instrument's loaded
-    // record would stay on screen until the new fetch resolved.
-    return (
-      <InstrumentPage
-        key={`${route.market}/${route.code}`}
-        market={route.market}
-        code={route.code}
-      />
-    )
-  }
-
-  if (route.name === 'pool') return <PoolPage />
-  if (route.name === 'review') return <ReviewPage />
-  // A separate route from `review` rather than a tab inside it: the two queues
-  // grade different things — recalling a claim versus grading your own reasoning
-  // — and a tab would invite the reader to treat them as one list to clear.
-  if (route.name === 'retrospective') return <RetrospectivePage />
-  if (route.name === 'today') return <TodayPage />
-
-  // TypeScript narrowing leaves only `unknown` here.
-  return <UnknownRoute raw={route.raw} />
+  return (
+    <AppShell>
+      {/*
+        Written as a switch over the route name rather than a chain of early
+        returns, so that adding a view is a visible omission here instead of a
+        line that happens to be missing somewhere.
+      */}
+      {route.name === 'instrument' ? (
+        // Keyed on the instrument so switching targets remounts the page: without
+        // it React would reuse the component, and the previous instrument's loaded
+        // record would stay on screen until the new fetch resolved.
+        <InstrumentPage
+          key={`${route.market}/${route.code}`}
+          market={route.market}
+          code={route.code}
+        />
+      ) : null}
+      {route.name === 'pool' ? <PoolPage /> : null}
+      {route.name === 'review' ? <ReviewPage /> : null}
+      {route.name === 'retrospective' ? <RetrospectivePage /> : null}
+      {route.name === 'today' ? <TodayPage /> : null}
+      {route.name === 'unknown' ? <UnknownRoute raw={route.raw} /> : null}
+    </AppShell>
+  )
 }
 
 /**
  * An unrecognised address says so.
  *
- * Falling back to the pool would show a plausible page for a mistyped link,
+ * Falling back to the today page would show a plausible page for a mistyped link,
  * which is the kind of failure that looks like success — the same reason the
  * backend reports an ambiguous ticker instead of picking a market for you.
+ *
+ * It renders **inside the shell**, so even a bad address keeps the nav: a reader
+ * who mistypes should be able to get out by clicking, not by editing the URL bar.
+ * That is the whole reason the shell exists.
  */
 function UnknownRoute({ raw }: { raw: string }) {
   return (

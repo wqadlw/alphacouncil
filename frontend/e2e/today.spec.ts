@@ -52,6 +52,6 @@ test.describe('今日页（spec 005/007 + 红线 9）', () => {
     // the page must never display (成绩单是红线 9 禁止的东西).
     const body = page.locator('body')
     await expect(body).toContainText(/没有收益率、没有排行/)
-    await expect(body).not.toContainText(/收益率[^。]{0,12}[+−\-]?\d/)
+    await expect(body).not.toContainText(/收益率[^。]{0,12}[+−-]?\d/)
   })
 })
