@@ -22,6 +22,7 @@ from alphacouncil.api.routes import (
     cards,
     decisions,
     instruments,
+    reviews,
     today,
     watchlist,
 )
@@ -178,6 +179,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(today.router)
     app.include_router(capabilities.router)
     app.include_router(cards.router)
+    # The review queue. `/api/v1/cards/{card_id}` would otherwise shadow
+    # `/api/v1/cards/due`, so the queue has its own prefix — see reviews.py.
+    app.include_router(reviews.card_router)
+    app.include_router(reviews.queue_router)
 
     @app.get("/health", tags=["ops"], summary="Liveness and configuration probe")
     async def health() -> dict[str, Any]:

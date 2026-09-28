@@ -231,6 +231,76 @@ export interface QuoteResult {
   stale: boolean
 }
 
+// ---------------------------------------------------------------------------
+// K3 · the review queue
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a claim sits in the schedule.
+ *
+ * `deferred` is ours, not fsrs's: "not right now" is a queue state, not a
+ * memory state, and postponing does **not** damage the card (SuperMemo S-05:
+ * "暂不处理是特性不是拖延").
+ */
+export type ScheduleState = 'learning' | 'review' | 'relearning' | 'deferred'
+
+/** Four grades, because fsrs v6 has four — not the five the literature still quotes. */
+export type ReviewRating = 'again' | 'hard' | 'good' | 'easy'
+
+export type ReviewOutcome = 'reviewed' | 'deferred'
+
+/**
+ * A card's scheduling state.
+ *
+ * ⚠️ **The absence of fields is the point.** No `retrievability`, no
+ * `stability`, no `due_in_days`, no `mastery` — each is a number *about the
+ * user*, and red line 9 forbids showing a 成绩. A field that does not exist
+ * cannot be rendered by accident, which is why the backend refuses to send one
+ * (`tests/unit/test_reviews_api.py::TestTheResponseCarriesNoScore`).
+ */
+export interface Schedule {
+  card_id: string
+  state: ScheduleState
+  due_at: string
+}
+
+/** What one interaction did. A fact, not a verdict — see `ReviewReceipt`. */
+export interface ReviewReceipt {
+  card_id: string
+  outcome: ReviewOutcome
+  next_due_at: string
+  state: ScheduleState
+}
+
+export function scheduleCard(cardId: string): Promise<Schedule> {
+  return request<Schedule>(`/api/v1/cards/${cardId}/schedule`, { method: 'POST' })
+}
+
+/**
+ * The queue at a stated instant.
+ *
+ * `asOf` is optional because the server can read the clock, but the tests always
+ * pass it: a queue is a question about a moment, and a question you cannot
+ * re-ask is a question you cannot check.
+ */
+export function getDueCards(asOf?: string, limit = 50): Promise<Schedule[]> {
+  const params = new URLSearchParams()
+  if (asOf) params.set('as_of', asOf)
+  if (limit !== 50) params.set('limit', String(limit))
+  const query = params.toString()
+  return request<Schedule[]>(`/api/v1/review/due${query ? `?${query}` : ''}`)
+}
+
+export function recordReview(
+  cardId: string,
+  body: { outcome: 'reviewed'; rating: ReviewRating } | { outcome: 'deferred'; days?: number },
+): Promise<ReviewReceipt> {
+  return request<ReviewReceipt>(`/api/v1/review/${cardId}`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
 export class ApiError extends Error {
   readonly code: string
   readonly status: number
@@ -525,6 +595,17 @@ export function verifyCard(cardId: string): Promise<Card> {
   return request<Card>(`/api/v1/cards/${encodeURIComponent(cardId)}/verify`, {
     method: 'PATCH',
   })
+}
+
+/**
+ * Read one card.
+ *
+ * The review page needs the claim and its source, and it shows both rather than
+ * only the claim: what is being reviewed has to be checkable against where it
+ * came from, or "review" is just recitation (the provenance rule, in the UI).
+ */
+export function getCard(cardId: string): Promise<Card> {
+  return request<Card>(`/api/v1/cards/${encodeURIComponent(cardId)}`)
 }
 
 /**

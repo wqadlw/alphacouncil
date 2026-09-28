@@ -23,6 +23,7 @@ from alphacouncil.core.error_codes import ErrorCode
 from alphacouncil.domain.card import CardError
 from alphacouncil.domain.decision import DecisionError
 from alphacouncil.domain.instrument import InstrumentError
+from alphacouncil.domain.scheduling import SchedulingError
 from alphacouncil.domain.watchlist import WatchlistError
 
 #: The HTTP status each coded failure deserves.
@@ -38,6 +39,11 @@ _STATUS_BY_CODE: dict[str, int] = {
     ErrorCode.CARD_NOT_FOUND.value: 404,
     ErrorCode.CARD_ALREADY_VERIFIED.value: 409,
     ErrorCode.CARD_NOT_ACTIVE.value: 409,
+    # K3. Both are 409 rather than 404 on purpose: the *card* exists, and what
+    # conflicts is the request with the card's scheduling state. Answering 404
+    # would tell the user their card is gone when it is sitting right there.
+    ErrorCode.CARD_ALREADY_SCHEDULED.value: 409,
+    ErrorCode.CARD_NOT_SCHEDULED.value: 409,
 
 }
 
@@ -93,4 +99,10 @@ CODED_ERRORS: tuple[type[Exception], ...] = (
     WatchlistError,
     DecisionError,
     CardError,
+    # K3. Without this the review queue's failures fall through to the plain
+    # `ValueError` handler and every one of them answers **400** — which is how
+    # "this card is already on the queue" ends up looking like a malformed
+    # request. The domain raises coded errors; registering the base is what makes
+    # the code mean anything at the HTTP edge.
+    SchedulingError,
 )

@@ -27,6 +27,7 @@ import { useEffect, useState } from 'react'
 export type Route =
   | { name: 'today' }
   | { name: 'pool' }
+  | { name: 'review' }
   | { name: 'instrument'; market: string; code: string }
   | { name: 'unknown'; raw: string }
 
@@ -35,6 +36,7 @@ const INSTRUMENT = /^#\/i\/([a-z]{2})\/([0-9]{6})$/
 export function parseHash(hash: string): Route {
   if (hash === '' || hash === '#' || hash === '#/') return { name: 'today' }
   if (hash === '#/pool') return { name: 'pool' }
+  if (hash === '#/review') return { name: 'review' }
   const match = INSTRUMENT.exec(hash)
   if (match) return { name: 'instrument', market: match[1], code: match[2] }
   return { name: 'unknown', raw: hash }
@@ -47,6 +49,14 @@ export function instrumentHref(market: string, code: string): string {
 export const TODAY_HREF = '#/'
 
 export const POOL_HREF = '#/pool'
+
+/**
+ * The review queue's address.
+ *
+ * A named constant for the same reason the other two are: a route rename is one
+ * line, and the compiler finds the call sites.
+ */
+export const REVIEW_HREF = '#/review'
 
 export function useRoute(): Route {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash))

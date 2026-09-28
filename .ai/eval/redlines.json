@@ -122,10 +122,11 @@
       "id": 11,
       "title": "不鼓励频繁操作",
       "enforcement": "禁止任何促使用户「动起来」的设计；「写下回答花了多久」只用于自省，不做排名 / 打卡",
-      "coverage": "none",
-      "verifier": null,
-      "evidence": null,
-      "gap": "无检查。这条本质是设计约束，但**有一个可机械化的代理指标**：仓库里不应存在「连续天数 / 打卡streak / 成就」类字段或组件。与红线 9 的 S-07 同款思路，只是 S-07 目前只查「收益率」字样。"
+      "coverage": "partial",
+      "verifier": { "kind": "gate", "gate": "e2e", "file": "frontend/e2e/review.spec.ts", "selector": "no streak and no progress bar" },
+      "also": [{ "kind": "gate", "gate": "e2e", "file": "frontend/e2e/review.spec.ts", "selector": "the page reports a count but never a progress fraction" }],
+      "evidence": "复习页 E2E 断言页面**不出现**「连续 / 打卡 / streak / 已复习 / N / M」等字样（spec 019）。`duration_ms` 由服务端测量、客户端提交会被 422 拒绝（有 API 测试）。",
+      "gap": "**只覆盖了复习页。** 仓库里没有任何检查能发现「别处」出现促使用户的设计 —— 推送、每日提醒、把 `duration_ms` 汇总成统计，都还没有守卫。也没有一条检查能证明「不鼓励频繁操作」在其他页面（今日页 / 标的页）没有被违反。"
     },
     {
       "id": 12,
