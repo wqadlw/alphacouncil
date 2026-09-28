@@ -490,14 +490,112 @@ class TestS04AppendOnlyTriggers:
 _ENUM_HEADER = "from enum import StrEnum\n\n\nclass ErrorCode(StrEnum):\n"
 
 
+
+def _codes_doc(*prefixes: str, rows: str = "") -> str:
+    """A minimal ``.ai/error-codes.md`` carrying the §2 headings the rule reads.
+
+    ⭐ Since spec 030 the rule **derives** its namespace prefixes from §2's headings
+    rather than keeping a second hand-maintained list — a list already forgotten
+    three times (``REVIEW_*``, ``NOTE_*``, ``LESSON_*``), the last twenty minutes after
+    reading the comment that predicted it.
+
+    So a document that is only a table row no longer registers anything, and the six
+    S-05 tests that used one had to start saying which namespace they are about. The
+    rule has no fallback on purpose: a fallback would fail in the direction where a
+    namespace is half-recognised, which is the silent one.
+    """
+    headings = "".join(
+        f"### 2.{number} `{prefix}_*`\n\n" for number, prefix in enumerate(prefixes, 1)
+    )
+    return f"## 二、错误码命名空间\n\n{headings}{rows}"
+
 class TestS05ErrorCodes:
+    # ── the derivation itself (spec 030) ──────────────────────────────────
+
+    def test_the_prefixes_come_from_the_documents_own_headings(self, tmp_path: Path) -> None:
+        """A namespace with no §2 heading is not registered, and that is reported.
+
+        The rule used to carry a hardcoded prefix list, so this was impossible to
+        state. It is the property that makes the single-place edit possible: add a
+        §2 heading in ``.ai/error-codes.md`` and the code is recognised, with no second
+        file to update and nothing to forget.
+        """
+        ctx = make_ctx(
+            tmp_path,
+            {
+                "backend/src/alphacouncil/core/error_codes.py": _ENUM_HEADER
+                + '    SOMETHING_NEW = "SOMETHING_NEW"\n',
+                ".ai/error-codes.md": _codes_doc(
+                    "CARD", rows="| `CARD_CONTENT_REQUIRED` | error | x |\n"
+                ),
+            },
+        )
+        messages = [issue.message for issue in errors(check_error_codes.run(ctx))]
+        assert any("SOMETHING_NEW" in message for message in messages)
+
+    def test_both_prefixes_are_extracted_and_both_families_match(self, tmp_path: Path) -> None:
+        """The ``DATA_SOURCE_*`` heading has to yield a token, and it did not.
+
+        ⭐ **The load-bearing assertion is the first one.** With ``[A-Z0-9]*`` as the
+        prefix class, the heading ``` `DATA_SOURCE_*` ``` produced *no* token — so
+        ``DATA_SOURCE`` never entered the alternation at all, and every
+        ``DATA_SOURCE_*`` code was recognised only by accident, through the shorter
+        ``DATA`` heading sharing its first word. A namespace that documents itself,
+        registers itself nowhere, and whose codes nevertheless pass is a wrong answer
+        reached by coincidence, which is the shape that survives review.
+
+        The order is asserted because it is the list's contract, **not** because it
+        would break anything today: the suffix class is greedy, so either alternation
+        order fullmatches a real code. The comment in the rule says so too, now.
+        """
+        document = _codes_doc("DATA", "DATA_SOURCE")
+        prefixes = check_error_codes.documented_prefixes(document)
+        assert prefixes == ("DATA_SOURCE", "DATA")
+
+        pattern = check_error_codes.code_pattern(document)
+        assert pattern.fullmatch("DATA_SOURCE_RATE_LIMITED")
+        assert pattern.fullmatch("DATA_MISSING")
+        # ★ And a namespace name on its own is **not** a code: the pattern demands a
+        # `_`-prefixed suffix. This is what keeps §2's headings from counting as
+        # codes, since `registered_codes` reads every backticked token in the document.
+        assert pattern.fullmatch("DATA") is None
+
+    def test_a_heading_may_carry_two_prefixes(self, tmp_path: Path) -> None:
+        """§2.8 is `` `MIGRATION_*` `` / `` `STORAGE_*` `` — one heading, two namespaces.
+
+        A "take the first backticked token" reading of the heading would register
+        ``MIGRATION_*`` and silently drop ``STORAGE_*``, and then every
+        ``STORAGE_*`` code would be reported as unregistered forever with nothing
+        pointing at the cause. Asserted because the derivation reads a heading rather
+        than a line, and that is the only place the two can diverge.
+        """
+
+        document = "### 2.8 `MIGRATION_*` / `STORAGE_*`\n"
+        assert set(check_error_codes.documented_prefixes(document)) == {"MIGRATION", "STORAGE"}
+        pattern = check_error_codes.code_pattern(document)
+        assert pattern.fullmatch("STORAGE_NO_SUCH_TABLE")
+        assert pattern.fullmatch("MIGRATION_UNKNOWN_VERSION")
+
+    def test_a_document_with_no_section_two_registers_nothing(self, tmp_path: Path) -> None:
+        """⭐ And it fails **loudly**, which is the reason there is no fallback.
+
+        A pattern derived from a document with no headings matches nothing, so every
+        declared code is reported. That is a false alarm on a broken document rather
+        than a silent pass — and a fallback to the old hardcoded list would restore
+        precisely the quiet version, which is what the rule change was for.
+        """
+
+        empty = "# codes\n\nnothing here\n"
+        assert check_error_codes.documented_prefixes(empty) == ()
+        assert check_error_codes.code_pattern(empty).fullmatch("CARD_NOT_FOUND") is None
+
     def test_a_code_missing_from_the_document_is_reported(self, tmp_path: Path) -> None:
         ctx = make_ctx(
             tmp_path,
             {
                 "backend/src/alphacouncil/core/error_codes.py": _ENUM_HEADER
                 + '    DATA_SOURCE_UNREACHABLE = "DATA_SOURCE_UNREACHABLE"\n',
-                ".ai/error-codes.md": "# codes\n\nnothing here\n",
+                ".ai/error-codes.md": _codes_doc("DATA_SOURCE"),
             },
         )
         result = check_error_codes.run(ctx)
@@ -513,7 +611,10 @@ class TestS05ErrorCodes:
                 "backend/src/alphacouncil/providers/sources.py": (
                     'CODE = "DATA_SOURCE_FORBIDDEN"\n'
                 ),
-                ".ai/error-codes.md": "| `DATA_SOURCE_FORBIDDEN` | error | x |\n",
+                ".ai/error-codes.md": _codes_doc(
+                    "DATA_SOURCE",
+                    rows="| `DATA_SOURCE_FORBIDDEN` | error | x |\n",
+                ),
             },
         )
         result = check_error_codes.run(ctx)
@@ -527,7 +628,9 @@ class TestS05ErrorCodes:
                 "backend/src/alphacouncil/core/error_codes.py": _ENUM_HEADER
                 + '    CHECK_RAW_HTTP = "CHECK_RAW_HTTP"\n',
                 "backend/checks/rules/no_raw_http.py": 'CODE = "CHECK_RAW_HTTP"\n',
-                ".ai/error-codes.md": "| `CHECK_RAW_HTTP` | error | x |\n",
+                ".ai/error-codes.md": _codes_doc(
+                    "CHECK", rows="| `CHECK_RAW_HTTP` | error | x |\n"
+                ),
             },
         )
         assert errors(check_error_codes.run(ctx)) == []
@@ -542,7 +645,9 @@ class TestS05ErrorCodes:
                     "from alphacouncil.core.error_codes import ErrorCode\n\n"
                     "CODE = ErrorCode.DATA_NO_DATA\n"
                 ),
-                ".ai/error-codes.md": "| `DATA_NO_DATA` | info | 确实没有 |\n",
+                ".ai/error-codes.md": _codes_doc(
+                    "DATA", rows="| `DATA_NO_DATA` | info | 确实没有 |\n"
+                ),
             },
         )
         assert errors(check_error_codes.run(ctx)) == []
@@ -553,7 +658,10 @@ class TestS05ErrorCodes:
             {
                 "backend/src/alphacouncil/core/error_codes.py": _ENUM_HEADER
                 + '    DATA_NO_DATA = "DATA_NO_DATA"\n',
-                ".ai/error-codes.md": "| `DATA_NO_DATA` | info | x |\n| `DATA_GONE` | info | x |\n",
+                ".ai/error-codes.md": _codes_doc(
+                    "DATA",
+                    rows="| `DATA_NO_DATA` | info | x |\n| `DATA_GONE` | info | x |\n",
+                ),
             },
         )
         result = check_error_codes.run(ctx)
@@ -567,7 +675,9 @@ class TestS05ErrorCodes:
             {
                 "backend/src/alphacouncil/core/error_codes.py": _ENUM_HEADER
                 + '    AGENT_WRITE_DENIED = "AGENT_WRITE_DENIED"\n',
-                ".ai/error-codes.md": "| `AGENT_WRITE_DENIED` | error | x |\n",
+                ".ai/error-codes.md": _codes_doc(
+                    "AGENT", rows="| `AGENT_WRITE_DENIED` | error | x |\n"
+                ),
             },
         )
         result = check_error_codes.run(ctx)

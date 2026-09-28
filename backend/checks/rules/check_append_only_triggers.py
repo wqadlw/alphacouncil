@@ -96,6 +96,44 @@ APPEND_ONLY_TABLES = frozenset(
         # mind be retrofitted into never having held the old one, which is exactly
         # the hindsight bias the whole record is meant to survive.
         "note_reviews",
+        # lesson_reviews (spec 030): the same argument a third time, and the third
+        # table to need it. A lesson review answers 「do I still hold what I
+        # learned?」 — and like `note_reviews` it is the product's thesis rather
+        # than a detail: a lesson is the reader's own account of a mistake, so
+        # editing a past answer to it edits the evidence that they were ever
+        # wrong, which is the one thing the record exists to keep.
+        #
+        # ⭐ It is also the ledger that makes 「这条为什么在队列上」 auditable: the
+        # row `enrolled` is written by the enrolment red line 7 makes mandatory,
+        # so the reason a lesson is on the queue is on the row rather than only in
+        # a changelog nobody reads in six months.
+        "lesson_reviews",
+        # lessons (spec 030): the one that **is not a ledger**. A lesson is the
+        # reader's own account of a mistake, and the whole no-`reset` argument in
+        # spec 030 §2.1 rests on it being immutable — which was a convention until
+        # these two triggers. ⭐ The failure they prevent is not hypothetical: an
+        # `update_lesson` would have left FSRS's memory strength attached to text
+        # that no longer exists, which is the exact bug spec 028 fixed for notes by
+        # adding a third outcome. Here the answer is instead to forbid the edit.
+        #
+        # Listed in `APPEND_ONLY_TABLES` even though it holds no review rows, so
+        # that the ledger's `append_only: true` and the guards on disk are
+        # cross-checked against each other. A convention with no trigger is a
+        # comment; a convention with a trigger plus this cross-check is enforced.
+        "lessons",
+        # lesson_promotions (spec 030): **not** a review, and a different reason.
+        # The other nine tables are histories of things that *happened to* the
+        # reader. This one is a promise they made: 「这条教训我已经签成卡片了」. A
+        # row that can be updated would let that promise be silently re-pointed at
+        # a different card, and then `lesson_promotions` would say the card has a
+        # provenance it no longer has — which is the same failure as a dangling
+        # source on a card, reached from the other direction.
+        #
+        # The two UNIQUE constraints already make the *content* unchangeable (one
+        # promotion per lesson, one lesson per card), so what append-only adds is
+        # that the row cannot be removed either: un-promoting would leave a card
+        # whose declared origin no longer exists.
+        "lesson_promotions",
     }
 )
 

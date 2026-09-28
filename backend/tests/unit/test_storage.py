@@ -569,7 +569,7 @@ class TestTheLedgerMatchesTheSchema:
         # original seven. Filing them under a near-miss would have made the
         # ledger wrong rather than merely incomplete, which is the worse failure
         # precisely because it is invisible.
-        assert len(bodies) == 127, f"expected 127 named constraints, found {len(bodies)}"
+        assert len(bodies) == 156, f"expected 156 named constraints, found {len(bodies)}"
 
     def test_every_constraint_uses_a_declared_category(self) -> None:
         for table, constraints in _ledger_constraints().items():

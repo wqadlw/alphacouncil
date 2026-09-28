@@ -146,6 +146,34 @@ ignore = [
 # 「我的想法还没定」 — because paraphrasing them into English would lose the
 # constraint being cited, and `RUF002` cannot tell a quotation from a string.
 "src/alphacouncil/api/routes/notes.py" = ["RUF001", "RUF002"]
+
+# The lesson layer (spec 030) for the same reason as `today.py`, and it is the
+# clearest case of the four: both files quote **the diagnosis that created notes**
+# verbatim — 「`cards` 表被 `source_url` 必填 … 宏观判断、方法论、**教训**、读书笔记全部记不下」 —
+# because the module's whole argument is that a lesson is one of the four things
+# `cards` could not hold, and a paraphrase would no longer be *that* argument.
+# `domain/lesson.py` additionally quotes red line 7 (「每条教训必须生成一条调度项」) and
+# the `note_reviews` `reset` reasoning that the **absence** of a third outcome
+# depends on — and an absence cannot be paraphrased at all.
+# `repositories/lesson.py` quotes red line 7 at both the module and the function
+# that implements it, which is the one place a reader will look to check whether
+# the guarantee is real.
+"src/alphacouncil/domain/lesson.py" = ["RUF001", "RUF002"]
+"src/alphacouncil/storage/repositories/lesson.py" = ["RUF001", "RUF002"]
+
+# The lessons API (spec 030) for the same reason as `today.py`, and with the most
+# quotations of the six. All three are load-bearing rather than decorative:
+#   * `项目总纲` §2.1⑤ - 「你欠 N 条」, in the module docstring's reason for the queue
+#     row having no title. ⭐ That sentence *is* the reason; an English paraphrase of it
+#     is a different argument, and a weaker one.
+#   * red line 7 - 「每条教训必须生成一条调度项」, and the reason a lesson stays on its own
+#     queue after being promoted to a card.
+#   * the rating copy - 「我不同意我学到的东西了」. The same decision spec 028 made for a
+#     note's `again`, and a **product** distinction: calling it 「我忘了」 would be wrong,
+#     so the wording is the constraint.
+# `E501` and `I001` stay **on** for this file, which is why its prose had to be
+# rewrapped to fit 100 columns instead of the file being exempted from the limit.
+"src/alphacouncil/api/routes/lessons.py" = ["RUF001", "RUF002"]
 # The notes layer (spec 026) for the same reason as `today.py`, one step up the
 # stack: `domain/note.py` **quotes two specifications verbatim** — the provenance
 # rule from `基础功能打磨与AI桥接` §2.1 (「不是笔记。笔记可以没有来源；卡片必须有」) and

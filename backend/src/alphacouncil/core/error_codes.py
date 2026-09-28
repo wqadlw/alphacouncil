@@ -130,6 +130,27 @@ class ErrorCode(StrEnum):
     NOTE_NOT_SCHEDULED = "NOTE_NOT_SCHEDULED"
     NOTE_ALREADY_SCHEDULED = "NOTE_ALREADY_SCHEDULED"
 
+    # -- LESSON_* : J5, spec 030 -------------------------------
+    # ⭐ A lesson is not a card and not a note, so it gets its own prefix rather
+    # than borrowing CARD_* or NOTE_*. The codes that would have been tempting to
+    # reuse are the ones that mattered: a lesson with no content is not
+    # NOTE_BODY_BLANK, because the two rules were written for two different
+    # questions, and a reader who saw the wrong code would be told the note rules
+    # apply to a thing that has never been a note.
+    #
+    # Corner brackets rather than fullwidth parentheses here, unlike the rest of
+    # this project: RUF003 applies to comments too, and this sentence is mine —
+    # not a quotation of a rule, so the per-file exemption in pyproject.toml does
+    # not reach it and should not be stretched to.
+    LESSON_CONTENT_BLANK = "LESSON_CONTENT_BLANK"
+    LESSON_TEXT_TOO_LONG = "LESSON_TEXT_TOO_LONG"
+    LESSON_NOT_FOUND = "LESSON_NOT_FOUND"
+    LESSON_REVIEW_MISSING = "LESSON_REVIEW_MISSING"
+    LESSON_ALREADY_PROMOTED = "LESSON_ALREADY_PROMOTED"
+    LESSON_PROMOTION_SOURCE_REQUIRED = "LESSON_PROMOTION_SOURCE_REQUIRED"
+    LESSON_NOT_SCHEDULED = "LESSON_NOT_SCHEDULED"
+    LESSON_TIMESTAMP_NOT_UTC = "LESSON_TIMESTAMP_NOT_UTC"
+
     # -- REVIEW_* : decision reviews and the four quadrants (J3) ------------
     # Added 2026-09-28 (spec 020). REVIEW_NOT_DUE is the one that matters most:
     # it is the hard gate from `项目总纲` P0-3 — an outcome may not be scored

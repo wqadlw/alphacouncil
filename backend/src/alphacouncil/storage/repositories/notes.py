@@ -140,11 +140,35 @@ _LINK_TARGET_TABLE: dict[LinkKind, str] = {
     LinkKind.CARD: "cards",
     LinkKind.DECISION: "decisions",
     LinkKind.INSTRUMENT: "instruments",
-    # J5 教训转卡 is next round, so there is no lessons table yet. `LESSON` is in
-    # the enum so the schema, the docs and the enum agree now; the lookup below
-    # returns False for it until that table exists, which is the honest behaviour
-    # — a link to a lesson cannot be written before lessons can be.
+    # \u2b50 Spec 030 (J5). This entry was declared in spec 026 alongside the enum value,
+    # pointing at a table that did not exist \u2014 which is why the wrong column name in
+    # the query below survived two specs behind the `sqlite_master` guard. The entry
+    # itself was right all along; it was waiting.
     LinkKind.LESSON: "lessons",
+}
+
+#: The column each link kind's identifier lives in, and why it is a second map.
+#:
+#: ⭐ **This map exists because four tables agreeing on a column name is not a
+#: property, it is a coincidence.** ``notes``/``cards``/``decisions``/``lessons`` were
+#: all written at different times by different hands, and the query here assumed
+#: ``id`` for all of them — so when spec 030 added ``lessons`` with a ``lesson_id``
+#: key, a **valid** lesson link raised ``no such column: id`` inside a *validation*
+#: path. That survived two specs because ``LESSON`` was mapped to a table that did not
+#: exist and the function returned ``False`` on the ``sqlite_master`` check first.
+#: ⭐ A guard that makes a bug unreachable looks exactly like a guard that makes it
+#: absent, and the original comment — 「the lookup returns False until that table
+#: exists」 — described the symptom rather than the fact, which was that this path had
+#: never been executed at all.
+#:
+#: ``instruments`` is absent because its key is the composite ``market || '|' || code``
+#: and it already has its own branch above. The two tables that do not fit are named
+#: here rather than as a special case in the query, so adding a table is a data change.
+_LINK_TARGET_COLUMN: dict[LinkKind, str] = {
+    LinkKind.NOTE: "id",
+    LinkKind.CARD: "id",
+    LinkKind.DECISION: "id",
+    LinkKind.LESSON: "lesson_id",
 }
 
 
@@ -465,6 +489,12 @@ def link_targets_exist(connection: sqlite3.Connection, link: Link) -> bool:
     if table is None:
         return False
 
+    # ⭐ Still here, and now it is honest about what it is for. `LinkKind.LESSON` was
+    # mapped to a table that did not exist, and this check is the only reason the
+    # column bug above stayed invisible for two specs — so it earns its place by
+    # covering the same situation one migration later: a `LinkKind` declared ahead of
+    # its table. ⭐ A link that cannot be resolved is refused rather than written to
+    # nowhere, which is the correct answer; it is a **refusal**, not a pass.
     present = connection.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
     ).fetchone()
@@ -478,7 +508,7 @@ def link_targets_exist(connection: sqlite3.Connection, link: Link) -> bool:
         ).fetchone()
         return row is not None
     row = connection.execute(
-        f"SELECT 1 FROM {table} WHERE id = ?",  # noqa: S608 - table from a closed map
+        f"SELECT 1 FROM {table} WHERE {_LINK_TARGET_COLUMN[link.to_kind]} = ?",  # noqa: S608 - both from closed maps
         (link.to_id,),
     ).fetchone()
     return row is not None

@@ -82,24 +82,99 @@ ENUM_CLASS = "ErrorCode"
 #: a rule that wants to be a single-place edit**, so: the fix below is to add the
 #: prefix, and the maintenance rule in `.ai/error-codes.md` §五 now says the two
 #: places by name.
-CODE_PATTERN = re.compile(
-    r"\b(?:AGENT|CARD|CHECK|CONTRACT|DATA_SOURCE|DATA|DECISION|INSTRUMENT|MIGRATION|NOTE|REVIEW|STORAGE|WATCHLIST)"
-    r"_[A-Z0-9_]+\b"
-)
+#: A §2 subsection heading: three hashes, then ``2.`` and a number, then a
+#: backticked ``PREFIX_*`` token, then whatever the heading says after it — which
+#: in every current case is Chinese prose, hence ``title`` rather than the whole
+#: line.
+#:
+#: ⭐ Described rather than reproduced on purpose. The earlier comment pasted a real
+#: heading verbatim, which made it a quotation of a document that gets renumbered
+#: every time a subsection is inserted, and it tripped RUF003 — a reminder that
+#: this project's per-file exemptions are for quoting *rules*, not for quoting
+#: layout, and a rule that gets stretched stops meaning anything.
+#:
+#: Deliberately loose about the number (a ``b`` suffix counts) and strict about the
+#: level, so inserting a subsection between two existing ones needs no edit here.
+_SECTION_HEADING = re.compile(r"^#{3}\s+2\.[0-9a-z]*\s+(?P<title>.*)$", re.MULTILINE)
+
+#: A namespace token inside such a heading.
+#:
+#: ⭐ The character class includes ``_``, and that is not decoration. With
+#: ``[A-Z0-9]*`` the heading ``` `DATA_SOURCE_*` ``` yielded **no token at all** — and
+#: the bug stayed latent only because ``` `DATA_*` ``` also exists, so every
+#: ``DATA_SOURCE_*`` code still matched as ``DATA`` + ``_SOURCE_...``. A prefix that
+#: documents its namespace, is registered by nobody, and whose codes are recognised
+#: anyway because a shorter prefix happens to share its first word: that is a wrong
+#: answer reached by accident, which is the shape that survives review. Delete
+#: ``` `DATA_*` ``` from the document and the whole namespace goes unregistered.
+#:
+#: §2.8 carries **two** of them
+#: (`` `MIGRATION_*` `` / `` `STORAGE_*` ``), so every match in the heading counts —
+#: a "take the first" reading would quietly drop `STORAGE` and then report every
+#: `STORAGE_*` code as unregistered, which is this rule failing in the direction it
+#: exists to prevent.
+_PREFIX_TOKEN = re.compile(r"`([A-Z][A-Z0-9_]*)_\*`")
+
 _BACKTICKED = re.compile(r"`([^`\n]+)`")
 
 
-def registered_codes(document: str) -> set[str]:
+def documented_prefixes(document: str) -> tuple[str, ...]:
+    """The namespace prefixes, read out of the document that documents them.
+
+    ⭐ **This function is the whole fix.** The prefix list used to be a second,
+    hand-maintained copy of §2's headings, and the rule's own comment records it
+    being forgotten twice (``REVIEW_*`` in spec 020, ``NOTE_*`` in spec 026) and
+    then a third time (``LESSON_*``, spec 030, twenty minutes after reading that
+    comment). A list that has to be updated in the same breath as its source is
+    one that eventually is not, and the failure is silent from the document's side:
+    the row is there, the code is declared, and the check says no.
+
+    Length-descending so the list reads deterministically — longest first, then
+    alphabetically — rather than depending on the iteration order of a ``set``.
+
+    ⭐ **The ordering is not what makes this work, and an earlier version of this
+    comment claimed it was.** It said the sort stops ``DATA`` matching part of
+    ``DATA_SOURCE_RATE_LIMITED`` and leaving the rest dangling. It does not: the
+    suffix class is ``[A-Z0-9_]+``, which is greedy, so either order fullmatches a
+    real code. What makes it work is the **prefix class** in ``_PREFIX_TOKEN`` — the
+    comment above — which is why the bug that was actually here (a heading yielding
+    no token at all) lived next to a justification about ordering and was invisible.
+    """
+    found: set[str] = set()
+    for match in _SECTION_HEADING.finditer(document):
+        found.update(_PREFIX_TOKEN.findall(match.group("title")))
+    return tuple(sorted(found, key=lambda prefix: (-len(prefix), prefix)))
+
+
+def code_pattern(document: str) -> re.Pattern[str]:
+    """A pattern matching any code in any namespace §2 documents.
+
+    Derived rather than hardcoded, and with **no fallback**: a document with no
+    §2 headings yields a pattern that matches nothing, so every code is reported.
+    That is the correct direction to fail — loud, and pointing at the document.
+    """
+    prefixes = documented_prefixes(document)
+    if not prefixes:
+        return re.compile(r"(?!)")
+    return re.compile(
+        r"\b(?:" + "|".join(prefixes) + r")_[A-Z0-9_]+\b"
+    )
+
+
+def registered_codes(
+    document: str, pattern: re.Pattern[str] | None = None
+) -> set[str]:
     """Every code named in the document, inside backticks.
 
     Backticks are required on purpose: the document also *discusses* prefixes
     (``DATA_SOURCE_*``) and formats, and prose should not be able to register a
     code by accident.
     """
+    known = pattern if pattern is not None else code_pattern(document)
     return {
         match.group(1).strip()
         for match in _BACKTICKED.finditer(document)
-        if CODE_PATTERN.fullmatch(match.group(1).strip())
+        if known.fullmatch(match.group(1).strip())
     }
 
 
@@ -122,6 +197,7 @@ def declared_codes(ctx: ScanContext) -> set[str]:
 
 def referenced_codes(
     ctx: ScanContext,
+    pattern: re.Pattern[str],
 ) -> tuple[dict[str, list[tuple[Path, int]]], dict[str, list[tuple[Path, int]]]]:
     """Codes named in code, split into ``ErrorCode.X`` uses and bare literals.
 
@@ -150,7 +226,7 @@ def referenced_codes(
             elif (
                 isinstance(node, ast.Constant)
                 and isinstance(node.value, str)
-                and CODE_PATTERN.fullmatch(node.value)
+                and pattern.fullmatch(node.value)
             ):
                 literals.setdefault(node.value, []).append((path, node.lineno))
     return attributes, literals
@@ -173,9 +249,10 @@ def run(ctx: ScanContext) -> CheckResult:
         result.skipped = f"{DOC_PATH} not found — nothing to compare against"
         return result
 
-    doc_codes = registered_codes(document)
+    pattern = code_pattern(document)
+    doc_codes = registered_codes(document, pattern)
     enum_codes = declared_codes(ctx)
-    attributes, literals = referenced_codes(ctx)
+    attributes, literals = referenced_codes(ctx, pattern)
     used = set(attributes) | set(literals)
     touched = {path for sites in (*attributes.values(), *literals.values()) for path, _ in sites}
     result.files = [ctx.backend / ENUM_PATH, *sorted(touched)]

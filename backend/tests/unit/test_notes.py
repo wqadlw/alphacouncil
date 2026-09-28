@@ -403,20 +403,105 @@ class TestLinks:
 
         assert repo.backlinks_for(connection, LinkKind.CARD, card_id) == [a, b]
 
-    def test_a_lesson_link_is_refused_until_lessons_exist(
+    #: A review and a lesson written directly, for the link tests below. The rows go
+    #: in raw because this is about **link resolution**, not about the recording path
+    #: — and going through `lesson.record_lesson` would make these two tests fail for
+    #: reasons belonging to another file. `test_lessons.py` covers the recording path.
+    _LESSON = "lesson_1700000000000"
+    _REVIEW = "review_1700000000000"
+    _STAMP = "2026-09-20T02:15:00.000Z"
+
+    def _write_a_lesson(self, connection: sqlite3.Connection) -> str:
+        """A review and a lesson, raw.
+
+        Written by hand rather than through ``lesson.record_lesson`` because this is
+        about **link resolution**, and routing it through the recording path would
+        make these tests fail for reasons that belong to ``test_lessons.py``. ⭐ The
+        ``reviews`` row mirrors that file's ``_write_review``, which is the one known
+        to satisfy the schema — my first attempt omitted a column and the
+        ``IntegrityError`` named it, which is the good kind of failure.
+        """
+        with transaction(connection):
+            # reviews -> decisions -> instruments, in that order, because the foreign
+            # keys go that way and SQLite checks them as the rows land.
+            connection.execute(
+                "INSERT INTO instruments (market, code, name, name_source, name_fetched_at, "
+                "asset_type, created_at) VALUES ('sh', '600519', ?, 'sina', ?, 'stock', ?)",
+                ("贵州茅台", self._STAMP, self._STAMP),
+            )
+            connection.execute(
+                "INSERT INTO decisions (id, market, code, action, rationale, counter_evidence, "
+                "kill_criteria, thesis_id) VALUES (?, 'sh', '600519', 'buy', ?, ?, ?, NULL)",
+                (
+                    "2026-09-20T02:15:00.000Z",
+                    "高端酒提价能力可持续",
+                    "批价可能回落",
+                    "[]",
+                ),
+            )
+            connection.execute(
+                "INSERT INTO reviews (id, decision_id, process_score, outcome, reviewed_at, "
+                "due_at_snapshot, note, created_at) "
+                "VALUES (?, ?, 2, NULL, ?, ?, NULL, ?)",
+                (
+                    self._REVIEW,
+                    "2026-09-20T02:15:00.000Z",
+                    self._STAMP,
+                    self._STAMP,
+                    self._STAMP,
+                ),
+            )
+            connection.execute(
+                "INSERT INTO lessons (lesson_id, review_id, content, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (self._LESSON, self._REVIEW, "先看批价", self._STAMP),
+            )
+        return self._LESSON
+
+    def test_a_lesson_link_to_a_lesson_that_does_not_exist_is_refused(
         self, connection: sqlite3.Connection
     ) -> None:
-        """J5 教训转卡 is next round, so a lesson link **cannot** be written yet.
+        """A lesson link resolves now, so an unresolvable one is still a mistake.
 
-        The enum lists ``lesson`` so the schema, the enum and the docs agree from
-        the start — but the target table does not exist, so the honest behaviour is
-        a refusal rather than a link to nowhere.
+        This used to read 「J5 教训转卡 is next round, so a lesson link cannot be written
+        yet」 — the enum listed ``lesson`` so the schema, the enum and the docs agreed
+        from the start, while the target table did not exist. Spec 030 built it, which
+        broke the test, and a test whose docstring declared its own premise temporary
+        *should* stop passing when the premise is met.
+
+        The refusal survives for a better reason: ``note_links.to_id`` deliberately has
+        no foreign key, so resolution happens in Python — and a target that does not
+        resolve is exactly what that check exists to catch.
         """
         with pytest.raises(NoteLinkTargetUnknownError):
             _write(
                 connection,
                 links=(Link(to_kind=LinkKind.LESSON, to_id="lesson_1"),),
             )
+
+    def test_a_lesson_link_to_an_existing_lesson_is_accepted(
+        self, connection: sqlite3.Connection
+    ) -> None:
+        """⭐ The test that would have caught a wrong J5.
+
+        A ``lessons`` table that existed but was not wired into link resolution would
+        leave the test above green and only this one red. Together they say what
+        neither can alone: unresolvable is refused, resolvable is not.
+
+        ``LinkKind.LESSON`` was declared two specs before the table existed, on the
+        principle that the enum, the schema and the documents should agree from the
+        start rather than converge later. This is where that pays: no enum change, no
+        migration and no documentation edit was needed to make the link work.
+        """
+        lesson_id = self._write_a_lesson(connection)
+        note_id = _write(
+            connection,
+            links=(Link(to_kind=LinkKind.LESSON, to_id=lesson_id),),
+        )
+        # ⭐ `backlinks_for` returns **note ids**, not rows — one per linking note.
+        # The first version of this asserted `[row.note.id for row in stored]`, which is
+        # the shape the *write* path returns (`NoteRow.note.id`) and not this one.
+        assert repo.backlinks_for(connection, LinkKind.LESSON, lesson_id) == [note_id]
 
 
 # ── titles, listing, absence ────────────────────────────────────────────────

@@ -168,6 +168,34 @@ class DataFetchError(RuntimeError): ...
 | `NOTE_ALREADY_SCHEDULED` | error | 该笔记已在队列上 —— 重复入队会把它变成刚学习的，而它可能已经复习过五次（spec 028） |
  链接目标不存在。⭐ **`note_links.to_id` 故意没有外键** —— 它指向五张表，SQLite 无法约束多态引用，所以这个校验放在 Python 层。**目标表还不存在时（`LESSON`，等 J5 教训转卡）同样报这一条**：解不开的链接就是不该写的链接 |
 
+### 2.5c `LESSON_*`（教训，J5 / spec 030）
+
+> ⭐ **第三个命名空间，而不是复用 `CARD_*` 或 `NOTE_*` 的第二个副本。**
+>
+> 教训既不是卡片也不是笔记，而不签名不可靠的那个原因是真的：
+> `status.md` 里当初建笔记的诊断是「`cards` 三条锁死 → 宏观判断、方法论、**教训**、
+> 读书笔记全部记不下」。教训就在那列里。**教训没有 URL 可给，这不是缺陷，这是它的定义**
+> —— 它的出处是一次真实发生过的、你自己的判断失误。
+>
+> 第一稿 spec 把教训放进 `cards`（放松 `source_url` 为可空、加一个 `review_id`），**被否掉了**：
+> 两个 `NOT NULL` 在 SQLite 里改不掉（要重建整张表），而更重要的是它把 spec 026 整个反过来。
+> 详见 `.ai/specs/030-lesson-to-card/spec.md` §々。
+>
+> ⭐ **`LESSON_PROMOTION_SOURCE_REQUIRED` 是这里最重要的一条，而它是产品、不是管道。** 卡片的出处是 URL，
+> 教训没有，所以「转卡」就是读者必须说出「这条我现在愿意署名，出处是……」的那一刻。
+> 拿不出来，说明它还只是一条教训 —— **而它已经记下来了，不会丢**。
+
+| code | severity | 含义 |
+|---|---|---|
+| `LESSON_CONTENT_BLANK` | error | 教训正文为空白。不复用 `NOTE_BODY_BLANK`：两条规则是为两个不同的问题写的，而读者若看到错的码，会被告知笔记的规则也适用于一个从未是笔记的东西 |
+| `LESSON_TEXT_TOO_LONG` | error | 教训超过 1000 字（与笔记同上限，两者的差别是证据而不是容量） |
+| `LESSON_NOT_FOUND` | error | 目标教训不存在 |
+| `LESSON_REVIEW_MISSING` | error | 这条教训想跟的决策**还没写复盘**。不是「没有那次复盘」而是具体的「还没写」：还未到期的 `decision_review_state` 不是出处，否则这条教训会被定日到一个尚未发生的时刻 |
+| `LESSON_ALREADY_PROMOTED` | error | 这条教训已经转成过卡片。不静默返回第二个成功：转两次会产生两张卡片同时声称同一份出处，而读者无从区分哪张是自己签的 |
+| `LESSON_PROMOTION_SOURCE_REQUIRED` | error | 转卡时没给出处（链接或标题任一缺失，或链接不是 http/https）。⭐ **取代了「转不过去」这个选项** —— 拿不出出处就继续当一条教训 |
+| `LESSON_NOT_SCHEDULED` | error | 该教训不在队列上。与 `NOTE_NOT_SCHEDULED`、`CARD_NOT_SCHEDULED` 都分开：三者回答的是三个不同的问题（「我回忆起来这条主张吗」/ 「我还持持这个看法吗」 / 「我还认同这条教训吗」） |
+| `LESSON_TIMESTAMP_NOT_UTC` | error | 时间戳不是 UTC 微秒格式 |
+
 ### 2.6 `REVIEW_*`（决策复盘 / 四象限，J3）
 
 | code | severity | 含义 |

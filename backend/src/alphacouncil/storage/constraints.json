@@ -28,7 +28,8 @@
     "  identity = 值的形式约束：规范化时间戳（strftime 往返）、定宽数字码（GLOB）、",
     "             或「给了就不能是空白」（`x IS NULL OR length(trim(x)) > 0`）",
     "  required = 必填且非空白：`length(trim(x)) > 0`，**没有 NULL 分支**，",
-    "             因为字段本身 NOT NULL，空白是唯一的非法值"
+    "             因为字段本身 NOT NULL，空白是唯一的非法值",
+    "10 · lessons：lessons / lesson_schedule / lesson_reviews / lesson_promotions。**lesson_reviews 有 12 条而不是 13 条** —— 我先写了「只有真复习才可能带耗时」，然后发现已入队无耗时 + 已推迟无耗时两条已经覆盖全部三种 outcome，第三条永远不会独立违反。⭐ 永远不可能被违反的约束是噪音：它读起来像防护，实际是维护成本加上一条没人能测的声明。见 2026-09-28 的 spec 030 变更日志。"
   ],
   "categories": [
     "comparison",
@@ -261,6 +262,55 @@
         "note_reviews_reviewed_at_check": "identity",
         "note_reviews_from_state_check": "enum",
         "note_reviews_to_state_check": "enum"
+      }
+    },
+    "lessons": {
+      "append_only": true,
+      "constraints": {
+        "lessons_id_check": "identity",
+        "lessons_review_required_check": "required",
+        "lessons_content_required_check": "required",
+        "lessons_content_length_check": "length",
+        "lessons_created_at_check": "identity"
+      }
+    },
+    "lesson_schedule": {
+      "append_only": false,
+      "constraints": {
+        "lesson_schedule_lesson_required_check": "required",
+        "lesson_schedule_fsrs_id_check": "comparison",
+        "lesson_schedule_state_check": "enum",
+        "lesson_schedule_state_json_valid_check": "json",
+        "lesson_schedule_due_at_check": "required",
+        "lesson_schedule_enrolled_at_check": "identity",
+        "lesson_schedule_updated_at_check": "identity",
+        "lesson_schedule_updated_not_before_enrolled_check": "comparison"
+      }
+    },
+    "lesson_reviews": {
+      "append_only": true,
+      "constraints": {
+        "lesson_reviews_id_check": "identity",
+        "lesson_reviews_lesson_required_check": "required",
+        "lesson_reviews_outcome_check": "enum",
+        "lesson_reviews_rating_shape_check": "enum",
+        "lesson_reviews_reviewed_needs_rating_check": "conditional_required",
+        "lesson_reviews_enrolled_has_no_rating_check": "conditional_required",
+        "lesson_reviews_enrolled_has_no_duration_check": "conditional_required",
+        "lesson_reviews_deferred_has_no_rating_check": "conditional_required",
+        "lesson_reviews_deferred_has_no_duration_check": "conditional_required",
+        "lesson_reviews_duration_positive_check": "conditional_required",
+        "lesson_reviews_reviewed_at_check": "identity",
+        "lesson_reviews_from_state_check": "enum",
+        "lesson_reviews_to_state_check": "enum"
+      }
+    },
+    "lesson_promotions": {
+      "append_only": true,
+      "constraints": {
+        "lesson_promotions_lesson_id_check": "identity",
+        "lesson_promotions_card_id_check": "identity",
+        "lesson_promotions_promoted_at_check": "identity"
       }
     }
   }

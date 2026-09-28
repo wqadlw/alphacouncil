@@ -7,7 +7,8 @@
     "时拒绝执行它（ADR-0012 规则 2：确实不可逆时必须显式声明，而不是假装可逆）。",
     "",
     "本文件与 .sql 文件由 tests/unit/test_storage.py 交叉校验：清单里列的文件必须存在，",
-    "目录里的 .sql 文件必须在清单里登记 —— 否则一个写好的迁移可能永远不会被执行。"
+    "目录里的 .sql 文件必须在清单里登记 —— 否则一个写好的迁移可能永远不会被执行。",
+    "10 · lessons：新增 4 张表（lessons / lesson_schedule / lesson_reviews / lesson_promotions）。**cards 的两条出处 CHECK 一个字未动** —— 教训有自己的表，provenance rule 未被放松（spec 030 §〇、§2）"
   ],
   "migrations": [
     {
@@ -81,6 +82,14 @@
       "down": "0009_note_schedule.down.sql",
       "destructive_down": true,
       "down_note": "删除 note_schedule（每条笔记的当前排程）与 note_reviews（全部重读 / 评分 / 推迟 / 重写流水）。**notes / note_tags / note_note_symbols / note_links 全部不受影响 —— 笔记本身一个字都不会少**，与 0008 不同，那一条丢的只是可重建的派生索引。丢的是「笔记的复习史」，而学习的尝试史就是这个产品本身。要退回请从快照恢复，不要跑 down.sql。"
+    },
+    {
+      "version": 10,
+      "name": "lessons",
+      "up": "0010_lessons.up.sql",
+      "down": "0010_lessons.down.sql",
+      "destructive_down": true,
+      "down_note": "删 lesson_promotions（每条教训的转卡记录，含对 cards 的外键引用，不回滚 cards）/ lesson_reviews（全部教训复习流水）/ lesson_schedule（每条教训的当前状态）/ lessons（全部教训正文与其 review 外键）—— **reviews 的原始记录不动**，但教训的复习学习记录、转卡记录、状态、教训正文全部消失，且转过卡的卡片会失去它的出处记录。要恢复只能另起炉灶重记。"
     }
   ]
 }

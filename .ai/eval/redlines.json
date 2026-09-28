@@ -9,13 +9,13 @@
   },
   "baseline": {
     "date": "2026-09-28",
-    "pass": 6,
+    "pass": 7,
     "total": 15,
-    "full": 6,
-    "partial": 5,
+    "full": 7,
+    "partial": 4,
     "none": 4,
-    "pass_rate": 0.4,
-    "note": "Bumped 2026-09-28 with spec 020 (J3): red line 5 went none → full, red line 10 went none → partial. `pass` moved 5 → 6 because red line 5 is now guarded by an executed test. **Red line 10 is deliberately `partial`, so it still does not count** — and it was left `partial` again after spec 021, but **for a completely different reason**, which is the part worth keeping: the first `partial` said \"no interface exists\", and spec 021 built the interface, so that reason became false. The reason it is still `partial` now is that **the page has no way in** — no link to `#/retrospective`, and nothing that goes and finds the user when a review falls due (which `项目总纲` §2.1 requires by name: the 4th and 5th moments are ones the user will not come for on their own). Marking it `full` on the strength of a passing E2E would have been the optimistic accounting this file exists to prevent. Two bookkeeping slips happened while writing the first version of this note and are recorded rather than quietly fixed: the previous breakdown read 2 / 8 when the measurement said 4 / 6, and the first draft of that bump read `partial 4 / none 5` because red line 10's move to `partial` was not carried through. Both were invisible to the gate because the pinning test only compared `pass` and `total`; it now compares all four counts."
+    "pass_rate": 0.4667,
+    "note": "Bumped 2026-09-28 with spec 020 (J3): red line 5 went none → full, red line 10 went none → partial. `pass` moved 5 → 6 because red line 5 is now guarded by an executed test. **Red line 10 is deliberately `partial`, so it still does not count** — and it was left `partial` again after spec 021, but **for a completely different reason**, which is the part worth keeping: the first `partial` said \"no interface exists\", and spec 021 built the interface, so that reason became false. The reason it is still `partial` now is that **the page has no way in** — no link to `#/retrospective`, and nothing that goes and finds the user when a review falls due (which `项目总纲` §2.1 requires by name: the 4th and 5th moments are ones the user will not come for on their own). Marking it `full` on the strength of a passing E2E would have been the optimistic accounting this file exists to prevent. Two bookkeeping slips happened while writing the first version of this note and are recorded rather than quietly fixed: the previous breakdown read 2 / 8 when the measurement said 4 / 6, and the first draft of that bump read `partial 4 / none 5` because red line 10's move to `partial` was not carried through. Both were invisible to the gate because the pinning test only compared `pass` and `total`; it now compares all four counts.\n\nBumped 2026-09-28 with spec 030 (J5 教训转卡): red line 7 went partial → full, so `pass` moved 6 → 7 and the rate 0.400 → 0.467. 【为什么这是“进展”而不是“基线漂了”】 `pass` 是红线真正被强制的数字，而 `full` 只是声称。如果本次只把 `coverage` 改成 `full` 而 `pass` 没动，那就是一条标着「已强制」而实际没被强制的红线，文档在自相矛盾。**数字没动就证明应动的东西没动**，所以这一步是证据而不是噪声。【分解一致】 full 6→7 · partial 5→4 · none 4 不变 · pass 6→7。前一份 baseline 记录里写过两次账务漂误（分解对不上），所以这里是核对的而不是推定的。【仍然退出 1】 `threshold` 是 1.0，八条红线还没有强制。**baseline 不是目标**；一个 spec 把 15 里的一条挤进去，没有据此谈出满分。"
   },
   "verifier_kinds": {
     "static": "A rule in `.ai/checks/static/` (S-01..S-13). `eval` executes it now via `python -m checks --json` and requires the rule to have run (not skipped) with zero error findings.",
@@ -116,22 +116,28 @@
     {
       "id": 7,
       "title": "教训必须能再次遇到",
-      "enforcement": "每条教训必须生成一条调度项（FSRS）",
-      "coverage": "partial",
+      "enforcement": "每条教训必须生成一条调度项（FSRS）。【spec 030】这不是一个口头约定，而是一个不变量：`record_lesson()` 在同一个事务里无条件地写教训与调度项，排程行不存在则教训不存在。",
+      "coverage": "full",
       "verifier": {
-        "kind": "static",
-        "check": "S-04"
+        "kind": "test",
+        "node": "tests/unit/test_lessons.py::TestRedLineSeven::test_blocking_the_schedule_insert_rolls_the_lesson_back"
       },
       "also": [
         {
-          "kind": "gate",
-          "gate": "test",
-          "file": "backend/tests/unit/test_scheduling.py",
-          "selector": "test_the_fsrs_payload_survives_a_deferral_byte_for_byte"
+          "kind": "test",
+          "node": "tests/unit/test_lessons.py::TestTheLessonItself::test_lessons_are_immutable"
+        },
+        {
+          "kind": "test",
+          "node": "tests/unit/test_lessons.py::TestWhyThereIsNoReset::test_the_database_refuses_a_reset_row"
+        },
+        {
+          "kind": "static",
+          "check": "S-04"
         }
       ],
-      "evidence": "K3（spec 018）落地了排程机制本身：`card_schedule` + append-only `card_reviews` + 领域规则 + 仓储，46 项测试。S-04 保证 `card_reviews` 不可改不可删。",
-      "gap": "**机制有了，「每条教训自动生成」还没有。** 本项目目前没有「教训」这个类型（`cards` 表只有 `origin` / `priority` / `status`），J5「教训转卡」未开工，所以**没有任何东西保证一条教训会走进队列** —— 是用户手动排程的。这条红线的强制手段要到 J5 才能写成检查。"
+      "evidence": "红线 7 要求「每条教训生成一条调度项」。spec 030 建了 `lessons` / `lesson_schedule` / `lesson_reviews` / `lesson_promotions` 四张表，并且 `cards` 的两条出处 CHECK **一个字未动**（教训没有出处，因为它的出处是一次复盘，而不是一个 URL）。【自动】的实现形式：`record_lesson()` 里教训的 INSERT 与排程的 INSERT **相邻且无条件**——没有「写完教训再决定要不要入队」这个代码路径，因为那个决定在红线写下来的时候就做完了。【结构性】的验证方式是**反向**的：用触发器拒绝写入 `lesson_schedule`，记教训必须失败**且教训行也不存在**（`test_blocking_the_schedule_insert_rolls_the_lesson_back`）——正向断言「调度行在」只描述了今天的形状，反向断言问的是红线那句话本身。【不可变】`lessons` 有 BEFORE UPDATE / DELETE 触发器，所以 `lesson_reviews` **不需要** `note_reviews` 那个 `reset`：可变的笔记改写后会把记忆强度留在不存在的文本上，而教训不会。三套流水里只有可变的那一套有第三态 —— 这个不对称是「教训与卡片同一类」的证据。【转卡】需要出处（`LESSON_PROMOTION_SOURCE_REQUIRED`），且转卡**不停止教训的排程**（`test_promoting_does_not_discharge_the_guarantee`）——红线不能有「转了卡就不用复习了」这种分支。",
+      "gap": "无。三个原因关闭：教训作为一等公民存在（且**不可变**，有触发器）；入队是自动的（`record_lesson` 里无条件）；而且有一个条会在保证失效时失败的测试（反向）。【本条红线不要求教训变成卡片】它从未说过——给教训一条调度项字面上就是它要的。"
     },
     {
       "id": 8,

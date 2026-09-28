@@ -23,6 +23,7 @@ from alphacouncil.api.routes import (
     decision_reviews,
     decisions,
     instruments,
+    lessons,
     notes,
     reviews,
     today,
@@ -185,6 +186,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Registered after the card router so a reader scanning this list meets the
     # two in the order the product thinks in them — a claim, then a note.
     app.include_router(notes.router)
+    # Lessons (spec 030, J5): red line 7's way in. Registered here because its prefix
+    # does not overlap `notes`, so the position is **cosmetic** — a reader scanning
+    # this list meets the knowledge layer in the order the product thinks in it: a
+    # claim, a note, and a lesson learned the hard way. One of its routes is
+    # `/api/v1/reviews/{decision_id}/lesson`, which reads as a review's child and is.
+    app.include_router(lessons.router)
     # The review queue. `/api/v1/cards/{card_id}` would otherwise shadow
     # `/api/v1/cards/due`, so the queue has its own prefix — see reviews.py.
     app.include_router(reviews.card_router)
