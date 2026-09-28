@@ -752,9 +752,9 @@ class TestTheRealSecondMigration:
 
         report = migrate.apply(connection, database_path=database)
 
-        assert report.applied == (2, 3, 4)
+        assert report.applied == (2, 3, 4, 5)
         assert report.from_version == 1
-        assert migrate.schema_version(connection) == 4
+        assert migrate.schema_version(connection) == 5
         row = connection.execute(
             "SELECT reason FROM watchlist_events WHERE code = ?", ("600519",)
         ).fetchone()
@@ -831,9 +831,9 @@ class TestTheRealThirdMigration:
 
         report = migrate.apply(connection, database_path=database)
 
-        assert report.applied == (3, 4)
+        assert report.applied == (3, 4, 5)
         assert report.from_version == 2
-        assert migrate.schema_version(connection) == 4
+        assert migrate.schema_version(connection) == 5
         # Watchlist row preserved
         row = connection.execute(
             "SELECT reason FROM watchlist_events WHERE code = ?", ("600519",)
@@ -886,9 +886,9 @@ class TestTheRealFourthMigration:
 
         report = migrate.apply(connection, database_path=database)
 
-        assert report.applied == (4,)
+        assert report.applied == (4, 5)
         assert report.from_version == 3
-        assert migrate.schema_version(connection) == 4
+        assert migrate.schema_version(connection) == 5
         # The existing card survives the upgrade.
         row = connection.execute("SELECT status FROM cards WHERE id = 'card_1'").fetchone()
         assert row is not None and row[0] == "active"

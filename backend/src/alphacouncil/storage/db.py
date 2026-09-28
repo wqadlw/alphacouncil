@@ -155,3 +155,39 @@ def transaction(connection: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
         connection.execute("ROLLBACK")
         raise
     connection.execute("COMMIT")
+
+
+def require_open_transaction(connection: sqlite3.Connection, *, operation: str) -> None:
+    """Refuse a multi-statement write that was not wrapped by the caller.
+
+    The project convention is that **the caller owns the transaction**: every
+    write route in ``api/routes/`` opens one with :func:`transaction`, because a
+    repository call may need to sit inside a larger unit of work (a read, then a
+    write, then a read).
+
+    That convention has a cost, and this function is the cost being paid out
+    loud: a repository method that mutates two tables **cannot be atomic on its
+    own**, and nothing about ``connection.execute(a); connection.execute(b)`` on
+    an autocommit connection says so. Called outside a transaction, the two
+    statements are two independent commits — the card ends up ``converged`` with
+    no record of why, and ``card_events`` is append-only, so that record can never
+    be written afterwards (regression ``0006``).
+
+    So the repository does not open a transaction (that would nest, and
+    :func:`transaction` deliberately refuses to) and does not silently proceed
+    either. It checks.
+
+    Args:
+        connection: The connection the write is about to use.
+        operation: What the caller was doing, for the error message.
+
+    Raises:
+        RuntimeError: No transaction is open on this connection.
+    """
+    if not connection.in_transaction:
+        msg = (
+            f"{operation} writes more than one row and must run inside "
+            "`alphacouncil.storage.db.transaction(...)`; the connection is in "
+            "autocommit, so the writes would each commit on their own"
+        )
+        raise RuntimeError(msg)

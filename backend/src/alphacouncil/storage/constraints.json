@@ -31,6 +31,7 @@
     "             因为字段本身 NOT NULL，空白是唯一的非法值"
   ],
   "categories": [
+    "comparison",
     "identity",
     "enum",
     "json",
@@ -129,6 +130,35 @@
         "card_events_reason_length_check": "length",
         "card_events_converge_reason_check": "conditional_required",
         "card_events_created_at_check": "identity"
+      }
+    },
+    "card_schedule": {
+      "append_only": false,
+      "constraints": {
+        "card_schedule_card_required_check": "required",
+        "card_schedule_fsrs_id_check": "comparison",
+        "card_schedule_state_check": "enum",
+        "card_schedule_state_json_valid_check": "json",
+        "card_schedule_due_at_check": "required",
+        "card_schedule_enrolled_at_check": "identity",
+        "card_schedule_updated_at_check": "identity",
+        "card_schedule_updated_not_before_enrolled_check": "comparison"
+      }
+    },
+    "card_reviews": {
+      "append_only": true,
+      "constraints": {
+        "card_reviews_id_check": "identity",
+        "card_reviews_card_required_check": "required",
+        "card_reviews_outcome_check": "enum",
+        "card_reviews_rating_shape_check": "enum",
+        "card_reviews_reviewed_needs_rating_check": "conditional_required",
+        "card_reviews_deferred_has_no_rating_check": "conditional_required",
+        "card_reviews_deferred_has_no_duration_check": "conditional_required",
+        "card_reviews_duration_positive_check": "conditional_required",
+        "card_reviews_reviewed_at_check": "identity",
+        "card_reviews_from_state_check": "enum",
+        "card_reviews_to_state_check": "enum"
       }
     }
   }

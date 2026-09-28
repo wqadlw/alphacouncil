@@ -78,6 +78,10 @@ APPEND_ONLY_TABLES = frozenset(
         "audit_log",
         "watchlist_events",
         "card_events",
+        # card_reviews (K3, spec 018): a review is an event that happened to the
+        # user's memory, and re-writing one would let a past recall be edited into
+        # a better past recall — the same reason the other six tables are here.
+        "card_reviews",
     }
 )
 

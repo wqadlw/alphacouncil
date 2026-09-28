@@ -1,5 +1,5 @@
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import date
 from pathlib import Path
 
@@ -163,6 +163,20 @@ def connection(database_path: Path) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+def _write[T](connection: sqlite3.Connection, call: Callable[[], T]) -> T:
+    """Run one multi-table write inside a transaction, the way a route does.
+
+    ``cards.verify`` and ``cards.converge`` each write a row to ``cards`` and a
+    row to ``card_events``, so they require an open transaction and refuse to run
+    without one (``db.require_open_transaction``, regression 0006). The project
+    convention is that the **caller** owns it, because a repository call often
+    sits inside a larger unit of work — so a test calling the repository directly
+    is a caller too, and owes the same wrapper.
+    """
+    with db.transaction(connection):
+        return call()
+
+
 def _draft(
     *,
     content: str = "渠道库存是白酒先行指标",
@@ -315,7 +329,7 @@ def test_verify_upgrades_ai_generated_to_user_written(
     )
     assert row.origin is CardOrigin.AI_GENERATED
 
-    verified = repository.verify(connection, row.id)
+    verified = _write(connection, lambda: repository.verify(connection, row.id))
     assert verified.origin is CardOrigin.USER_WRITTEN
 
     # The upgrade persists; a second read agrees with the returned row.
@@ -353,7 +367,10 @@ def test_verify_records_a_verified_event(connection: sqlite3.Connection) -> None
         _draft(origin=CardOrigin.AI_GENERATED),
         now="2026-09-27T12:00:00.000Z",
     )
-    verified = repository.verify(connection, row.id, now="2026-09-27T12:05:00.000Z")
+    verified = _write(
+        connection,
+        lambda: repository.verify(connection, row.id, now="2026-09-27T12:05:00.000Z"),
+    )
 
     assert len(verified.events) == 1
     event = verified.events[0]
@@ -369,11 +386,14 @@ def test_converge_moves_active_card_to_converged(
     connection: sqlite3.Connection,
 ) -> None:
     row = repository.create(connection, _draft(), now="2026-09-27T12:00:00.000Z")
-    converged = repository.converge(
+    converged = _write(
         connection,
-        row.id,
-        "公司改直营，渠道先行关系失效",
-        now="2026-09-27T12:05:00.000Z",
+        lambda: repository.converge(
+            connection,
+            row.id,
+            "公司改直营，渠道先行关系失效",
+            now="2026-09-27T12:05:00.000Z",
+        ),
     )
 
     assert converged.status is CardStatus.CONVERGED
@@ -392,7 +412,10 @@ def test_converge_on_converged_card_raises_not_active(
     connection: sqlite3.Connection,
 ) -> None:
     row = repository.create(connection, _draft(), now="2026-09-27T12:00:00.000Z")
-    repository.converge(connection, row.id, "理由", now="2026-09-27T12:05:00.000Z")
+    _write(
+        connection,
+        lambda: repository.converge(connection, row.id, "理由", now="2026-09-27T12:05:00.000Z"),
+    )
     with pytest.raises(CardNotActiveError):
         repository.converge(connection, row.id, "再试一次")
 
@@ -414,8 +437,16 @@ def test_list_events_orders_by_created_at(connection: sqlite3.Connection) -> Non
         _draft(origin=CardOrigin.AI_GENERATED),
         now="2026-09-27T12:00:00.000Z",
     )
-    repository.verify(connection, row.id, now="2026-09-27T12:05:00.000Z")
-    repository.converge(connection, row.id, "收敛理由", now="2026-09-27T12:10:00.000Z")
+    _write(
+        connection,
+        lambda: repository.verify(connection, row.id, now="2026-09-27T12:05:00.000Z"),
+    )
+    _write(
+        connection,
+        lambda: repository.converge(
+            connection, row.id, "收敛理由", now="2026-09-27T12:10:00.000Z"
+        ),
+    )
 
     events = repository.list_events(connection, row.id)
     assert [e.event_type for e in events] == [

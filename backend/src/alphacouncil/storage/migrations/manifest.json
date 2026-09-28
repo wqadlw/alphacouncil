@@ -41,6 +41,14 @@
       "down": "0004_card_events.down.sql",
       "destructive_down": true,
       "down_note": "删除 card_events 状态事件流（卡片当前状态在 cards 中保留，但状态流转历史丢失）。要退回请从快照恢复。"
+    },
+    {
+      "version": 5,
+      "name": "card_scheduling",
+      "up": "0005_card_scheduling.up.sql",
+      "down": "0005_card_scheduling.down.sql",
+      "destructive_down": true,
+      "down_note": "删除 card_schedule（每张卡的当前排程）与 card_reviews（全部复习流水）。cards / card_events 不受影响，但「这张卡什么时候该复习、复习过几次」会永久丢失。要退回请从快照恢复，不要跑 down.sql。"
     }
   ]
 }

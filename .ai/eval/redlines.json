@@ -82,10 +82,11 @@
       "id": 7,
       "title": "教训必须能再次遇到",
       "enforcement": "每条教训必须生成一条调度项（FSRS）",
-      "coverage": "none",
-      "verifier": null,
-      "evidence": null,
-      "gap": "无检查，且**不可能有**：`fsrs` 已声明但全仓零 import，K3 未开工（`.ai/status.md` §二 K3）。J5 教训转卡也未实现。"
+      "coverage": "partial",
+      "verifier": { "kind": "static", "check": "S-04" },
+      "also": [{ "kind": "gate", "gate": "test", "file": "backend/tests/unit/test_scheduling.py", "selector": "test_the_fsrs_payload_survives_a_deferral_byte_for_byte" }],
+      "evidence": "K3（spec 018）落地了排程机制本身：`card_schedule` + append-only `card_reviews` + 领域规则 + 仓储，46 项测试。S-04 保证 `card_reviews` 不可改不可删。",
+      "gap": "**机制有了，「每条教训自动生成」还没有。** 本项目目前没有「教训」这个类型（`cards` 表只有 `origin` / `priority` / `status`），J5「教训转卡」未开工，所以**没有任何东西保证一条教训会走进队列** —— 是用户手动排程的。这条红线的强制手段要到 J5 才能写成检查。"
     },
     {
       "id": 8,

@@ -75,6 +75,15 @@ class ErrorCode(StrEnum):
     CARD_NOT_ACTIVE = "CARD_NOT_ACTIVE"
     CARD_CONVERGE_REASON_REQUIRED = "CARD_CONVERGE_REASON_REQUIRED"
 
+    # Added 2026-09-28 with K3 (spec 018). Review scheduling. Three codes because
+    # three different questions are being asked: does this card exist on the queue
+    # (NOT_SCHEDULED), is enrolling it twice a mistake worth refusing (ALREADY),
+    # and is the timestamp UTC (NOT_UTC). The last one exists because `fsrs`
+    # rejects a naive datetime with a library error; ours names the field instead.
+    CARD_NOT_SCHEDULED = "CARD_NOT_SCHEDULED"
+    CARD_ALREADY_SCHEDULED = "CARD_ALREADY_SCHEDULED"
+    CARD_TIMESTAMP_NOT_UTC = "CARD_TIMESTAMP_NOT_UTC"
+
     # -- WATCHLIST_* : the instrument pool (D1) ----------------------------
     # A separate namespace from DECISION_* because the two rules look alike and
     # are not: one guards a trade, the other guards the reason for watching an

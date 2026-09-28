@@ -33,6 +33,7 @@ from alphacouncil.domain.card import (
     ClaimType,
 )
 from alphacouncil.models.market import Market, Symbol
+from alphacouncil.storage.db import require_open_transaction
 from alphacouncil.storage.repositories import instruments
 
 __all__ = [
@@ -311,6 +312,7 @@ def verify(
         reason=None,
         created_at=stamp,
     )
+    require_open_transaction(connection, operation="cards.verify")
     connection.execute(_UPDATE_ORIGIN, (CardOrigin.USER_WRITTEN.value, card_id))
     connection.execute(
         _INSERT_EVENT,
@@ -351,6 +353,7 @@ def converge(
         reason=cleaned,
         created_at=stamp,
     )
+    require_open_transaction(connection, operation="cards.converge")
     connection.execute(_UPDATE_STATUS, (CardStatus.CONVERGED.value, card_id))
     connection.execute(
         _INSERT_EVENT,

@@ -137,6 +137,9 @@ class DataFetchError(RuntimeError): ...
 | `CARD_PRIORITY_INVALID` | error | 卡片优先级超出 1..5 范围 |
 | `CARD_NOT_ACTIVE` | error | 卡片非 `active`，无法收敛（K2） |
 | `CARD_CONVERGE_REASON_REQUIRED` | error | 收敛卡片未提供非空白理由（K2） |
+| `CARD_NOT_SCHEDULED` | error | 该卡不在复习队列上，无法记录复习或推迟（K3） |
+| `CARD_ALREADY_SCHEDULED` | error | 该卡已在复习队列上 —— 重复排程会把旧课的稳定性清零（K3） |
+| `CARD_TIMESTAMP_NOT_UTC` | error | 复习相关时间戳不是带时区的 UTC（K3；`fsrs` 本身也拒绝，但那条会以库内部错误的形式冒到 API） |
 
 ### 2.5 `AGENT_*`
 

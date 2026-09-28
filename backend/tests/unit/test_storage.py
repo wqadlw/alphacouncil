@@ -82,6 +82,12 @@ CATEGORY_MARKERS: dict[str, tuple[tuple[str, ...], ...]] = {
     # the two are separate substrings, which is why both appear here.
     "conditional_required": (("IS NOT NULL",), ("IS NULL",)),
     "required": (("trim(",),),
+    # A range or an ordering between two columns. Added 2026-09-28 with K3:
+    # `card_schedule.fsrs_card_id > 0` and `updated_at >= enrolled_at` are real
+    # constraints that match none of the six shapes above, and filing them under
+    # a near-miss category would have made the ledger *wrong* rather than merely
+    # incomplete — which is worse than a gap, because a gap is visible.
+    "comparison": ((">=",), (" > ",)),
 }
 
 #: ``required`` is the one category that must *not* mention NULL: it says the
@@ -375,7 +381,7 @@ class TestTheLedgerMatchesTheSchema:
         # = 28 + 14 + 3 = 45 — the number is written dead on purpose
         # (constitution 8.3): a new migration changes it, and that is exactly
         # when a human should look.
-        assert len(bodies) == 52, f"expected 52 named constraints, found {len(bodies)}"
+        assert len(bodies) == 71, f"expected 71 named constraints, found {len(bodies)}"
 
     def test_every_constraint_uses_a_declared_category(self) -> None:
         for table, constraints in _ledger_constraints().items():
