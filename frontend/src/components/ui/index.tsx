@@ -16,7 +16,14 @@
  */
 
 import { cva, type VariantProps } from 'class-variance-authority'
-import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react'
+import {
+  forwardRef,
+  type ButtonHTMLAttributes,
+  type HTMLAttributes,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type TextareaHTMLAttributes,
+} from 'react'
 import { cn } from '../../lib/cn'
 
 /* ── Button ──────────────────────────────────────────────────────────────── */
@@ -81,6 +88,29 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
   ),
 )
 Input.displayName = 'Input'
+
+/* ── Textarea ────────────────────────────────────────────────────────────── */
+
+/**
+ * The same specs as `Input`, without the fixed height.
+ *
+ * Resize is left on. That is a deviation from the usual "lock the box" instinct
+ * and it is deliberate: this box holds **the reader's own sentence about why they
+ * care about a company**, and a two-line box that cannot be made taller invites
+ * the reader to compress the most important thing on the page to fit the widget.
+ */
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(({ className, ...props }, ref) => (
+  <textarea
+    ref={ref}
+    data-motion="l1"
+    className={cn(
+      'w-full resize-y rounded-[2px] border border-rule bg-surface px-2 py-1.5 text-[13px] leading-relaxed text-ink outline-none placeholder:text-ink-faint focus:border-navy',
+      className,
+    )}
+    {...props}
+  />
+))
+Textarea.displayName = 'Textarea'
 
 /* ── Badge ───────────────────────────────────────────────────────────────── */
 
@@ -215,6 +245,31 @@ export function EmptyState({
       ) : (
         action
       )}
+    </div>
+  )
+}
+
+/* ── ErrorNote ───────────────────────────────────────────────────────────── */
+
+/**
+ * A failure, stated as a sentence the reader can act on.
+ *
+ * ⭐ **Rendered above the content, never instead of it.** `RequestRunner` keeps
+ * the last good `data` on a failed refetch, so a page can show this line above a
+ * table that is still true. That is the whole point of the four-state model
+ * (constitution 4.6): "we could not reach the source" is its own state, not a
+ * synonym for "there is no data".
+ *
+ * Tone is `up` (red) because a failed read is the one thing on this product that
+ * genuinely is bad news — 规则 7, colour carries meaning.
+ */
+export function ErrorNote({ message, className }: { message: string; className?: string }) {
+  return (
+    <div
+      className={cn('mark border-l-2 border-l-[color:var(--color-up)] py-1', className)}
+      data-testid="error-note"
+    >
+      <p className="text-[13px] text-[color:var(--color-up)]">{message}</p>
     </div>
   )
 }

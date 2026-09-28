@@ -1,17 +1,3 @@
-import { useCallback, useState } from 'react'
-import {
-  ApiError,
-  getCard,
-  getDueCards,
-  recordReview,
-  type Card,
-  type ReviewRating,
-  type Schedule,
-} from './api'
-import { TODAY_HREF } from './routing'
-import { EmptyState, ErrorNote, Page, PageSkeleton } from './ui'
-import { useResource } from './useResource'
-
 /**
  * The review queue (K3).
  *
@@ -30,8 +16,8 @@ import { useResource } from './useResource'
  * - no "连续复习 5 天", no streak, no check-in (red line 11)
  * - no "已复习 3 / 8" progress bar — turning "drain the backlog" into a gameable
  *   number is the same objection one layer down (red line 11)
- * - no count on the nav bar either — see `ui.tsx`; the queue's length is a fact
- *   you learn by opening this page, not a number advertised in advance
+ * - no count on the nav bar either — see `app/AppShellFrame`; the queue's length
+ *   is a fact you learn by opening this page, not a number advertised in advance
  * - after rating `again`, **one line**: when it returns. No reassurance, no red
  *   badge, no "you have forgotten this 3 times". The product records the
  *   interaction and does not comment on it (red line 13)
@@ -41,7 +27,48 @@ import { useResource } from './useResource'
  * card's memory — so choosing it honestly is free, which is the only reason a
  * user would choose it over lying "记得" (red line 14: do not build a punishment
  * tool).
+ *
+ * ## ⭐ Why the third pane stays empty here, when the shell has one
+ *
+ * `AppShellFrame` offers a `detail` slot, and this page is the obvious candidate:
+ * the due queue on the left, the card on the right. **It was deliberately not
+ * done**, because rendering the remaining cards is a progress bar that happens to
+ * use pictures instead of digits.
+ *
+ * A list of what is left is countable at a glance and it visibly shrinks after
+ * every answer, which is exactly the "keep the number and try to climb" shape red
+ * line 11 objects to. The current design shows **a count, once, and no
+ * position** — `今天要过一遍的 1 张`, never `1 / 8`. So the queue stays a sentence.
+ *
+ * This is the one place where "make it an application" and "respect the red lines"
+ * pull in opposite directions, and the red lines win. Recorded here because the
+ * next reader will see an empty third pane and assume it is unfinished.
  */
+
+import { useCallback, useState } from 'react'
+import {
+  ApiError,
+  getCard,
+  getDueCards,
+  recordReview,
+  type Card,
+  type ReviewRating,
+  type Schedule,
+} from './api'
+import { TODAY_HREF } from './routing'
+import { Button, EmptyState, ErrorNote, Skeleton } from './components/ui'
+import { useResource } from './useResource'
+
+/**
+ * A reading measure for the card's text.
+ *
+ * The pane is as wide as the window, and a single column of 20px serif stretched
+ * to 1200px is unreadable — the eye loses the line on the return sweep. This is
+ * the one place a max-width belongs, and it belongs on the *prose*, not on the
+ * page: the frame still owns the chrome, and the buttons stay put either way.
+ */
+const READING_COLUMN = 'max-w-[660px]'
+
 export default function ReviewPage() {
   const describeQueue = useCallback(
     (cause: unknown) => (cause instanceof ApiError ? cause.message : '无法读取复习队列。'),
@@ -115,45 +142,47 @@ export default function ReviewPage() {
   }, [index, queue.length, refresh])
 
   if (loading) {
-    return <PageSkeleton label="读取复习队列" />
+    // Static grey blocks whose heights match what replaces them, so the card does
+    // not jump when it lands. No spinner, no shimmer (guide §7.3).
+    return (
+      <div className={`px-4 py-4 ${READING_COLUMN}`}>
+        <Skeleton width="120px" />
+        <Skeleton size="title" className="mt-6 w-full" />
+        <Skeleton size="title" className="mt-2 w-3/4" />
+        <Skeleton className="mt-4 w-40" />
+      </div>
+    )
   }
 
   if (loadError && queue.length === 0) {
     return (
-      <Page>
+      <div className={`px-4 py-4 ${READING_COLUMN}`}>
         <ErrorNote message={loadError} />
-      </Page>
+      </div>
     )
   }
 
   if (queue.length === 0) {
     return (
-      <Page>
-        <EmptyState
-          title="今天没有到期的卡片"
-          body="还没加入复习的卡片不会出现在这里。到期的会自己回来。"
-          action={{ href: TODAY_HREF, label: '回到今天' }}
-        />
-      </Page>
+      <EmptyState
+        title="今天没有到期的卡片"
+        body="还没加入复习的卡片不会出现在这里。到期的会自己回来。"
+        action={{ href: TODAY_HREF, label: '回到今天' }}
+      />
     )
   }
 
   if (returnedAt) {
     return (
-      <Page>
+      <div className={`px-4 py-6 ${READING_COLUMN}`}>
         {/* The whole confirmation. A date and a button. Nothing about the user. */}
         <div data-testid="review-receipt">
-          <p className="text-ink-soft">记下了。下次 {returnedAt.slice(0, 10)} 再来。</p>
-          <button
-            type="button"
-            className="mt-4 text-navy"
-            onClick={next}
-            data-testid="review-next"
-          >
+          <p className="text-[13px] text-ink-soft">记下了。下次 {returnedAt.slice(0, 10)} 再来。</p>
+          <Button className="mt-4" onClick={next} data-testid="review-next">
             {index + 1 >= queue.length ? '看看还有没有' : '下一张'}
-          </button>
+          </Button>
         </div>
-      </Page>
+      </div>
     )
   }
 
@@ -162,15 +191,19 @@ export default function ReviewPage() {
   }
 
   return (
-    <Page>
-      {/* A count, not a progress bar. Red line 11: there is no "3 / 8". */}
-      <h1 className="text-[13px] tracking-wide text-ink-faint">
-        今天要过一遍的 {queue.length} 张
-      </h1>
+    <div className={`px-4 py-4 ${READING_COLUMN}`}>
+      {/* A count, not a progress bar. Red line 11: there is no "1 / 8", and
+          deliberately no list of what is left — see the file's header. */}
+      <h2 className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+        今天要过一遍的 <span className="num">{queue.length}</span> 张
+      </h2>
 
       {claim ? (
-        <article className="mt-6" data-testid="review-claim">
-          <div className="border-l-2 border-navy pl-4">
+        <article className="mt-5" data-testid="review-claim">
+          {/* The reader's own words, in serif at 20px (rule 1). This is the one
+              place in the product where large serif is unambiguously right: it
+              is a quotation, not interface text. */}
+          <div className="border-l-2 border-l-navy pl-4">
             <p className="serif text-[20px] leading-relaxed">{claim.content}</p>
           </div>
 
@@ -189,7 +222,7 @@ export default function ReviewPage() {
           </div>
         </article>
       ) : (
-        <p className="mt-6 text-ink-faint">读取这条主张…</p>
+        <p className="mt-5 text-[13px] text-ink-faint">读取这条主张…</p>
       )}
 
       {/*
@@ -197,53 +230,27 @@ export default function ReviewPage() {
         menu: if answering honestly costs the user nothing (spec 018: a
         postponement does not touch the card's memory), hiding it only pushes
         them toward lying "记得" instead.
+
+        `variant="default"` for all five, deliberately — not one primary and four
+        ghosts. The product has no opinion about which answer is correct, so it
+        has no opinion about which button is the good one.
       */}
-      <div className="mt-8 flex flex-wrap gap-2" data-testid="review-actions">
-        <button
-          type="button"
-          disabled={submitting}
-          onClick={rating('again')}
-          className="border border-rule px-3 py-2 text-[13px]"
-          data-testid="rate-again"
-        >
+      <div className="mt-7 flex flex-wrap gap-2" data-testid="review-actions">
+        <Button disabled={submitting} onClick={rating('again')} data-testid="rate-again">
           忘了
-        </button>
-        <button
-          type="button"
-          disabled={submitting}
-          onClick={rating('hard')}
-          className="border border-rule px-3 py-2 text-[13px]"
-          data-testid="rate-hard"
-        >
+        </Button>
+        <Button disabled={submitting} onClick={rating('hard')} data-testid="rate-hard">
           有点难
-        </button>
-        <button
-          type="button"
-          disabled={submitting}
-          onClick={rating('good')}
-          className="border border-rule px-3 py-2 text-[13px]"
-          data-testid="rate-good"
-        >
+        </Button>
+        <Button disabled={submitting} onClick={rating('good')} data-testid="rate-good">
           记得
-        </button>
-        <button
-          type="button"
-          disabled={submitting}
-          onClick={rating('easy')}
-          className="border border-rule px-3 py-2 text-[13px]"
-          data-testid="rate-easy"
-        >
+        </Button>
+        <Button disabled={submitting} onClick={rating('easy')} data-testid="rate-easy">
           太简单
-        </button>
-        <button
-          type="button"
-          disabled={submitting}
-          onClick={() => void answer({ outcome: 'deferred' })}
-          className="border border-rule px-3 py-2 text-[13px]"
-          data-testid="rate-defer"
-        >
+        </Button>
+        <Button disabled={submitting} onClick={() => void answer({ outcome: 'deferred' })} data-testid="rate-defer">
           现在不是时候
-        </button>
+        </Button>
       </div>
 
       {answerError ? (
@@ -251,6 +258,6 @@ export default function ReviewPage() {
           {answerError}
         </p>
       ) : null}
-    </Page>
+    </div>
   )
 }

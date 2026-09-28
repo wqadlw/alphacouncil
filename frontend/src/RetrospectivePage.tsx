@@ -1,18 +1,3 @@
-import { useCallback, useState } from 'react'
-import {
-  ApiError,
-  getDecisionReview,
-  getDueDecisionReviews,
-  recordDecisionReview,
-  type Decision,
-  type DecisionOutcome,
-  type DecisionReview,
-  type ReviewState,
-} from './api'
-import { instrumentHref, TODAY_HREF } from './routing'
-import { EmptyState, ErrorNote, Page, PageSkeleton } from './ui'
-import { useResource } from './useResource'
-
 /**
  * The retrospective queue (J3) — where red line 10 actually happens.
  *
@@ -48,7 +33,48 @@ import { useResource } from './useResource'
  * domain through the API, so the wording is reviewed in the same diff as the rule
  * that requires it. A warning composed in this file is one refactor away from
  * "干得漂亮".
+ *
+ * ## ⭐ Why the shell is a *constraint* here and not just a frame
+ *
+ * Red line 10 is enforced in its strongest form: in the dangerous quadrant the
+ * **entire page body** must contain no digit — `retrospective.spec.ts:120`
+ * asserts it against `document.body`, not against this component. So every
+ * element the shell adds is also inside the blast radius, and this page is the
+ * reason the shell was built digit-free in the first place.
+ *
+ * Two consequences worth keeping in mind when the shell changes again:
+ *
+ * - **The `⌘K` hint in the top bar is load-bearing.** It is the one piece of
+ *   chrome that most wants to render a number, and it renders a letter.
+ * - **The verdict state renders the guidance and one button. Nothing else.** A
+ *   queue count here would satisfy "a fact about the reader" and still break the
+ *   assertion, because the queue is still `N` items long while the verdict is on
+ *   screen. Which is also why the verdict state does not get the count sentence
+ *   the other two states have — and, like the review page, it deliberately does
+ *   not render a list of what is left (red line 11; see `ReviewPage`'s header).
  */
+
+/**
+ * A reading measure for the prose. Same reasoning as `ReviewPage`: one column of
+ * serif stretched across a wide pane loses the line on the return sweep.
+ */
+const READING_COLUMN = 'max-w-[660px]'
+
+import { useCallback, useState } from 'react'
+import {
+  ApiError,
+  getDecisionReview,
+  getDueDecisionReviews,
+  recordDecisionReview,
+  type Decision,
+  type DecisionOutcome,
+  type DecisionReview,
+  type ReviewState,
+} from './api'
+import { instrumentHref, TODAY_HREF } from './routing'
+import { Button, EmptyState, ErrorNote, Skeleton } from './components/ui'
+import { useResource } from './useResource'
+
 export default function RetrospectivePage() {
   const describeQueue = useCallback(
     (cause: unknown) => (cause instanceof ApiError ? cause.message : '无法读取复盘队列。'),
@@ -129,32 +155,39 @@ export default function RetrospectivePage() {
   }, [index, queue.length, refresh])
 
   if (loading) {
-    return <PageSkeleton label="读取复盘队列" />
+    // ⚠️ Static blocks, and deliberately **digit-free**: the skeleton is part of
+    // the page body too, so a `w-6` or a `h-5` written as an arbitrary pixel
+    // value in a class is fine, but anything that renders text is not.
+    return (
+      <div className={`px-4 py-4 ${READING_COLUMN}`}>
+        <Skeleton width="120px" />
+        <Skeleton size="title" className="mt-6 w-full" />
+        <Skeleton size="title" className="mt-2 w-2/3" />
+      </div>
+    )
   }
 
   if (loadError && queue.length === 0) {
     return (
-      <Page>
+      <div className={`px-4 py-4 ${READING_COLUMN}`}>
         <ErrorNote message={loadError} />
-      </Page>
+      </div>
     )
   }
 
   if (queue.length === 0) {
     return (
-      <Page>
-        <EmptyState
-          title="现在没有到期的复盘"
-          body="记决策的时候写下「什么时候回来看看」，到期了它会自己出现在这里。没写就不来。"
-          action={{ href: TODAY_HREF, label: '回到今天' }}
-        />
-      </Page>
+      <EmptyState
+        title="现在没有到期的复盘"
+        body="记决策的时候写下「什么时候回来看看」，到期了它会自己出现在这里。没写就不来。"
+        action={{ href: TODAY_HREF, label: '回到今天' }}
+      />
     )
   }
 
   if (verdict) {
     return (
-      <Page>
+      <div className={`px-4 py-6 ${READING_COLUMN}`}>
         <div
           data-testid="retro-verdict"
           data-quadrant={verdict.quadrant}
@@ -165,20 +198,19 @@ export default function RetrospectivePage() {
             the dangerous quadrant this is the *only* line: there is no figure to
             show, because none was ever recorded. That is red line 10 resting on
             the data model rather than on this component's restraint.
+
+            ⭐ No queue count, no position, no "第 N 条" — see this file's header.
+            The count is a fact about the reader and would still be a digit in a
+            quadrant where the whole body must contain none.
           */}
           <p className="serif text-[18px] leading-relaxed" data-testid="retro-guidance">
             {verdict.guidance}
           </p>
-          <button
-            type="button"
-            className="mt-4 text-navy"
-            onClick={next}
-            data-testid="retro-next"
-          >
+          <Button className="mt-4" onClick={next} data-testid="retro-next">
             {index + 1 >= queue.length ? '看看还有没有' : '下一条'}
-          </button>
+          </Button>
         </div>
-      </Page>
+      </div>
     )
   }
 
@@ -197,20 +229,24 @@ export default function RetrospectivePage() {
   }
 
   return (
-    <Page>
-      {/* A count in a sentence, not a progress bar (red line 11). */}
-      <h1 className="text-[13px] tracking-wide text-ink-faint">
-        到期要看的 {queue.length} 条决策
-      </h1>
+    <div className={`px-4 py-4 ${READING_COLUMN}`}>
+      {/* A count in a sentence, not a progress bar (red line 11). This state is
+          allowed digits: the assertion only covers the dangerous-quadrant
+          verdict, where there is nothing to count. */}
+      <h2 className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+        到期要看的 <span className="num">{queue.length}</span> 条决策
+      </h2>
 
       {decision ? (
-        <article className="mt-6" data-testid="retro-decision">
-          <div className="border-l-2 border-navy pl-4">
+        <article className="mt-5" data-testid="retro-decision">
+          {/* The reader's own words, in serif (rule 1). The graded text is the
+              point of this page, so it is the largest thing in it. */}
+          <div className="border-l-2 border-l-navy pl-4">
             <p className="serif text-[18px] leading-relaxed" data-testid="retro-rationale">
               {decision.rationale}
             </p>
           </div>
-          <div className="mt-4 space-y-2 text-[13px] text-ink-soft">
+          <div className="mt-4 space-y-1.5 text-[13px] text-ink-soft">
             <p data-testid="retro-counter">反面：{decision.counter_evidence}</p>
             {decision.kill_criteria.map((criterion, i) => (
               <p key={i} data-testid="retro-kill">
@@ -221,53 +257,50 @@ export default function RetrospectivePage() {
           </div>
           <a
             href={instrumentHref(decision.market, decision.code)}
-            className="mt-3 inline-block text-[12px] text-navy"
+            className="mt-3 inline-block text-[12px] text-navy no-underline hover:underline"
           >
             {decision.display} →
           </a>
         </article>
       ) : (
-        <p className="mt-6 text-ink-faint">读取这条决策…</p>
+        <p className="mt-5 text-[13px] text-ink-faint">读取这条决策…</p>
       )}
 
-      <div className="mt-8" data-testid="retro-scores">
+      <div className="mt-7" data-testid="retro-scores">
         <p className="text-[12px] text-ink-faint">过程分：当时这个推理有多站得住？</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {[1, 2, 3, 4, 5].map((value) => (
-            <button
+            <Button
               key={value}
-              type="button"
               disabled={submitting}
               onClick={pickScore(value)}
-              className="border border-rule px-3 py-2 text-[13px]"
               data-testid={`retro-score-${value}`}
+              className="num w-11"
             >
               {value}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
 
       {current?.is_due ? (
         picked === null ? (
-          <p className="mt-6 text-[12px] text-ink-faint" data-testid="retro-pick-first">
+          <p className="mt-5 text-[12px] text-ink-faint" data-testid="retro-pick-first">
             先给过程分，再看结果。
           </p>
         ) : (
-          <div className="mt-6" data-testid="retro-outcome">
+          <div className="mt-5" data-testid="retro-outcome">
             <p className="text-[12px] text-ink-faint">然后：结果如何？</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {(['good', 'bad', 'failed'] as const).map((outcome) => (
-                <button
+                <Button
                   key={outcome}
-                  type="button"
                   disabled={submitting}
                   onClick={() => void submit({ process_score: picked, outcome })}
-                  className="border border-rule px-3 py-2 text-[13px]"
                   data-testid={`retro-outcome-${outcome}`}
                 >
                   {outcome === 'good' ? '结果好' : outcome === 'bad' ? '结果不好' : '失败了'}
-                </button>
+                </Button>
               ))}
             </div>
             <p className="mt-2 text-[12px] text-ink-faint">
@@ -281,7 +314,7 @@ export default function RetrospectivePage() {
          * The process score above already submitted itself; there is nothing left
          * to fill in, so there is nothing to invite.
          */
-        <p className="mt-6 text-[12px] text-ink-faint" data-testid="retro-not-due">
+        <p className="mt-5 text-[12px] text-ink-faint" data-testid="retro-not-due">
           没到期，所以结果那一栏不存在 —— 提前打分会用结果污染过程分。
         </p>
       )}
@@ -297,6 +330,6 @@ export default function RetrospectivePage() {
           {submitError}
         </p>
       ) : null}
-    </Page>
+    </div>
   )
 }
