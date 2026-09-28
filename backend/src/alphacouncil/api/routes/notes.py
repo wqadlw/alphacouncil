@@ -162,17 +162,44 @@ def create_note(
 def list_notes(
     connection: DatabaseConnection,
     tag: Annotated[str | None, Query(description="Exact tag match; never a prefix")] = None,
+    q: Annotated[
+        str | None,
+        Query(
+            description=(
+                "Substring search over title and body. Two characters work — the "
+                "trigram tokenizer's floor is three, so shorter queries take a "
+                "substring path that has no tokeniser and therefore no floor."
+            )
+        ),
+    ] = None,
 ) -> list[NoteRead]:
-    """Every note, or only those carrying one tag.
+    """Every note, or the ones matching a tag, a search, or both.
 
     ⭐ The tag filter is an **exact** match, and that is not an implementation
     detail: a ``LIKE '%宏观%'`` filter returns 宏观债 as well, and the reader's
     filtered list then silently omits a note they can see in the unfiltered one
     with no way to work out why.
+
+    ⭐ **Search reads the title and the body, not the tags.** Tags have their own
+    control one row above the list, and indexing them would mean the FTS triggers
+    had to re-read ``note_tags`` on every note write. Stated here as well as in the
+    repository, because a reader who types a tag into the search box and gets
+    nothing needs to be able to find out why.
+
+    `q` and `tag` **compose** — 「流动性」 within 「宏观」. The tag filter is applied
+    after the search, in Python, because every row is hydrated with its tags
+    anyway; that is the cheap choice at the constitution's stated scale (个人级
+    几千条) and it keeps one `ORDER BY` rather than three copies of it.
     """
-    rows = (
-        repository.list_by_tag(connection, tag) if tag else repository.list_all(connection)
-    )
+    if q and q.strip():
+        rows = repository.search(connection, q)
+    elif tag:
+        rows = repository.list_by_tag(connection, tag)
+    else:
+        rows = repository.list_all(connection)
+
+    if tag and q and q.strip():
+        rows = [row for row in rows if tag in row.tags]
     return [_to_read(r) for r in rows]
 
 

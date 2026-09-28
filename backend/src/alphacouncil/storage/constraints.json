@@ -227,6 +227,10 @@
         "note_links_created_at_check": "identity",
         "note_links_no_self_check": "referential"
       }
+    },
+    "notes_fts": {
+      "append_only": false,
+      "constraints": {}
     }
   }
 }

@@ -52,9 +52,26 @@ export interface NoteDraft {
   symbols?: string[]
 }
 
-export function listNotes(tag?: string): Promise<Note[]> {
-  const query = tag === undefined ? '' : `?tag=${encodeURIComponent(tag)}`
-  return request<Note[]>(`/api/v1/notes${query}`)
+/**
+ * The list, narrowed.
+ *
+ * ⭐ **`q` and `tag` compose server-side** and both are optional. An empty or
+ * whitespace-only `q` is *not* a search — the API returns the whole vault, so
+ * clearing the box is the same as never having typed anything. That is why this
+ * omits the parameter rather than sending `q=`: an empty string and an absent
+ * parameter are the same request, and only one of them is obvious at a call site.
+ *
+ * ⭐ **Two characters work.** The backend's `trigram` index has a three-character
+ * floor and routes shorter queries to a substring path, so 「利率」 finds the note.
+ * A client that had its own minimum would reintroduce the bug the server fixed.
+ */
+export function listNotes(options: { tag?: string | null; q?: string } = {}): Promise<Note[]> {
+  const params = new URLSearchParams()
+  if (options.tag) params.set('tag', options.tag)
+  const q = options.q?.trim()
+  if (q) params.set('q', q)
+  const suffix = params.toString()
+  return request<Note[]>(`/api/v1/notes${suffix ? `?${suffix}` : ''}`)
 }
 
 export function getNote(id: string): Promise<Note> {

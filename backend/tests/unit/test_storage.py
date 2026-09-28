@@ -167,17 +167,96 @@ def _live_schema() -> tuple[SchemaObject, ...]:
 
 
 def _table_ddl() -> dict[str, str]:
-    """``{table name: CREATE TABLE text}`` for the schema's own tables."""
+    """``{table name: CREATE TABLE text}`` for the tables **this repo declares**.
+
+    ⭐⭐ The filter is "we wrote its ``CREATE`` in a shipped migration", not a name
+    pattern — and that distinction is the whole reason it works.
+
+    SQLite 3.53's FTS5 creates **five shadow tables** alongside any virtual table
+    (spec 027, `0008_notes_search`):
+
+    ```text
+    notes_fts_config   notes_fts_content   notes_fts_data
+    notes_fts_docsize  notes_fts_idx
+    ```
+
+    All six appear in ``sqlite_master`` with ``type='table'`` and a non-null
+    ``sql``, so the naive ``kind == "table"`` filter sees them all. Declaring five
+    SQLite-internal tables in a ledger of **our** rules would be a lie about who
+    decided what, and it would be a lie that grows every time someone adds a
+    virtual table.
+
+    The obvious alternative — excluding ``<vtable>_<something>`` by name — was
+    rejected: it is a name heuristic, and a shadow table that did not happen to
+    follow the convention would be classified by accident. Asking instead "does
+    our own SQL contain this ``CREATE``?" is a **definition of declared**, it
+    cannot drift, and it is checked by
+    :meth:`TestTheLedgerMatchesTheSchema.test_the_filter_is_not_vacuous`.
+    """
+    declared = _declared_table_names()
     return {
         item.name: item.sql
         for item in _live_schema()
-        if item.kind == "table" and not item.name.startswith("sqlite_")
+        if item.kind == "table" and item.name in declared
     }
+
+
+def _declared_table_names() -> frozenset[str]:
+    """Table names whose ``CREATE`` appears in a shipped ``.sql`` file.
+
+    Reads the migrations rather than the live schema on purpose: the live schema
+    is the thing being filtered, so using it would be circular.
+    """
+    names: set[str] = set()
+    for item in migrate.load_migrations():
+        for match in re.finditer(
+            r"CREATE\s+(?:VIRTUAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?['\"]?(\w+)",
+            item.up.read_text(encoding="utf-8"),
+            re.IGNORECASE,
+        ):
+            names.add(match.group(1))
+    return frozenset(names)
 
 
 def _trigger_names() -> frozenset[str]:
     """Every trigger the schema creates, lower-cased."""
     return frozenset(item.name.lower() for item in _live_schema() if item.kind == "trigger")
+
+
+def _append_only_guards() -> dict[str, str]:
+    """``{table: trigger name}`` for the append-only guards, found by **behaviour**.
+
+    ⭐ A guard is a ``BEFORE`` trigger that raises ``ABORT`` — it refuses the
+    write rather than performing one. That is what makes a table append-only, and
+    it is a property of the body, so it can be read.
+
+    The previous implementation inferred "guard" from the trigger *name*: it
+    stripped a ``_no_update`` / ``_no_delete`` suffix and treated everything left
+    over as a guarded table. That is wrong as soon as a trigger exists for another
+    reason, and 2026-09-28 (spec 027) is when one did — ``notes_fts`` keeps a
+    search index in sync with ``AFTER`` triggers, and the test reported
+    「triggers on undeclared tables: ['notes_fts_ad', 'notes_fts_ai', 'notes_fts_au']」
+    for a table that was never claimed to be append-only.
+
+    The failure was the test's, not the schema's, and it is worth noting *how* it
+    was wrong: a name convention used as a proxy for a behavioural property is
+    only correct until the first exception, and then it fails **loudly on the
+    innocent party**. The body is the property.
+    """
+    guards: dict[str, str] = {}
+    for item in _live_schema():
+        if item.kind != "trigger":
+            continue
+        body = item.sql
+        if "BEFORE" not in body.upper() or "RAISE(ABORT" not in body.replace(" ", "").replace(
+            "RAISE (ABORT", "RAISE(ABORT"
+        ):
+            continue
+        # The table a trigger guards is the one it is attached to.
+        match = re.search(r"\bON\s+['\"]?(\w+)", body, re.IGNORECASE)
+        if match:
+            guards[match.group(1)] = item.name.lower()
+    return guards
 
 
 def _constraint_bodies(table_ddl: str) -> dict[str, str]:
@@ -385,6 +464,67 @@ class TestTheLedgerMatchesTheSchema:
         """A table with no entry is a table whose constraints nobody declared."""
         assert set(_table_ddl()) == set(_ledger_constraints())
 
+    def test_only_a_virtual_table_may_have_no_declared_constraints(self) -> None:
+        """⭐ The `{}` escape hatch, closed (spec 027).
+
+        `notes_fts` is the first thing in this schema with an **empty** constraint
+        set, and it is empty for a real reason: FTS5 virtual tables parse their own
+        grammar and cannot carry a CHECK. The ledger is a set-equality check, so
+        `{}` passes it trivially — **which means any table could dodge the ledger
+        by declaring nothing.**
+
+        The alternative considered was special-casing virtual tables out of
+        `_table_ddl()`. That was rejected: it is the same hole with a comment
+        attached that reads like a reason, and a future non-virtual table would
+        slip through silently.
+
+        So the rule is narrower and checkable instead — *if you declare no
+        constraints, you had better not be a real table.* That keeps
+        `test_every_schema_constraint_is_registered` meaningful: a real table
+        cannot hide by staying quiet.
+        """
+        ddl = _table_ddl()
+        for table, constraints in _ledger_constraints().items():
+            if constraints:
+                continue
+            assert "VIRTUAL TABLE" in ddl[table], (
+                f"{table} declares no constraints but is not a virtual table — "
+                f"a plain table with an empty entry is a way to skip the ledger"
+            )
+
+    def test_the_search_index_is_actually_virtual(self) -> None:
+        """Otherwise the test above passes for the wrong reason.
+
+        If someone later replaces `notes_fts` with a plain table and copies the
+        `CREATE VIRTUAL TABLE` text into the ledger's expectation by hand, the
+        exemption above would grant itself a permanent pass. Asserting the table's
+        own nature keeps the exemption tied to the reason it exists.
+        """
+        assert "VIRTUAL TABLE" in _table_ddl()["notes_fts"]
+
+    def test_the_filter_is_not_vacuous(self) -> None:
+        """⭐ The declared-table filter must not be excluding *everything*.
+
+        A filter that silently matched nothing would make
+        ``test_every_table_has_a_ledger_entry`` compare two empty sets and pass.
+        So two things are asserted: the filter keeps a table it should keep, and
+        it drops the FTS5 shadow tables — the reason it exists. If the shadow
+        tables ever stopped appearing (a future SQLite storing them elsewhere),
+        this fails and says which half drifted, rather than leaving a filter
+        nobody can tell is still doing anything.
+        """
+        ddl = _table_ddl()
+        assert "notes" in ddl, "the filter dropped a table we declared"
+        assert "notes_fts" in ddl, "the filter dropped the virtual table we declared"
+        shadow = {
+            name
+            for name in (item.name for item in _live_schema() if item.kind == "table")
+            if name.startswith("notes_fts_")
+        }
+        assert shadow, "expected FTS5 shadow tables to be present in the schema"
+        kept = shadow & set(ddl)
+        assert not kept, f"the filter kept FTS5 shadow tables: {sorted(kept)}"
+
     def test_every_ledger_constraint_exists_in_the_schema(self) -> None:
         """Direction one: the ledger may not promise what the schema lacks."""
         live = {table: set(_constraint_bodies(ddl)) for table, ddl in _table_ddl().items()}
@@ -481,11 +621,44 @@ class TestAppendOnlyIsDeclaredOnceAndEnforcedOnce:
             assert f"{table}_no_delete" in triggers, f"{table} can be DELETEd"
 
     def test_every_table_with_triggers_is_declared_append_only(self) -> None:
-        """The reverse: a trigger on an undeclared table means the ledger is stale."""
-        triggers = _trigger_names()
-        guarded = {name.removesuffix("_no_update").removesuffix("_no_delete") for name in triggers}
+        """The reverse: a guard on an undeclared table means the ledger is stale.
+
+        Reads guards by **behaviour** (``BEFORE`` + ``RAISE(ABORT)``), not by name.
+        See :func:`_append_only_guards` for why the name-based version had to go:
+        the search-index triggers on ``notes_fts`` are not append-only guards, and
+        a name heuristic reported them as one.
+        """
+        guarded = set(_append_only_guards())
         declared = {t for t, entry in _ledger_entries().items() if _is_append_only(entry)}
-        assert guarded == declared, f"triggers on undeclared tables: {sorted(guarded - declared)}"
+        assert guarded == declared, f"guards on undeclared tables: {sorted(guarded - declared)}"
+
+    def test_the_guard_detector_is_not_vacuous(self) -> None:
+        """Otherwise the test above passes because it found nothing.
+
+        A detector that recognises no guards would make the reverse assertion
+        vacuous, and it would keep passing as the schema grew tables — the exact
+        shape of the bug the previous implementation had in the other direction.
+        The declared tables are the control group: every one of them must be
+        found, or the detector is broken rather than the ledger.
+        """
+        found = set(_append_only_guards())
+        declared = {t for t, entry in _ledger_entries().items() if _is_append_only(entry)}
+        assert declared, "the ledger marks nothing append-only — nothing to detect"
+        missing = declared - found
+        assert not missing, f"append-only tables with no guard trigger found: {sorted(missing)}"
+
+    def test_a_sync_trigger_is_not_mistaken_for_a_guard(self) -> None:
+        """The specific false positive spec 027 introduced, named so it stays fixed.
+
+        ``notes_fts`` is deliberately **not** append-only: it is a derived index
+        that has to be rewritten whenever a note is edited, and an append-only
+        guard on it would make editing a note fail. If the detector ever starts
+        reading these ``AFTER`` triggers as guards, this fails first — before the
+        ledger comparison does, and with a message that says which table.
+        """
+        found = _append_only_guards()
+        assert "notes_fts" not in found
+        assert "notes" not in found, "notes is mutable by design (a note is working text)"
 
     def test_the_ledger_agrees_with_the_static_rule(self) -> None:
         """S-04 keeps its own list of append-only tables. Two lists, one truth.

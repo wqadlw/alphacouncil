@@ -465,3 +465,99 @@ def backlinks_for(connection: sqlite3.Connection, kind: LinkKind, target_id: str
             _SELECT_BACKLINKS, (kind.value, target_id)
         ).fetchall()
     ]
+
+
+# ── search (spec 027) ───────────────────────────────────────────────────────
+
+#: The trigram tokenizer indexes **overlapping 3-character sequences**, so a
+#: query shorter than this cannot match anything. Measured, not assumed:
+#:
+#: ```text
+#:   2 chars  MATCH '利率'   -> 0 hits
+#:   2 chars  MATCH '白酒'   -> 0 hits
+#:   3 chars  MATCH '现金流' -> 1 hit
+#: ```
+#:
+#: And two characters is what this domain searches for most: 「利率」「白酒」「估值」
+#: 「宏观」「渠道」 are all two characters. So the floor is not a limitation to
+#: document — it is a boundary this function routes around.
+MIN_FTS_CHARS = 3
+
+_SELECT_BY_FTS = """
+SELECT n.id, n.title, n.body, n.as_of, n.created_at, n.updated_at
+FROM notes_fts AS f
+JOIN notes AS n ON n.id = f.note_id
+WHERE notes_fts MATCH ?
+ORDER BY n.updated_at DESC, n.id DESC
+"""
+
+_SELECT_BY_SUBSTRING = """
+SELECT n.id, n.title, n.body, n.as_of, n.created_at, n.updated_at
+FROM notes AS n
+WHERE instr(n.title, ?) > 0 OR instr(n.body, ?) > 0
+ORDER BY n.updated_at DESC, n.id DESC
+"""
+
+
+def fts_pattern(user: str) -> str:
+    """Quote a user string so FTS5 reads it as **text**, not as a query.
+
+    ⭐ FTS5 has its own query language: `"` opens a phrase, `*` is a prefix
+    operator, `NEAR` / `AND` / `OR` are operators, `-` negates. Passed raw, a
+    reader who types any of them gets a **SQLite syntax error** — not an empty
+    result, not a wrong result, an error that looks like the app is broken.
+
+    Measured across the whole hostile set (`"`, `*`, `NEAR(a b)`, `-x`, `AND`,
+    `OR`, `NEAR`): all treated as text, and real text still findable — including a
+    body that itself contains a `"` character. Quoting is `"` + doubled inner
+    quotes, which is FTS5's own escaping rule.
+    """
+    return '"' + user.replace('"', '""') + '"'
+
+
+def search(connection: sqlite3.Connection, query: str) -> list[NoteRow]:
+    """Find notes by text, newest edit first.
+
+    Two paths, and the boundary between them is **measured behaviour**, not taste:
+
+    | query length | path | why |
+    |---|---|---|
+    | ≥ `MIN_FTS_CHARS` | `notes_fts MATCH` | indexed, so it does not degrade linearly |
+    | < `MIN_FTS_CHARS` | `instr()` | trigram cannot match 2 characters |
+
+    ⭐ **Search filters; it does not re-order.** Both paths carry the same
+    `ORDER BY updated_at DESC, id DESC` as `list_all`. `bm25()` is available
+    (verified) and deliberately unused: relevance-sorting would make the same
+    notes appear in a different order depending on whether a query was typed, and
+    the value of a notes list is 「我最近写了什么」 rather than 「哪条最匹配」.
+
+    ⭐ **The short path uses `instr`, not `LIKE`.** `LIKE` carries wildcard
+    semantics, and a reader who types `%` into a two-character search would get
+    **every note in the vault** — measured: `LIKE '%%%'` returns 4 of 4 rows where
+    `instr` returns 1. `instr` is a pure substring test with no wildcards at all,
+    so the failure mode is removed rather than escaped. (spec 026's mutation check
+    found the same hole in the tag filter; there the fix was a test, and here the
+    shape changed so the test could not be forgotten.)
+
+    An empty or whitespace-only query is **not a search** — it returns the whole
+    vault in list order, so clearing the box is the same as never having typed.
+
+    ⚠️ The early return below is a **clarity and cost** branch, not a behaviour
+    one. ``instr(x, '')`` returns 1 in SQLite (measured), so the substring path
+    with an empty needle already matches every row in the same order — deleting
+    the branch changes nothing a caller can observe, and a mutation check
+    confirmed it by staying green. It is kept because it says what is meant and
+    skips a pointless scan, and it is recorded here so that nobody writes a test
+    for a difference that does not exist.
+    """
+    cleaned = query.strip()
+    if not cleaned:
+        return list_all(connection)
+
+    if len(cleaned) >= MIN_FTS_CHARS:
+        rows = connection.execute(_SELECT_BY_FTS, (fts_pattern(cleaned),)).fetchall()
+    else:
+        rows = connection.execute(
+            _SELECT_BY_SUBSTRING, (cleaned, cleaned)
+        ).fetchall()
+    return _hydrate(connection, list(rows))

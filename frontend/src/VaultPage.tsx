@@ -66,6 +66,12 @@ const VIEWS: { key: View; label: string }[] = [
 export default function VaultPage() {
   const [view, setView] = useState<View>('all')
   const [tag, setTag] = useState<string | null>(null)
+  // `query` is the *submitted* search; `searchText` is what is in the box. They
+  // are separate on purpose: searching on every keystroke would issue a request
+  // per character, and a reader typing 「流动性」 would see the list flicker
+  // through four intermediate states. Enter (or Clear) is the commit.
+  const [searchText, setSearchText] = useState('')
+  const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Note | null>(null)
 
   const describe = useCallback(
@@ -77,12 +83,13 @@ export default function VaultPage() {
     [],
   )
 
-  // `tag` is a dependency, so filtering re-runs the fetch rather than filtering
-  // client-side — the server is the only place that knows the exact-match rule
-  // (and `LIKE '%宏观%'` is the bug the test in `test_notes.py` exists to stop).
+  // Both are dependencies, so narrowing re-runs the fetch rather than filtering
+  // client-side — the server is the only place that knows the exact-tag rule and
+  // the trigram floor, and a client that reimplemented either would be a second
+  // implementation to keep in step.
   const notes = useResource<Note[]>(
-    useCallback(() => listNotes(tag ?? undefined), [tag]),
-    [tag],
+    useCallback(() => listNotes({ tag, q: query }), [tag, query]),
+    [tag, query],
     describe,
   )
   const tags = useResource<string[]>(listNoteTags, [], describeTags)
@@ -110,6 +117,41 @@ export default function VaultPage() {
 
         <span className="mx-1 h-4 w-px bg-rule" aria-hidden="true" />
 
+        <form
+          className="flex items-center gap-1.5"
+          onSubmit={(event) => {
+            event.preventDefault()
+            setQuery(searchText.trim())
+          }}
+        >
+          <Input
+            value={searchText}
+            onChange={(event) => setSearchText(event.target.value)}
+            placeholder="搜标题与正文 · 回车"
+            aria-label="搜索笔记"
+            className="w-[220px]"
+            data-testid="vault-search"
+          />
+          <Button size="sm" type="submit" data-testid="vault-search-submit">
+            搜
+          </Button>
+          {query !== '' ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setSearchText('')
+                setQuery('')
+              }}
+              data-testid="vault-search-clear"
+            >
+              清除
+            </Button>
+          ) : null}
+        </form>
+
+        <span className="mx-1 h-4 w-px bg-rule" aria-hidden="true" />
+
         <Button
           size="sm"
           variant={tag === null ? 'primary' : 'ghost'}
@@ -130,6 +172,23 @@ export default function VaultPage() {
           </Button>
         ))}
       </div>
+
+      {/*
+        ⭐ What the search box does and does not read, in the place a reader who
+        just got an empty result will look.
+
+        It reads the **title and the body**. It does **not** read tags — a tag is
+        a button one row up, and indexing tags would mean the index had to be
+        rebuilt on every tag change as well as every note edit. Saying so beats
+        letting someone conclude the note does not exist.
+      */}
+      {query !== '' ? (
+        <p className="px-4 pt-2 text-[12px] text-ink-faint" data-testid="vault-search-note">
+          正在标题与正文里找「{query}」。
+          {searchText.trim() !== query ? '（改完文字要按回车才搜）' : ''}
+          标签不参与这次搜索 —— 标签用它上面的按钮筛。
+        </p>
+      ) : null}
 
       {notes.error ? (
         <p className="px-4 py-2 text-[13px] text-[color:var(--color-up)]" data-testid="vault-error">
@@ -165,6 +224,7 @@ export default function VaultPage() {
               notes={notes.data ?? []}
               selected={selected}
               onSelect={setSelected}
+              query={query}
             />
           ) : null}
           {view === 'all' || view === 'cards' ? <CardList /> : null}
@@ -300,10 +360,12 @@ function NoteList({
   notes,
   selected,
   onSelect,
+  query,
 }: {
   notes: Note[]
   selected: Note | null
   onSelect: (note: Note) => void
+  query: string
 }) {
   const columns: Column<Note>[] = [
     { key: 'title', header: '标题', width: '42%', sortValue: (n) => n.title, render: (n) => <span className="text-ink">{n.title}</span> },
@@ -333,13 +395,29 @@ function NoteList({
   ]
 
   if (notes.length === 0) {
-    // Rule 8: a fact and what to do. Not 「没有笔记」.
+    // ⭐ Two different empties, and conflating them is how a search feature gets
+    // distrusted. 「这里还没有笔记」 tells the reader to go write something;
+    // 「没找到」 tells them the note they half-remember is not here. Only the
+    // first is true, and the reader cannot tell which they are looking at
+    // unless the message says so.
     return (
       <section className="mt-3">
         <Rule />
-        <p className="px-4 py-3 text-[13px] text-ink-soft" data-testid="vault-empty">
-          这里还没有笔记。上面写一条 —— 宏观判断、方法、教训、读书笔记，都不用出处。
-        </p>
+        {query !== '' ? (
+          <div className="px-4 py-3" data-testid="vault-no-match">
+            <p className="text-[13px] text-ink-soft">
+              标题与正文里没有「{query}」。
+            </p>
+            <p className="mt-1 text-[12px] text-ink-faint">
+              搜索不读标签 —— 换个标签按钮试试，或者把词写得更长一点
+              （两个字也能搜，但「流动性」比「流动」更容易命中）。
+            </p>
+          </div>
+        ) : (
+          <p className="px-4 py-3 text-[13px] text-ink-soft" data-testid="vault-empty">
+            这里还没有笔记。上面写一条 —— 宏观判断、方法、教训、读书笔记，都不用出处。
+          </p>
+        )}
       </section>
     )
   }
