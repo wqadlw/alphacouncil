@@ -236,10 +236,19 @@ describe('V-06 · no decorative motion', () => {
 })
 
 describe('V-07 · the dependency budget', () => {
-  it('has only the four approved runtime packages', () => {
-    // `docs/FRONTEND_STYLE_GUIDE.md` §6 records the owner's approval of exactly
-    // four. The constitution bans unapproved additions, and this is the check
-    // that makes that ban mechanical instead of a matter of remembering.
+  it('has only the approved runtime packages', () => {
+    // `docs/FRONTEND_STYLE_GUIDE.md` §6 records the owner's approvals, and
+    // 宪法 §3.2.1 lists them by name. The constitution bans unapproved additions,
+    // and this is the check that makes that ban mechanical instead of a matter
+    // of remembering.
+    //
+    // ⚠️ **This only sees the top-level `dependencies`.** Milkdown pulls 205
+    // transitive packages that this cannot see, and nothing here checks their
+    // licences — `backend/scripts/check_licenses.py` uses
+    // `importlib.metadata`, so it sees **Python distributions only**. That gap
+    // was survivable at four packages and is not at 209, so the npm tree is
+    // scanned separately (see the spec 026 changelog); turning that scan into a
+    // gate is the obvious next step and is recorded in the spec's §6.
     const pkg = JSON.parse(
       readFileSync(join(SRC_DIR, '..', 'package.json'), 'utf8'),
     ) as { dependencies: Record<string, string> }
@@ -250,6 +259,12 @@ describe('V-07 · the dependency budget', () => {
       'class-variance-authority',
       'clsx',
       'tailwind-merge',
+      // Spec 026: Markdown editor, approved by the owner 2026-09-28 and
+      // licence-checked (MIT). Installed; **not yet wired into the vault page** —
+      // the page currently uses a plain textarea, which is stated in its header.
+      '@milkdown/core',
+      '@milkdown/react',
+      '@milkdown/preset-commonmark',
     ])
     const actual = Object.keys(pkg.dependencies).sort()
     expect(actual.filter((name) => !approved.has(name))).toEqual([])

@@ -73,8 +73,17 @@ ENUM_CLASS = "ErrorCode"
 #: pattern simply does not match, so the document row is invisible and the check
 #: reports all four codes as unregistered (2026-09-28, spec 020). The failure is
 #: loud, at least — which is the only reason it was found the same day.
+#:
+#: ⭐ It happened again on 2026-09-28 with `NOTE_*` (spec 026), and the comment
+#: above had already predicted it verbatim. The eight codes were declared in the
+#: enum, given a documented table in `.ai/error-codes.md`, and still reported as
+#: unregistered — because the pattern, not the document, is what recognises a
+#: code. **A rule that says "this is a two-place edit" and is still got wrong is
+#: a rule that wants to be a single-place edit**, so: the fix below is to add the
+#: prefix, and the maintenance rule in `.ai/error-codes.md` §五 now says the two
+#: places by name.
 CODE_PATTERN = re.compile(
-    r"\b(?:AGENT|CARD|CHECK|CONTRACT|DATA_SOURCE|DATA|DECISION|INSTRUMENT|MIGRATION|REVIEW|STORAGE|WATCHLIST)"
+    r"\b(?:AGENT|CARD|CHECK|CONTRACT|DATA_SOURCE|DATA|DECISION|INSTRUMENT|MIGRATION|NOTE|REVIEW|STORAGE|WATCHLIST)"
     r"_[A-Z0-9_]+\b"
 )
 _BACKTICKED = re.compile(r"`([^`\n]+)`")

@@ -142,6 +142,30 @@ class DataFetchError(RuntimeError): ...
 | `CARD_ALREADY_SCHEDULED` | error | 该卡已在复习队列上 —— 重复排程会把旧课的稳定性清零（K3） |
 | `CARD_TIMESTAMP_NOT_UTC` | error | 复习相关时间戳不是带时区的 UTC（K3；`fsrs` 本身也拒绝，但那条会以库内部错误的形式冒到 API） |
 
+### 2.5b `NOTE_*`（知识笔记，spec 026）
+
+> ⭐ **单独一个命名空间，而且必须单独。** 卡片与笔记看起来像 —— 都是知识、都带读者
+> 自己的话 —— 却被**相反的规则**守着：卡片是"你愿意署名的判断"，所以**必须有来源**；
+> 笔记就是笔记，「流动性收紧时周期股先跌」没有出处，强行要一个链接等于逼人挂一个
+> 自己没读过的引用。
+>
+> 所以 **provenance rule 一点没有放松**（`CARD_SOURCE_URL_REQUIRED` 仍然生效，
+> 并有测试钉住）。加笔记是给「确实没有出处」一个正当容器，不是让卡片可以没有出处。
+>
+> 合并两个命名空间的后果是具体的：「有多少次用户挂了一个自己没读过的引用」
+> 会变得无法回答 —— 而那正是 provenance rule 腐烂时唯一会动的那个数。
+
+| code | severity | 含义 |
+|---|---|---|
+| `NOTE_TITLE_REQUIRED` | error | 笔记标题为空 —— 空标题的笔记在列表里认不出来 |
+| `NOTE_TITLE_TOO_LONG` | error | 笔记标题超过长度上限 |
+| `NOTE_BODY_BLANK` | error | 笔记正文为空白 |
+| `NOTE_TEXT_TOO_LONG` | error | 笔记正文超过上限（**远大于 `CARD_TEXT_TOO_LONG`**：卡片是「超过 3 行不算卡片，算文章」，而文章正是笔记该有的样子；这个上限是防粘贴一个文件，不是文体规则） |
+| `NOTE_NOT_FOUND` | error | 目标笔记不存在 |
+| `NOTE_TAG_INVALID` | error | 标签为空、超长，或**含逗号**（逗号串是这张表要避开的形状，禁掉它，一个「顺手改成逗号串」的迁移就写不出来） |
+| `NOTE_LINK_SELF` | error | 一条笔记链接到自己 |
+| `NOTE_LINK_TARGET_UNKNOWN` | error | 链接目标不存在。⭐ **`note_links.to_id` 故意没有外键** —— 它指向五张表，SQLite 无法约束多态引用，所以这个校验放在 Python 层。**目标表还不存在时（`LESSON`，等 J5 教训转卡）同样报这一条**：解不开的链接就是不该写的链接 |
+
 ### 2.6 `REVIEW_*`（决策复盘 / 四象限，J3）
 
 | code | severity | 含义 |

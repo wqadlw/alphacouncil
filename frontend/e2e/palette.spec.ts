@@ -36,6 +36,7 @@
  */
 
 import { expect, test } from '@playwright/test'
+import { ROUTES } from '../src/routing'
 import { routeApi, todayEmpty } from './fixtures'
 
 const VIEWS = ['#/', '#/pool', '#/review', '#/retrospective'] as const
@@ -119,7 +120,18 @@ test.describe('命令面板（spec 025 · ⌘K）', () => {
 
     const items = page.getByTestId('palette-item')
     const all = await items.count()
-    expect(all).toBe(4) // the four routes in ROUTES
+    // ⭐ Derived from `ROUTES`, not written down.
+    //
+    // This was `expect(all).toBe(4)`, and adding the `vault` view (spec 026)
+    // broke it — the same dead-constant trap the constraint ledger documents
+    // ("written dead on purpose, a new migration changes it"). A number that has
+    // to be edited whenever the app grows a screen is not asserting anything; it
+    // is just a second place to forget.
+    expect(all).toBe(ROUTES.length)
+    // And the palette really does offer every view, not a hand-picked few.
+    for (const route of ROUTES) {
+      await expect(page.getByTestId('palette-list')).toContainText(route.label)
+    }
 
     // ⭐ Two commands share 复, and that is correct — 复习 and 复盘 are different
     // destinations. The first draft of this test asserted a count of 1 here and
@@ -197,7 +209,8 @@ test.describe('命令面板（spec 025 · ⌘K）', () => {
 
     const items = page.getByTestId('palette-item')
     const count = await items.count()
-    expect(count).toBe(4)
+    // Derived, for the same reason as in the filtering test above.
+    expect(count).toBe(ROUTES.length)
 
     const activeIndex = async () => {
       const flags = await items.evaluateAll((els) =>
@@ -213,14 +226,23 @@ test.describe('命令面板（spec 025 · ⌘K）', () => {
     expect(await activeIndex()).toBe(2)
 
     // ⭐ Walking past the end **stops**. Not wrap, not clamp to the wrong row:
-    // either sends ⏎ to a command the reader did not pick. Probed against
-    // `count - 1` rather than a literal, because the first draft hard-coded 2
-    // and the cursor correctly stopped at 3 — the test was wrong, the code was
-    // not, and a literal here would have kept lying.
+    // either sends ⏎ to a command the reader did not pick.
+    //
+    // ⭐⭐ The press count is derived too, and that is the second dead constant
+    // this file has now had. The first draft pressed ↓ three times and asserted
+    // the cursor had reached the end — which is true with four views and false
+    // with five, so adding a view broke a test about clamping. A clamp test must
+    // press *more* times than there are items and then assert it stopped; any
+    // fixed number is asserting the length of the route table instead.
+    for (let i = 0; i < count; i += 1) {
+      await page.keyboard.press('ArrowDown')
+    }
+    expect(await activeIndex(), '越过末项后应停在末项，不回绕').toBe(count - 1)
+
+    // And one more press changes nothing, which is the part a wrap-around
+    // implementation gets wrong.
     await page.keyboard.press('ArrowDown')
     expect(await activeIndex()).toBe(count - 1)
-    await page.keyboard.press('ArrowDown')
-    expect(await activeIndex(), '越过后应停在末项，不回绕').toBe(count - 1)
 
     await page.keyboard.press('ArrowUp')
     expect(await activeIndex()).toBe(count - 2)
@@ -233,7 +255,9 @@ test.describe('命令面板（spec 025 · ⌘K）', () => {
     // destination** — the row has a name, so assert the name first. A palette
     // test that says "I pressed Enter three times and expected 关注池" is only
     // testing its own arithmetic.
-    await page.keyboard.press('ArrowUp')
+    while ((await activeIndex()) > 1) {
+      await page.keyboard.press('ArrowUp')
+    }
     expect(await activeIndex()).toBe(1)
     await expect(items.nth(1)).toContainText('关注池')
 

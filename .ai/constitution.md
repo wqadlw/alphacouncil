@@ -246,12 +246,28 @@ v1.0 写于 2026-09-25，当时项目方向尚未收敛。v2.0 做了四处**结
 |---|---|---|---|
 | **2026-09-28** | `lucide-react` | **仅此一个图标库**。`前端资源与打磨规格` §3.1 **早已选定 Lucide**（ISC，~1,600 图标），§5 规定"细描边、只用 `currentColor`、⛔ 禁止 emoji 作功能图标" —— 规范已定，只是从未实现 | spec 025 |
 | **2026-09-28** | `class-variance-authority` · `clsx` · `tailwind-merge` | **仅作为组件变体与类名合并的工具**。这三者**就是 shadcn/ui 的全部运行时**。`前端资源与打磨规格` §4.1 坚持 shadcn 的理由是"源码复制进仓库 + **没有运行时依赖**" —— 本条即按该理由落地：**手写组件，不引入 Radix** | spec 025 |
+| **2026-09-28** | `@milkdown/core` · `@milkdown/react` · `@milkdown/preset-commonmark` | **Markdown 编辑器**。`前端资源与打磨规格` §4.3 要求的"块级编辑"、§A1 要求的 `[[双向链接]]` 载体。`research/09` 把「Markdown 编辑器」列为 12 项缺口的**第 1 号**。**实测 7.22.2 `license: MIT`** | spec 026 |
 
 **明确未批准、且不得擅自引入**：shadcn/ui 全量（Radix 一整套）· TanStack Query / Router ·
 Zustand · React Hook Form + Zod · Recharts · auto-animate / motion / GSAP · 图表库 · 自托管字体包。
 
 **机制**：`frontend/src/styleguide.test.ts` 的 **V-07** 直接读 `package.json`，
-出现上表以外的任何运行时依赖即测试失败 —— 批准清单是**可执行的**，不是一段散文。
+出现上表以外的任何**直接**运行时依赖即测试失败 —— 批准清单是**可执行的**，不是一段散文。
+
+#### 3.2.2 ⚠️ 本条机制的边界：**它只看得到直接依赖**
+
+V-07 读的是 `package.json` 的 `dependencies`，**看不到传递依赖**。引入 Milkdown 之后
+前端树里有 **209 个包**，而 V-07 只看得见 7 个。
+
+而**许可门禁也看不见它们**：`backend/scripts/check_licenses.py` 用
+`importlib.metadata.distributions()`，**只扫 Python 分发包**，从来没看过任何一个 npm 包。
+
+→ 所以 ADR-0024 / 第 6.5 条「GPL-3.0 / AGPL-3.0 传染性，绝不可抄代码」在前端
+**没有任何强制执行**。2026-09-28 手工扫了一遍（338 包 / 314 宽松 / 24 个 MPL-2.0
+全是 `lightningcss` / **0 传染性 / 0 未知**），⭐ **但手扫一次不构成护栏**。
+
+**已记为下一件该做的事**：把 npm 树扫描纳入 `dev.py check`。
+在那之前，**前端依赖的许可是"已人工核验"而不是"已被强制"**，这个区别必须留着。
 
 ---
 

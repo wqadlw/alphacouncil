@@ -427,7 +427,18 @@ function describeValidation(detail: unknown): string | null {
   return `${where}被服务器拒绝：${message ?? '格式不符合要求'}`
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * One HTTP helper for the whole client.
+ *
+ * ⭐ **Exported for `notes.ts` rather than duplicated there** (spec 026). The notes
+ * client is its own file because `api.ts` is already 678 lines and covers five
+ * concerns, but the *error* shape is a contract every page handles: one
+ * `ApiError`, one normalisation of FastAPI's 422 envelope. A second `fetch`
+ * wrapper would mean a second place where an error can be shaped differently —
+ * and the note page's whole argument is that notes and cards differ in their
+ * *rules*, not in how failures are reported.
+ */
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },
     ...init,

@@ -71,8 +71,15 @@ MANIFEST_PATH = migrate.MIGRATIONS_DIR / migrate.MANIFEST_NAME
 #:
 #: Both directions of that confusion are caught: ``required`` forbids any NULL
 #: test, and ``identity`` will not accept a bare ``length(trim(x)) > 0``.
+#:
+#: The **fourth** alternative (``= trim(``) was added 2026-09-28 with the notes
+#: tables (spec 026) for ``note_tags_trimmed_check`` (``tag = trim(tag)``). It is
+#: the same idea as the other three — a statement about the value's canonical
+#: form — and it has to be a *separate* alternative rather than a bare
+#: ``("trim(",)``, because a bare one would also match ``length(trim(x)) > 0``
+#: and collapse the identity/required distinction this table exists to hold.
 CATEGORY_MARKERS: dict[str, tuple[tuple[str, ...], ...]] = {
-    "identity": (("strftime",), ("GLOB",), ("trim(", "IS NULL")),
+    "identity": (("strftime",), ("GLOB",), ("trim(", "IS NULL"), ("= trim(",)),
     "enum": (("IN (",),),
     "json": (("json_valid",),),
     "length": (("length(", "<="),),
@@ -91,6 +98,27 @@ CATEGORY_MARKERS: dict[str, tuple[tuple[str, ...], ...]] = {
     # range between two constants is the same kind of statement as an ordering
     # between two columns — neither says what the value *is*, only where it sits.
     "comparison": ((">=",), (" > ",), ("BETWEEN",)),
+    # A value that must not contain something. Added 2026-09-28 with the notes
+    # tables (spec 026): `note_tags_no_comma_check` is `instr(tag, ',') = 0`, and
+    # it is there to make a **shape** unwritable — a comma-joined tag column is
+    # the failure `note_tags` exists to prevent, so the comma is banned outright.
+    #
+    # It could have been filed under `required` (which matches on `trim(`) or
+    # under `identity`, and both would have been wrong rather than merely
+    # incomplete: the rule says nothing about the value being present or
+    # canonical, only that one character may not appear. The `comparison` comment
+    # above explains why that distinction is the whole point.
+    "forbidden_value": (("instr(",),),
+    # A rule about the relationship **between** two fields rather than about any
+    # one value's shape. Currently exactly one shape:
+    # `note_links_no_self_check` (`NOT (to_kind = 'note' AND to_id =
+    # from_note_id)`), which forbids a note pointing at itself.
+    #
+    # ⭐ `NOT (` is a blunt marker and exactly one constraint uses it. Recorded
+    # here as a known limitation: if a future migration uses `NOT (` for an
+    # unrelated shape, this category will quietly absorb it, and the fix is to
+    # add the alternative to the tuple above rather than to widen this one.
+    "referential": (("NOT (",),),
 }
 
 #: ``required`` is the one category that must *not* mention NULL: it says the
@@ -387,7 +415,15 @@ class TestTheLedgerMatchesTheSchema:
         # gone stale, which is the failure this file exists to prevent:
         #   0001 +24 = 24 · 0002 +4 = 28 · 0003 +17 = 45 · 0004 +7 = 52
         #   0005 +19 = 71 · 0006 +16 = 87
-        assert len(bodies) == 87, f"expected 87 named constraints, found {len(bodies)}"
+        #   0007 +19 = 106  (spec 026 · notes +19 = notes 8 · note_note_symbols 3
+        #                   · note_tags 4 · note_links 4)
+        #
+        # 0007 also **widened the category set** by two — `forbidden_value` and
+        # `referential` — because two of its constraints match none of the
+        # original seven. Filing them under a near-miss would have made the
+        # ledger wrong rather than merely incomplete, which is the worse failure
+        # precisely because it is invisible.
+        assert len(bodies) == 106, f"expected 106 named constraints, found {len(bodies)}"
 
     def test_every_constraint_uses_a_declared_category(self) -> None:
         for table, constraints in _ledger_constraints().items():

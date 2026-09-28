@@ -37,7 +37,9 @@
     "json",
     "length",
     "conditional_required",
-    "required"
+    "required",
+    "forbidden_value",
+    "referential"
   ],
   "tables": {
     "instruments": {
@@ -185,6 +187,45 @@
         "reviews_note_length_check": "length",
         "reviews_reviewed_at_check": "identity",
         "reviews_created_at_check": "identity"
+      }
+    },
+    "notes": {
+      "append_only": false,
+      "constraints": {
+        "notes_id_check": "identity",
+        "notes_title_required_check": "required",
+        "notes_title_length_check": "length",
+        "notes_body_not_blank_check": "required",
+        "notes_as_of_check": "identity",
+        "notes_created_at_check": "identity",
+        "notes_updated_at_check": "identity",
+        "notes_updated_not_before_created_check": "comparison"
+      }
+    },
+    "note_note_symbols": {
+      "append_only": false,
+      "constraints": {
+        "note_note_symbols_market_check": "enum",
+        "note_note_symbols_code_check": "identity",
+        "note_note_symbols_created_at_check": "identity"
+      }
+    },
+    "note_tags": {
+      "append_only": false,
+      "constraints": {
+        "note_tags_tag_required_check": "required",
+        "note_tags_tag_length_check": "length",
+        "note_tags_no_comma_check": "forbidden_value",
+        "note_tags_trimmed_check": "identity"
+      }
+    },
+    "note_links": {
+      "append_only": false,
+      "constraints": {
+        "note_links_to_kind_check": "enum",
+        "note_links_to_id_required_check": "required",
+        "note_links_created_at_check": "identity",
+        "note_links_no_self_check": "referential"
       }
     }
   }

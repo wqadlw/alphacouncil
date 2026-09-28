@@ -31,8 +31,19 @@
 
 import { useEffect, useState } from 'react'
 
-/** A view the app can be on. Instrument pages are parsed, not enumerated. */
-export type RouteName = 'today' | 'pool' | 'review' | 'retrospective'
+/**
+ * A view the app can be on. Instrument pages are parsed, not enumerated.
+ *
+ * ⚠️ **This union is a second declaration of what `ROUTES` already says**, and it
+ * is the one place the "the table is the single source of truth" claim can leak.
+ * Adding a row to `ROUTES` without adding the member here fails the build with
+ * `Type '"vault"' is not assignable to type 'RouteName'` — which is loud and
+ * immediate, and is the reason it has stayed correct for four specs.
+ * Deriving it (`(typeof ROUTES)[number]['name']`) would remove the possibility,
+ * but it also makes `RouteName` depend on declaration order, and the explicit
+ * union is the one line a reader can check by eye.
+ */
+export type RouteName = 'today' | 'pool' | 'review' | 'retrospective' | 'vault'
 
 export interface RouteDef {
   /**
@@ -64,6 +75,7 @@ export const ROUTES: readonly RouteDef[] = [
   { name: 'pool', href: '#/pool', label: '关注池', title: '关注池' },
   { name: 'review', href: '#/review', label: '复习', title: '复习' },
   { name: 'retrospective', href: '#/retrospective', label: '复盘', title: '复盘' },
+  { name: 'vault', href: '#/vault', label: '知识库', title: '知识库' },
 ]
 
 /**

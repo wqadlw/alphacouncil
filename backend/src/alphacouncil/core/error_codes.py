@@ -88,6 +88,38 @@ class ErrorCode(StrEnum):
     CARD_ALREADY_SCHEDULED = "CARD_ALREADY_SCHEDULED"
     CARD_TIMESTAMP_NOT_UTC = "CARD_TIMESTAMP_NOT_UTC"
 
+    # -- NOTE_* : knowledge notes (spec 026) --------------------------------
+    # A separate namespace from CARD_* on purpose, and the separation is the
+    # whole point of the feature.
+    #
+    # The two look alike — both are knowledge, both carry the reader's words —
+    # and they are guarded by **opposite** rules. A card is a claim you are
+    # willing to sign, so it must carry a source (`CARD_SOURCE_URL_REQUIRED`).
+    # A note is a note: 「流动性收紧时周期股先跌」 has no source, and forcing one
+    # would push the reader to attach a link they have not read. Merging the
+    # namespaces would make "how often do users attach a citation they did not
+    # read" unanswerable, which is the one number that would show the provenance
+    # rule decaying.
+    #
+    # ⭐ `NOTE_TEXT_TOO_LONG` is deliberately much larger than
+    # `CARD_TEXT_TOO_LONG` (1000 chars). A card is "超过 3 行不算卡片，算文章";  # noqa: RUF003
+    # an article is exactly what a note is allowed to be. 200k is a size guard
+    # against a pasted file, not a style rule.
+    #
+    # The `noqa` sits on the quoted line and is deliberately **not** a per-file
+    # exemption: this is a verbatim sentence from the card specification, and
+    # `RUF003` cannot tell a quotation from ordinary prose. Suppressing one line
+    # leaves the rule active for the rest of the file, where a lookalike
+    # character in a comment is still worth knowing about.
+    NOTE_TITLE_REQUIRED = "NOTE_TITLE_REQUIRED"
+    NOTE_TITLE_TOO_LONG = "NOTE_TITLE_TOO_LONG"
+    NOTE_BODY_BLANK = "NOTE_BODY_BLANK"
+    NOTE_TEXT_TOO_LONG = "NOTE_TEXT_TOO_LONG"
+    NOTE_NOT_FOUND = "NOTE_NOT_FOUND"
+    NOTE_TAG_INVALID = "NOTE_TAG_INVALID"
+    NOTE_LINK_SELF = "NOTE_LINK_SELF"
+    NOTE_LINK_TARGET_UNKNOWN = "NOTE_LINK_TARGET_UNKNOWN"
+
     # -- REVIEW_* : decision reviews and the four quadrants (J3) ------------
     # Added 2026-09-28 (spec 020). REVIEW_NOT_DUE is the one that matters most:
     # it is the hard gate from `项目总纲` P0-3 — an outcome may not be scored

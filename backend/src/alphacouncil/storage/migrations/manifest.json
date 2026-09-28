@@ -57,6 +57,14 @@
       "down": "0006_review_quadrants.down.sql",
       "destructive_down": true,
       "down_note": "删除 reviews（全部复盘流水）与 decision_review_state（到期与已复盘状态）。decisions 不受影响 —— 用户当初写下的原始记录还在，但「我复盘过」这件事没了，而那正是这两张表存在的理由。要退回请从快照恢复，不要跑 down.sql。"
+    },
+    {
+      "version": 7,
+      "name": "knowledge_notes",
+      "up": "0007_knowledge_notes.up.sql",
+      "down": "0007_knowledge_notes.down.sql",
+      "destructive_down": true,
+      "down_note": "删除 notes / note_tags / note_links —— 里面全是只有用户有、任何数据源都算不出来的东西：他自己写下的笔记。cards / card_events / card_schedule / card_reviews / decisions / reviews 均不受影响。要退回请从快照恢复，不要跑 down.sql。"
     }
   ]
 }

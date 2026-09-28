@@ -4,6 +4,7 @@ import PoolPage from './PoolPage'
 import RetrospectivePage from './RetrospectivePage'
 import ReviewPage from './ReviewPage'
 import TodayPage from './TodayPage'
+import VaultPage from './VaultPage'
 import { AppShellFrame } from './app/AppShellFrame'
 import { todayLabel } from './format'
 import { POOL_HREF, titleFor, useRoute } from './routing'
@@ -54,6 +55,7 @@ export default function App() {
       {route.name === 'review' ? <ReviewPage /> : null}
       {route.name === 'retrospective' ? <RetrospectivePage /> : null}
       {route.name === 'today' ? <TodayPage /> : null}
+      {route.name === 'vault' ? <VaultPage /> : null}
       {route.name === 'unknown' ? <UnknownRoute raw={route.raw} /> : null}
     </AppShellFrame>
   )

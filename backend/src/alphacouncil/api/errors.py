@@ -23,6 +23,7 @@ from alphacouncil.core.error_codes import ErrorCode
 from alphacouncil.domain.card import CardError
 from alphacouncil.domain.decision import DecisionError
 from alphacouncil.domain.instrument import InstrumentError
+from alphacouncil.domain.note import NoteError
 from alphacouncil.domain.review import ReviewError
 from alphacouncil.domain.scheduling import SchedulingError
 from alphacouncil.domain.watchlist import WatchlistError
@@ -116,6 +117,12 @@ CODED_ERRORS: tuple[type[Exception], ...] = (
     WatchlistError,
     DecisionError,
     CardError,
+    # Spec 026. The same trap as K3 and J3, hit a third time: without the base
+    # registered, every note failure answers a flat **400**, so "这条笔记不存在"
+    # and "标题是空的" become indistinguishable to a client — and the note layer
+    # is the one that most needs to say *which* rule was broken, because the whole
+    # feature rests on "a note may skip the rules a card may not".
+    NoteError,
     # K3. Without this the review queue's failures fall through to the plain
     # `ValueError` handler and every one of them answers **400** — which is how
     # "this card is already on the queue" ends up looking like a malformed

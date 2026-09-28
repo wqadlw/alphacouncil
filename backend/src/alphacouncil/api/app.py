@@ -23,6 +23,7 @@ from alphacouncil.api.routes import (
     decision_reviews,
     decisions,
     instruments,
+    notes,
     reviews,
     today,
     watchlist,
@@ -180,6 +181,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(today.router)
     app.include_router(capabilities.router)
     app.include_router(cards.router)
+    # Spec 026. The knowledge vault: notes sit **beside** cards, not inside them.
+    # Registered after the card router so a reader scanning this list meets the
+    # two in the order the product thinks in them — a claim, then a note.
+    app.include_router(notes.router)
     # The review queue. `/api/v1/cards/{card_id}` would otherwise shadow
     # `/api/v1/cards/due`, so the queue has its own prefix — see reviews.py.
     app.include_router(reviews.card_router)
