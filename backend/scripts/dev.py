@@ -83,7 +83,7 @@ GATES: dict[str, Gate] = {
     ),
     "check-static": Gate(
         "check-static",
-        "static checks S-01..S-12 (.ai/checks/static/)",
+        "static checks S-01..S-13 (.ai/checks/static/)",
         # `--strict` because `python -m checks` alone follows the documented
         # contract: exit 0 means "it ran", even when it found problems. A gate
         # needs the other signal, so it is asked for explicitly.
@@ -300,7 +300,8 @@ def _print_help() -> None:
     _say("commands:")
     _say("  check           every gate CI runs; skipped gates fail the run")
     _say("  check-lite      only the gates that exist today")
-    _say("  clean           remove caches and build artefacts\n")
+    _say("  clean           remove caches and build artefacts")
+    _say("  eval            product red lines: how many are actually guarded\n")
     _say("gates:")
     for name, gate in GATES.items():
         flag = "" if gate.implemented else "   [NOT IMPLEMENTED]"
@@ -321,6 +322,16 @@ def main(argv: list[str]) -> int:
     command = argv[0]
     if command == "clean":
         return _clean()
+    if command == "eval":
+        # Delegated, and deliberately **not** a gate in CHECK. `eval` is red
+        # today and red is its honest state: 5 of 15 red lines have a verifier
+        # that runs. Putting it in CHECK would make `dev.py check` permanently
+        # red and train everyone to ignore the summary — which is how a gate
+        # stops being a gate. It stays a command you have to ask for, and its
+        # baseline is recorded in `.ai/eval/redlines.json`.
+        from eval import main as eval_main
+
+        return eval_main(argv[1:])
     if command in GATES:
         names: tuple[str, ...] = (command,)
     elif command == "check":

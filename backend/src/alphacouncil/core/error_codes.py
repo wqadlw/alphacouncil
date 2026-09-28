@@ -115,6 +115,7 @@ class ErrorCode(StrEnum):
     CHECK_PRINT_STATEMENT = "CHECK_PRINT_STATEMENT"
     CHECK_BARE_EXCEPT = "CHECK_BARE_EXCEPT"
     CHECK_DOC_DRIFT = "CHECK_DOC_DRIFT"
+    CHECK_TOOL_ENCODING_UNGUARDED = "CHECK_TOOL_ENCODING_UNGUARDED"
 
     # -- CHECK_* : emitted by the check runner itself -----------------------
     # Not tied to any single rule, so they cannot be attributed to one row.

@@ -47,6 +47,7 @@ Lint  →  Typecheck  →  ★ check-static  →  Test  →  Build
 | **S-04** | `check-append-only-triggers` | 日志类表缺 `BEFORE UPDATE` / `BEFORE DELETE` 触发器 | 宪法 5.4 · 红线 4 |
 | **S-05** | `check-error-codes` | 代码里出现的 `code` 未登记在 `.ai/error-codes.md` | `.ai/error-codes.md` 维护规则 4 |
 | **S-06** | `no-client-supplied-id` | 决策日志的 API schema 暴露了主键字段 | 宪法 5.2 规则 9 · 红线 4 |
+| **S-13** | `tool-encoding` | 开发者工具（`scripts/` · `checks/__main__.py`）打印人类可读输出却**没调 `use_utf8()`** | 回归 0004 · 门禁可读性 |
 
 ### 3.2 P1（红线 UI 层，需要 E2E 配合）
 
@@ -65,6 +66,11 @@ Lint  →  Typecheck  →  ★ check-static  →  Test  →  Build
 | **S-10** | `no-print` | 禁止 `print()`（宪法 7.4） |
 | **S-11** | `no-bare-except` | 禁止裸 `except:` / `except Exception: pass`（宪法 7.3） |
 | **S-12** | `check-doc-sync` | 关键文档里的代码块与实现**不脱同步**（借"测试直接从文档抽取代码执行"的思路） |
+
+> ⚠️ **S-13 放在 P0 而不是 P2**：它守的不是风格，是**门禁本身能不能说话**。
+> `dev.py` 曾因缺这一行而在中文控制台上把"十道全过"报成退出码 1（回归 0004），
+> 而**同一天写第四个工具时就又犯了一次** —— 三个调用点不是机制，规则才是。
+> 详见 `.ai/regressions/0004-console-encoding.md` 与 `0005`。
 
 ---
 

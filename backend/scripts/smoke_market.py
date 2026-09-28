@@ -6,8 +6,15 @@ from __future__ import annotations
 
 from datetime import date
 
+from _console import use_utf8
+
 from alphacouncil.models.market import Market, Symbol
 from alphacouncil.providers import default_router
+
+# Before the first print. This script is run by hand against the real network,
+# which means it is also the script most likely to be run from a plain
+# PowerShell window — i.e. on a cp936 console. Found by S-13.
+use_utf8()
 
 router = default_router()
 moutai = Symbol(market=Market.SH, code="600519")

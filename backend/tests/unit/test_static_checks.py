@@ -44,6 +44,7 @@ from checks.rules import (
     no_print,
     no_raw_http,
     time_cost_in_stop_loss,
+    tool_encoding,
 )
 
 from alphacouncil.core.error_codes import ErrorCode
@@ -199,8 +200,8 @@ class TestContainsToken:
 class TestRegistry:
     """The registry is the contract between the document and the code."""
 
-    def test_twelve_rules_in_order(self) -> None:
-        assert [rule.meta.check_id for rule in RULES] == [f"S-{n:02d}" for n in range(1, 13)]
+    def test_thirteen_rules_in_order(self) -> None:
+        assert [rule.meta.check_id for rule in RULES] == [f"S-{n:02d}" for n in range(1, 14)]
 
     @pytest.mark.parametrize("check_id", sorted(MODULE_BY_ID))
     def test_each_rule_resolves_to_the_module_that_declares_it(self, check_id: str) -> None:
@@ -739,6 +740,83 @@ class TestS10NoPrint:
 
 
 # ---------------------------------------------------------------------------
+# S-13 tool-encoding
+# ---------------------------------------------------------------------------
+
+
+class TestS13ToolEncoding:
+    """A printing tool must own its output encoding (regression 0004).
+
+    The fixture that matters most is the last one: it is the exact shape of
+    `scripts/eval.py` as it was first written — a new tool, on the same day the
+    fix landed, missing the call — and it is why this rule exists rather than
+    three careful call sites.
+    """
+
+    def test_a_tool_that_prints_without_use_utf8_is_reported(self, tmp_path: Path) -> None:
+        ctx = make_ctx(
+            tmp_path,
+            {
+                "backend/scripts/thing.py": (
+                    "def main() -> int:\n"
+                    '    print("  \\u2713 every gate that ran, passed")\n'
+                    "    return 0\n"
+                )
+            },
+        )
+        assert codes(tool_encoding.run(ctx)) == ["CHECK_TOOL_ENCODING_UNGUARDED"]
+
+    def test_a_tool_that_calls_use_utf8_stays_silent(self, tmp_path: Path) -> None:
+        ctx = make_ctx(
+            tmp_path,
+            {
+                "backend/scripts/thing.py": (
+                    "from _console import use_utf8\n\n\n"
+                    "def main() -> int:\n"
+                    "    use_utf8()\n"
+                    '    print("  \\u2713 every gate that ran, passed")\n'
+                    "    return 0\n"
+                )
+            },
+        )
+        assert tool_encoding.run(ctx).issues == []
+
+    def test_a_qualified_call_also_counts(self, tmp_path: Path) -> None:
+        """`console.use_utf8()` is the same promise written differently."""
+        ctx = make_ctx(
+            tmp_path,
+            {
+                "backend/scripts/thing.py": (
+                    "import _console as console\n\n\n"
+                    "def main() -> int:\n"
+                    "    console.use_utf8()\n"
+                    "    return 0\n"
+                )
+            },
+        )
+        assert tool_encoding.run(ctx).issues == []
+
+    def test_the_helper_itself_is_exempt(self, tmp_path: Path) -> None:
+        """`_console.py` defines the call; requiring it to make the call is a loop."""
+        source = "def use_utf8() -> None:\n    return\n"
+        ctx = make_ctx(tmp_path, {"backend/scripts/_console.py": source})
+        assert tool_encoding.run(ctx).issues == []
+
+    def test_checks_main_is_in_scope(self, tmp_path: Path) -> None:
+        source = "def main(argv=None) -> int:\n    print('ran')\n    return 0\n"
+        ctx = make_ctx(tmp_path, {"backend/checks/__main__.py": source})
+        assert codes(tool_encoding.run(ctx)) == ["CHECK_TOOL_ENCODING_UNGUARDED"]
+
+    def test_the_product_is_out_of_scope(self, tmp_path: Path) -> None:
+        """Product code must not print at all (S-10); this rule is about tools."""
+        ctx = make_ctx(
+            tmp_path,
+            {"backend/src/alphacouncil/api/app.py": 'print("hello")\n'},
+        )
+        assert tool_encoding.run(ctx).issues == []
+
+
+# ---------------------------------------------------------------------------
 # S-11 no-bare-except
 # ---------------------------------------------------------------------------
 
@@ -904,7 +982,7 @@ class TestRunner:
         assert main(["--root", str(tmp_path), "--json"]) == 0
         captured = capsys.readouterr()
         document = json.loads(captured.out)
-        assert document["summary"]["rules_selected"] == 12
+        assert document["summary"]["rules_selected"] == 13
         assert document["summary"]["rules_skipped"] >= 1
         assert "AlphaCouncil" not in captured.out
 

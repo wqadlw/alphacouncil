@@ -175,6 +175,7 @@ class DataFetchError(RuntimeError): ...
 | `CHECK_PRINT_STATEMENT` | error | S-10 | 产品代码里出现 `print()`（宪法 7.4） |
 | `CHECK_BARE_EXCEPT` | error | S-11 | 裸 `except:` 或空 body 的 `except Exception:`（宪法 7.3） |
 | `CHECK_DOC_DRIFT` | error / warning | S-12 | `.ai/checks/static/README.md` 的规则清单与代码不一致 |
+| `CHECK_TOOL_ENCODING_UNGUARDED` | error | S-13 | 开发者工具打印人类可读输出却没调 `use_utf8()`（回归 0004；cp936 控制台上会中途崩溃并把绿灯报成退出码 1） |
 | `CHECK_EXEMPTION_UNREASONED` | error | —（运行器） | `# noqa: S-xx` 没写理由 —— **豁免必须有理由** |
 | `CHECK_RUNNER_ERROR` | error | —（运行器） | 规则脚本自身崩溃 —— **崩溃与通过无法区分，必须报** |
 

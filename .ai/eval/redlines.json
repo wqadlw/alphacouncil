@@ -1,0 +1,171 @@
+{
+  "version": 1,
+  "created": "2026-09-28",
+  "spec": ".ai/specs/017-redline-eval",
+  "policy": {
+    "unguarded_counts_as_failure": true,
+    "threshold": 1.0,
+    "note": "T-19: a red line with no check has not passed — it has not been checked. The baseline is recorded in `baseline` below so progress is measurable rather than rhetorical."
+  },
+  "baseline": {
+    "date": "2026-09-28",
+    "pass": 5,
+    "total": 15,
+    "full": 5,
+    "partial": 2,
+    "none": 8,
+    "pass_rate": 0.3333,
+    "note": "First honest measurement. Recorded before anything was fixed, so the number cannot be inflated by the act of measuring it. `pass` equals `full` by construction: a `partial` red line never passes."
+  },
+  "verifier_kinds": {
+    "static": "A rule in `.ai/checks/static/` (S-01..S-12). `eval` executes it now via `python -m checks --json` and requires the rule to have run (not skipped) with zero error findings.",
+    "gate": "A test enforced by a gate in `scripts/dev.py` CHECK. `eval` verifies the gate is in CHECK and that the named test still exists in source. `eval` does NOT execute it — that is the gate's job, every run."
+  },
+  "redlines": [
+    {
+      "id": 1,
+      "title": "不做预测增强（不给速成答案）",
+      "enforcement": "禁止出现「目标价 / 涨跌预测 / 买卖建议」字段与接口",
+      "coverage": "full",
+      "verifier": { "kind": "static", "check": "S-03" },
+      "evidence": "S-03 `no-prediction-field` — AST 级禁止目标价/涨跌预测/买卖建议/看好/看空类字段或接口"
+    },
+    {
+      "id": 2,
+      "title": "只做过程优化，不优化预测",
+      "enforcement": "所有评分字段只描述「决策过程」，不描述「结果好坏」",
+      "coverage": "partial",
+      "verifier": { "kind": "static", "check": "S-03" },
+      "evidence": "S-03 与红线 1 共用：它能挡住「预测类字段名」",
+      "gap": "「一个已存在的评分字段究竟在描述过程还是结果」需要字段级语义审计，没有任何检查做这件事。J3 四象限未实现前，这条红线在已交付能力上无法被违反，也就无法被验证。"
+    },
+    {
+      "id": 3,
+      "title": "记录优先于分析",
+      "enforcement": "任何「分析」功能都必须以已存在的记录为输入",
+      "coverage": "none",
+      "verifier": null,
+      "evidence": null,
+      "gap": "无检查。当前也没有任何「分析」功能，所以既无违反也无守卫 —— 这条红线目前是**一句声明**，不是不变量。"
+    },
+    {
+      "id": 4,
+      "title": "结果之前记录",
+      "enforcement": "决策记录主键 = 记录时刻的时间戳，服务端生成，API 不接受客户端传入",
+      "coverage": "full",
+      "verifier": { "kind": "static", "check": "S-06" },
+      "also": [
+        { "kind": "static", "check": "S-04" },
+        { "kind": "gate", "gate": "e2e", "file": "frontend/e2e/pool.spec.ts", "selector": "removing says the record stays" }
+      ],
+      "evidence": "S-06 `no-client-supplied-id` 挡住 API schema 暴露主键；S-04 `check-append-only-triggers` 保证日志表不可改不可删；E2E 断言移除后记录仍在"
+    },
+    {
+      "id": 5,
+      "title": "过程分与结果分独立",
+      "enforcement": "两张表 / 两组字段，不得合并为单一评分",
+      "coverage": "none",
+      "verifier": null,
+      "evidence": null,
+      "gap": "无检查。`reviews` 与 `decision_review_state` 两表都未建（D2 / J3 未实现），所以「不得合并」目前没有可被违反的对象。"
+    },
+    {
+      "id": 6,
+      "title": "未成熟结果留空（绝不填 0）",
+      "enforcement": "字段可空，数据库层禁止默认值 0；统计时显式排除 NULL",
+      "coverage": "full",
+      "verifier": { "kind": "static", "check": "S-08" },
+      "also": [{ "kind": "static", "check": "S-02" }],
+      "evidence": "S-08 `immature-outcome-blank` 要求未成熟结果的渲染分支输出空而非 0；S-02 `no-boolean-state` 挡住用布尔组合代替状态"
+    },
+    {
+      "id": 7,
+      "title": "教训必须能再次遇到",
+      "enforcement": "每条教训必须生成一条调度项（FSRS）",
+      "coverage": "none",
+      "verifier": null,
+      "evidence": null,
+      "gap": "无检查，且**不可能有**：`fsrs` 已声明但全仓零 import，K3 未开工（`.ai/status.md` §二 K3）。J5 教训转卡也未实现。"
+    },
+    {
+      "id": 8,
+      "title": "功能是「拦截」不是「推荐」",
+      "enforcement": "禁止「机会推送 / 每日精选 / 异动提醒」类功能",
+      "coverage": "none",
+      "verifier": null,
+      "evidence": null,
+      "gap": "无检查。这条需要一个「功能清单不得含推送类」的守卫，而功能清单本身不存在（`status.md` 是散文表格，不是机器可读清单）。**可落地**：把本文件的 `id` 集合当作那份清单，新功能开工时必须在此登记。"
+    },
+    {
+      "id": 9,
+      "title": "不展示「成绩」，可以展示「事实」",
+      "enforcement": "禁止收益率排行 / 跑赢大盘 / 成就徽章 / 连续打卡；允许涨跌 / 估值 / 财务 / 浮盈亏",
+      "coverage": "full",
+      "verifier": { "kind": "static", "check": "S-07" },
+      "also": [
+        { "kind": "gate", "gate": "e2e", "file": "frontend/e2e/today.spec.ts", "selector": "no returns metric is rendered anywhere on the page" },
+        { "kind": "gate", "gate": "e2e", "file": "frontend/e2e/pool.spec.ts", "selector": "the page states its own no-returns rule" }
+      ],
+      "evidence": "S-07 `home-no-return-rate` 源码级不含「收益率」；两条 E2E 在浏览器里断言整页无收益率指标，且页面自己声明该规则"
+    },
+    {
+      "id": 10,
+      "title": "必须让用户面对不舒服的数据",
+      "enforcement": "不美化、不打折；「坏决策 + 好结果」时不显示盈利数字",
+      "coverage": "none",
+      "verifier": null,
+      "evidence": null,
+      "gap": "无检查。「坏决策 + 好结果时隐藏盈利数字」是 J3 四象限的 UI 行为，四象限未实现。**注意**：这条与红线 5 共享同一个未实现依赖。"
+    },
+    {
+      "id": 11,
+      "title": "不鼓励频繁操作",
+      "enforcement": "禁止任何促使用户「动起来」的设计；「写下回答花了多久」只用于自省，不做排名 / 打卡",
+      "coverage": "none",
+      "verifier": null,
+      "evidence": null,
+      "gap": "无检查。这条本质是设计约束，但**有一个可机械化的代理指标**：仓库里不应存在「连续天数 / 打卡streak / 成就」类字段或组件。与红线 9 的 S-07 同款思路，只是 S-07 目前只查「收益率」字样。"
+    },
+    {
+      "id": 12,
+      "title": "必须显示「时间的成本」",
+      "enforcement": "止损触发时显示「恢复所需年数」",
+      "coverage": "full",
+      "verifier": { "kind": "static", "check": "S-09" },
+      "also": [
+        { "kind": "gate", "gate": "e2e", "file": "frontend/e2e/instrument.spec.ts", "selector": "the stop-loss panel must state the years needed to recover" }
+      ],
+      "evidence": "S-09 `time-cost-in-stop-loss` 要求止损组件必含恢复年数行；E2E 在浏览器里断言该面板确实说出年数"
+    },
+    {
+      "id": 13,
+      "title": "不讨好用户（不在用户做错事时发糖）",
+      "enforcement": "满意度 / 使用时长 / 愉悦感不是目标函数",
+      "coverage": "partial",
+      "verifier": { "kind": "gate", "gate": "e2e", "file": "frontend/e2e/pool.spec.ts", "selector": "an empty reason keeps the submit disabled and names the rule" },
+      "also": [
+        { "kind": "gate", "gate": "e2e", "file": "frontend/e2e/instrument.spec.ts", "selector": "the decision form refuses to submit until its required fields exist" }
+      ],
+      "evidence": "两条 E2E 钉住了「不迁就」的一个具体机制：必填项没写完就不给提交",
+      "gap": "「不以愉悦感为目标函数」没有可检查的对应物 —— 它是一条**目标声明**，代码里没有它可以违反的地方。真正可查的部分（不给糖的交互）已由上面两条覆盖。"
+    },
+    {
+      "id": 14,
+      "title": "日常体验要顺，关键时刻才拦",
+      "enforcement": "禁止把产品做成惩罚工具（防守型红线，防止把「对抗性」推成「惩罚性」）",
+      "coverage": "none",
+      "verifier": null,
+      "evidence": null,
+      "gap": "无检查，且**这条大概率永远无法有自动化检查** —— 它是关于「整体手感」的价值判断。**如实标注为 none 而不是硬造一个假检查。** 唯一能机械化的代理是「拦截前是否给出可执行的下一步」，但那需要先有拦截清单。"
+    },
+    {
+      "id": 15,
+      "title": "Agent 只做抽取与核算，不做判断生成",
+      "enforcement": "所有 agent 输出必须可追溯到来源或可复现计算；否则不得写入数据库",
+      "coverage": "none",
+      "verifier": null,
+      "evidence": null,
+      "gap": "无检查，**而且现在无法有**：运行期没有 agent（ADR-0027 —— LangGraph/fastmcp 已采纳未实现）。`docs/adr/README.md` 已记：这条红线目前靠「没有工具」实现，**无法被违反，也就无法被验证**。"
+    }
+  ]
+}

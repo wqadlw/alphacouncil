@@ -29,6 +29,7 @@ from checks.rules import (
     no_print,
     no_raw_http,
     time_cost_in_stop_loss,
+    tool_encoding,
 )
 
 
@@ -46,7 +47,7 @@ class Rule:
     run: Callable[[ScanContext], CheckResult]
 
 
-#: Twelve rules, matching `.ai/checks/static/README.md` §3.
+#: Thirteen rules, matching `.ai/checks/static/README.md` §3.
 RULES: tuple[Rule, ...] = (
     Rule(no_raw_http.META, no_raw_http.run),
     Rule(no_boolean_state.META, no_boolean_state.run),
@@ -60,6 +61,7 @@ RULES: tuple[Rule, ...] = (
     Rule(no_print.META, no_print.run),
     Rule(no_bare_except.META, no_bare_except.run),
     Rule(check_doc_sync.META, check_doc_sync.run),
+    Rule(tool_encoding.META, tool_encoding.run),
 )
 
 #: Rule id -> the module that must implement it.
