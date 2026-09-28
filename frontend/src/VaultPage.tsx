@@ -1,41 +1,60 @@
 /**
- * The knowledge vault (spec 026) — **cards and notes, side by side**.
+ * The knowledge vault (specs 026-028) — **cards and notes, side by side**.
  *
  * ## Why this page exists at all
  *
- * The product is 「面向实战的股市知识管理系统」 and until this page it had no
- * place to write things down. The whole knowledge layer was one `cards` table
- * whose every row required an `http` source and carried a single instrument —
- * so a macro view, a method, a lesson or a reading note could not be recorded at
- * all. The product could **review** knowledge but not **record** it.
+ * The product is 「面向实战的股市知识管理系统」 and until spec 026 it had no place
+ * to write things down. The whole knowledge layer was one `cards` table whose every
+ * row required an `http` source and carried a single instrument — so a macro view,
+ * a method, a lesson or a reading note could not be recorded at all. The product
+ * could **review** knowledge but not **record** it.
  *
- * ⭐ **Notes and cards are listed together, and that is the point.** They are
- * two different things under one roof: a card is a claim you sign your name to
- * (and it must say where it came from), a note is something you wrote down (and
- * it need not). Putting them in separate screens would recreate the split that
- * made the vault impossible; putting them in one list, with the difference
- * visible, is what 「知识库」 means.
+ * ⭐ **Notes and cards are listed together, and that is the point.** They are two
+ * different things under one roof: a card is a claim you sign your name to (and it
+ * must say where it came from), a note is something you wrote down (and it need
+ * not). Separate screens would recreate the split that made the vault impossible.
  *
- * ## The editor is a plain textarea, deliberately — for now
+ * ## ⭐ The layout, and why it is this way (spec 029)
  *
- * `references/research/09` lists 「Markdown 编辑器」 as gap #1, and the owner
- * approved **Milkdown** (MIT, verified) this round. It is installed and
- * licence-checked. **It is not wired into this page yet**, and the reason is
- * worth stating rather than hiding: a WYSIWYG editor that has not been verified
- * is worse than a plain textarea, because it looks finished and stores
- * something unexpected.
+ * Two rounds were spent writing down that this layout was wrong and changing
+ * nothing. The owner's verdict — 「我对这个布局不是很满意」 — settled it, so here is
+ * the reasoning rather than a diff:
  *
- * So this page stores **Markdown source, byte-for-byte**, through the same
- * `Textarea` the rest of the app uses — which is exactly what the backend
- * contract promises (`test_the_markdown_comes_back_byte_for_byte`). Swapping in
- * Milkdown changes how the text is *typed*, not what is *stored*, so it is a
- * contained change to this file.
+ * **The page used to read: filters → a 200px form → results.** For a page whose
+ * main job is 「找到我写过什么」 that order is backwards: the results are below the
+ * fold because of a control that is used *occasionally*.
+ *
+ * So, in order:
+ *
+ * 1. **filters** — what you are looking at (view · search · tag)
+ * 2. **results** — the actual content
+ * 3. **the note you opened** — the thing you clicked
+ * 4. **记一条** — a single row, collapsed
+ *
+ * ⭐ **The recording affordance is permanent but not permanent-open.** Earlier
+ * drafts proposed collapsing it, and the objection recorded at the time was the
+ * right one: the owner's complaint *was* 「记录功能去哪里了」, so hiding it behind
+ * a control is walking back the fix. The resolution is that the control is
+ * **always one visible row reading 记一条** — never hidden, never a menu — and
+ * only the *form* behind it is transient.
+ *
+ * ⭐ **It opens by itself when the vault is empty.** Not an effect: `open` is
+ * *derived* (`composing || nothing written yet`), so there is no state to keep in
+ * step. A first-time reader gets the form; a returning one gets one row.
+ *
+ * ## Search is select-to-search (spec 027/029)
+ *
+ * The first version needed Enter. A search field where you must remember a key is
+ * a search field some people never use, and the 「（改完文字要按回车才搜）」 hint was
+ * a workaround for a decision rather than a reason. Now it searches ~150ms after
+ * the last keystroke, which is what every other program does, and the hint is gone
+ * because there is nothing to warn about.
  *
  * ## What is not here
  *
- * Full-text search (SQLite FTS5, next round), the note recall queue, and
- * backlinks rendered as a panel. The **data** for the last two exists and is
- * queryable; the panels are not built. See `.ai/specs/026-knowledge-vault/spec.md` §6.
+ * Full-text search is FTS5 (spec 027). The editor is still a plain textarea and the
+ * body is still shown as source rather than rendered — see `docs/FRONTEND_STYLE_GUIDE.md`
+ * and the spec for why an unverified WYSIWYG editor is worse than a plain one.
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -70,16 +89,23 @@ const VIEWS: { key: View; label: string }[] = [
   { key: 'recall', label: '该复习' },
 ]
 
+/**
+ * ⭐ Select-to-search, not press-Enter-to-search.
+ *
+ * 150ms is long enough to coalesce a burst of keystrokes into one request and short
+ * enough that the list does not feel stuck. The value is deliberately not
+ * configurable: a setting for "how long until I search" is a setting nobody changes
+ * and everybody wonders about.
+ */
+const SEARCH_DEBOUNCE_MS = 150
+
 export default function VaultPage() {
   const [view, setView] = useState<View>('all')
   const [tag, setTag] = useState<string | null>(null)
-  // `query` is the *submitted* search; `searchText` is what is in the box. They
-  // are separate on purpose: searching on every keystroke would issue a request
-  // per character, and a reader typing 「流动性」 would see the list flicker
-  // through four intermediate states. Enter (or Clear) is the commit.
   const [searchText, setSearchText] = useState('')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Note | null>(null)
+  const [composing, setComposing] = useState(false)
 
   const describe = useCallback(
     (cause: unknown) => (cause instanceof ApiError ? cause.message : '无法读取知识库。'),
@@ -89,6 +115,11 @@ export default function VaultPage() {
     (cause: unknown) => (cause instanceof ApiError ? cause.message : '无法读取标签。'),
     [],
   )
+
+  useEffect(() => {
+    const handle = setTimeout(() => setQuery(searchText.trim()), SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(handle)
+  }, [searchText])
 
   // Both are dependencies, so narrowing re-runs the fetch rather than filtering
   // client-side — the server is the only place that knows the exact-tag rule and
@@ -100,6 +131,26 @@ export default function VaultPage() {
     describe,
   )
   const tags = useResource<string[]>(listNoteTags, [], describeTags)
+
+  /**
+   * ⭐ Derived, **and latched**.
+   *
+   * The form opens when the reader asked for it **or** when there is nothing to
+   * read, so a first-time reader lands on a form rather than an empty table.
+   *
+   * ⭐ The derivation was **wrong the first time**, and the browser found it in one
+   * pass: purely derived, the form closes itself after the *first* note —
+   *
+   *     empty vault -> the form shows
+   *     first note  -> the vault is no longer empty -> formOpen is false
+   *
+   * — so a reader typing their first note had the form disappear under them
+   * mid-sentence, punished for using it. `onRecorded` therefore sets `composing`,
+   * which latches it open. Still no effect: the change happens in the event
+   * handler that caused it, which is what the `set-state-in-effect` rule asks for.
+   */
+  const vaultIsEmpty = (notes.data ?? []).length === 0 && !notes.loading
+  const formOpen = composing || vaultIsEmpty
 
   return (
     <div className="pb-8">
@@ -124,38 +175,31 @@ export default function VaultPage() {
 
         <span className="mx-1 h-4 w-px bg-rule" aria-hidden="true" />
 
-        <form
-          className="flex items-center gap-1.5"
-          onSubmit={(event) => {
-            event.preventDefault()
-            setQuery(searchText.trim())
-          }}
-        >
-          <Input
-            value={searchText}
-            onChange={(event) => setSearchText(event.target.value)}
-            placeholder="搜标题与正文 · 回车"
-            aria-label="搜索笔记"
-            className="w-[220px]"
-            data-testid="vault-search"
-          />
-          <Button size="sm" type="submit" data-testid="vault-search-submit">
-            搜
+        {/*
+          ⭐ No form, no submit button. The first version wrapped this in a
+          `<form>` and required Enter, with a 「（改完文字要按回车才搜）」 hint
+          explaining the rule. The hint was a workaround for a decision, not a
+          reason: a search field where you must remember a key is a field some
+          people never use. It now searches as you type.
+        */}
+        <Input
+          value={searchText}
+          onChange={(event) => setSearchText(event.target.value)}
+          placeholder="搜标题与正文"
+          aria-label="搜索笔记"
+          className="w-[220px]"
+          data-testid="vault-search"
+        />
+        {searchText !== '' ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setSearchText('')}
+            data-testid="vault-search-clear"
+          >
+            清除
           </Button>
-          {query !== '' ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setSearchText('')
-                setQuery('')
-              }}
-              data-testid="vault-search-clear"
-            >
-              清除
-            </Button>
-          ) : null}
-        </form>
+        ) : null}
 
         <span className="mx-1 h-4 w-px bg-rule" aria-hidden="true" />
 
@@ -184,16 +228,14 @@ export default function VaultPage() {
         ⭐ What the search box does and does not read, in the place a reader who
         just got an empty result will look.
 
-        It reads the **title and the body**. It does **not** read tags — a tag is
-        a button one row up, and indexing tags would mean the index had to be
-        rebuilt on every tag change as well as every note edit. Saying so beats
-        letting someone conclude the note does not exist.
+        It reads the **title and the body**. It does **not** read tags — a tag is a
+        button one row up, and indexing tags would mean rebuilding the index on
+        every tag change as well as every note edit. Saying so beats letting
+        someone conclude the note does not exist.
       */}
       {query !== '' ? (
         <p className="px-4 pt-2 text-[12px] text-ink-faint" data-testid="vault-search-note">
-          正在标题与正文里找「{query}」。
-          {searchText.trim() !== query ? '（改完文字要按回车才搜）' : ''}
-          标签不参与这次搜索 —— 标签用它上面的按钮筛。
+          正在标题与正文里找「{query}」。标签不参与这次搜索 —— 标签用它上面的按钮筛。
         </p>
       ) : null}
 
@@ -203,25 +245,12 @@ export default function VaultPage() {
         </p>
       ) : null}
 
-      <div className="px-4 py-3">
-        {/*
-          Both resources reload, not just the list.
-
-          ⭐ Reloading only `notes` was a real bug, and the kind that survives
-          review: the note appears in the table while the filter bar above it
-          still shows the tags from before it existed. The reader writes
-          「宏观、利率」, sees the note listed, looks for a 宏观 filter to narrow
-          the vault with, and it is not there — with nothing on screen suggesting
-          the two are out of step.
-        */}
-        <NoteComposer
-          onRecorded={() => {
-            void notes.reload()
-            void tags.reload()
-          }}
-        />
-      </div>
-
+      {/*
+        ── 1. results ──────────────────────────────────────────────────
+        Above the composer, which is the whole point of the reorder: the reader
+        came here to read, and the thing that pushed the reading below the fold
+        was a form used occasionally.
+      */}
       {view === 'recall' ? (
         <RecallView onDone={() => void notes.reload()} />
       ) : notes.loading ? (
@@ -236,20 +265,53 @@ export default function VaultPage() {
               query={query}
             />
           ) : null}
-          {view === 'all' || view === 'cards' ? <CardList /> : null}
+          {/*
+            ⭐ Only in the 卡片 view. The screenshot showed this line sitting
+            between the notes and 记一条, pushing the recorder down for a sentence
+            that is an **answer** — and it only answers a question someone asked by
+            choosing 卡片. In 全部 it is a distraction, and 全部 without it is
+            cleanly "notes".
+          */}
+          {view === 'cards' ? <CardList /> : null}
         </>
       )}
 
+      {/* ── 2. the note you opened ─────────────────────────────────────── */}
       {selected ? (
         <NoteDetail note={selected} onChanged={notes.reload} />
       ) : null}
+
+      {/* ── 3. 记一条 ──────────────────────────────────────────────────── */}
+      {view === 'recall' ? null : (
+        <div className="px-4 py-3">
+          <NoteComposer
+            open={formOpen}
+            onToggle={() => setComposing((value) => !value)}
+            onRecorded={() => {
+              // Latch the form open. Without this it closes itself the moment the
+              // first note makes the vault non-empty — see the note on `formOpen`.
+              setComposing(true)
+              void notes.reload()
+              void tags.reload()
+            }}
+          />
+        </div>
+      )}
     </div>
   )
 }
 
 /* ── writing ────────────────────────────────────────────────────────────── */
 
-function NoteComposer({ onRecorded }: { onRecorded: () => void }) {
+function NoteComposer({
+  open,
+  onToggle,
+  onRecorded,
+}: {
+  open: boolean
+  onToggle: () => void
+  onRecorded: () => void
+}) {
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [tagText, setTagText] = useState('')
@@ -297,9 +359,42 @@ function NoteComposer({ onRecorded }: { onRecorded: () => void }) {
     }
   }
 
+  // ⭐ The collapsed state. One row, always visible, never a menu — the recording
+  // function is the thing the owner said was missing, so it is not hidden behind a
+  // control that has to be discovered.
+  if (!open) {
+    return (
+      <div>
+        <Rule />
+        <Button size="sm" onClick={onToggle} data-testid="note-compose-open">
+          记一条
+        </Button>
+        <p className="mt-1.5 text-[12px] text-ink-faint">
+          宏观判断、方法、教训、读书笔记 —— 都不用出处。
+        </p>
+      </div>
+    )
+  }
+
   return (
-    <section className="max-w-[720px]">
-      <h2 className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">记一条</h2>
+    <section className="max-w-[720px]" data-testid="note-composer">
+      <div className="flex items-baseline gap-2 pb-1.5">
+        <h2 className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">记一条</h2>
+        {/*
+          The close control. Present even when the form opened by itself, because a
+          reader who landed on it by accident needs a way out that is not "reload
+          the page".
+        */}
+        <button
+          type="button"
+          onClick={onToggle}
+          className="text-[11px] text-ink-faint hover:text-ink-soft"
+          data-testid="note-compose-close"
+        >
+          收起
+        </button>
+      </div>
+      <Rule />
       <div className="mt-1.5 flex flex-col gap-1.5">
         <Input
           value={title}
@@ -311,7 +406,7 @@ function NoteComposer({ onRecorded }: { onRecorded: () => void }) {
         <Textarea
           value={body}
           onChange={(event) => setBody(event.target.value)}
-          rows={5}
+          rows={4}
           placeholder={
             '正文（Markdown）· 例如：\n## 观察\n\n- 2026-08 利率上行\n- 成长股滞后 3 周'
           }
@@ -407,8 +502,8 @@ function NoteList({
     // ⭐ Two different empties, and conflating them is how a search feature gets
     // distrusted. 「这里还没有笔记」 tells the reader to go write something;
     // 「没找到」 tells them the note they half-remember is not here. Only the
-    // first is true, and the reader cannot tell which they are looking at
-    // unless the message says so.
+    // first is true, and the reader cannot tell which they are looking at unless
+    // the message says so.
     return (
       <section className="mt-3">
         <Rule />
@@ -424,7 +519,7 @@ function NoteList({
           </div>
         ) : (
           <p className="px-4 py-3 text-[13px] text-ink-soft" data-testid="vault-empty">
-            这里还没有笔记。上面写一条 —— 宏观判断、方法、教训、读书笔记，都不用出处。
+            这里还没有笔记。点下面的「记一条」—— 宏观判断、方法、教训、读书笔记，都不用出处。
           </p>
         )}
       </section>
@@ -543,7 +638,7 @@ function NoteDetail({ note, onChanged }: { note: Note; onChanged: () => void }) 
           installed, and shipping an unverified one would risk rewriting exactly
           the bytes the backend promises to preserve. The text you wrote is the
           text you see back, and `test_the_markdown_comes_back_byte_for_byte`
-          holds both ends. Rendering is the next round, together with Milkdown.
+          holds both ends.
         */}
         <pre className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-ink" data-testid="note-preview">
           {note.body}
@@ -606,11 +701,7 @@ function NoteDetail({ note, onChanged }: { note: Note; onChanged: () => void }) 
               这条在复习队列上 —— 到时候它会自己回来找你。
             </p>
           ) : (
-            <Button
-              size="sm"
-              onClick={() => void enrol()}
-              data-testid="note-enrol"
-            >
+            <Button size="sm" onClick={() => void enrol()} data-testid="note-enrol">
               到时候提醒我再读一遍
             </Button>
           )}

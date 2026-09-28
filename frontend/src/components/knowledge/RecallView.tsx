@@ -41,6 +41,7 @@ import {
 } from '../../notes'
 import { ApiError } from '../../api'
 import { formatMoment } from '../../format'
+import { formatAgo } from './formatAgo'
 import { Button, Rule, Textarea } from '../ui'
 import { useResource } from '../../useResource'
 
@@ -278,8 +279,17 @@ export default function RecallView({
           className="flex w-full items-baseline gap-3 border-b border-rule-soft px-4 py-2 text-left data-[motion=l1] hover:bg-paper-soft"
           data-testid="recall-item"
         >
+          {/*
+            ⭐ Relative, and the only number in the row. An absolute date made the
+            reader subtract from today to learn what it meant.
+
+            ⭐ And **no title**: a scannable list of things you owe is a to-do
+            list, which is the one shape this product's red lines rule out. A queue
+            is an information source — you are meant to be interrupted by
+            something you wrote, not to work through a list.
+          */}
           <span className="num shrink-0 text-[12px] text-ink-faint">
-            {formatMoment(schedule.due_at)}
+            {formatAgo(schedule.due_at)}
           </span>
           <span className="text-[13px] text-ink">
             {schedule.state === 'deferred' ? '先放一着的' : '该重读了'}
