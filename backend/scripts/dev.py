@@ -24,6 +24,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from _console import use_utf8
+
 BACKEND = Path(__file__).resolve().parents[1]
 FRONTEND = BACKEND.parent / "frontend"
 
@@ -307,6 +309,11 @@ def _print_help() -> None:
 
 def main(argv: list[str]) -> int:
     """Dispatch a command."""
+    # Before anything is printed. This script's whole job is to report whether
+    # ten gates passed, and on a cp936 console the `✓` it ends with is not
+    # encodable — which used to turn a green run into exit code 1
+    # (`regressions/0004`).
+    use_utf8()
     if not argv or argv[0] in {"help", "-h", "--help"}:
         _print_help()
         return 0

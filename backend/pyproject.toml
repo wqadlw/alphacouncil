@@ -127,7 +127,9 @@ ignore = [
 # The static-check package is developer tooling too, and its `fix` strings are
 # prose shown to a human — Chinese, so the ambiguous-character rules do not
 # apply. Its stdout/stderr split is specified in `.ai/error-codes.md` §1.1.
-"checks/**" = ["T201", "RUF001", "RUF002"]
+# E402: `checks/__main__.py` imports the shared console helper from `scripts/`,
+# which needs an explicit `sys.path` line first (see the comment there).
+"checks/**" = ["T201", "RUF001", "RUF002", "E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["alphacouncil"]
@@ -138,6 +140,11 @@ known-first-party = ["alphacouncil"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
+# `scripts/` is on the import path for tests (see `pythonpath` below), so mypy
+# has to see it too or every `import check_licenses` becomes an unresolved
+# reference. The tools are still *not* in `files` — they are untyped-by-
+# configuration, which `.ai/status.md` §五 records as a known gap.
+mypy_path = ["scripts"]
 plugins = ["pydantic.mypy"]
 warn_unreachable = true
 warn_unused_ignores = true
@@ -165,8 +172,11 @@ warn_required_dynamic_aliases = true
 minversion = "8.0"
 testpaths = ["tests"]
 # `backend/` on sys.path so tests can `import checks` (the static-check package)
-# without a `sys.path` hack in every test module.
-pythonpath = ["."]
+# without a `sys.path` hack in every test module. `scripts/` is here for the
+# same reason: the developer tools import `_console` exactly as they do when run
+# (`python scripts/dev.py` puts `scripts/` on sys.path[0]), so a test can import
+# them the same way instead of in a second, different way.
+pythonpath = [".", "scripts"]
 asyncio_mode = "auto"
 addopts = [
     "-ra",

@@ -28,6 +28,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from importlib.metadata import distributions
 
+from _console import use_utf8
+
 PERMISSIVE = (
     "MIT",
     "APACHE",
@@ -128,6 +130,12 @@ def scan() -> list[Finding]:
 
 def main() -> int:
     """Print the report and return a process exit code."""
+    # Before anything is printed, and on the branch that matters: the `✗` below
+    # is only reached when a copyleft dependency is found, and on a cp936
+    # console it raised `UnicodeEncodeError` there — so the tool meant to report
+    # a licensing problem would instead report an encoding one
+    # (`regressions/0004`).
+    use_utf8()
     findings = scan()
     failures = [f for f in findings if f.verdict is Verdict.FAIL]
     warnings = [f for f in findings if f.verdict is Verdict.WARN]

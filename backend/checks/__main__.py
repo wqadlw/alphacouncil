@@ -35,6 +35,17 @@ import json
 import sys
 from pathlib import Path
 
+# `python -m checks` puts `backend/` on sys.path, not `backend/scripts/`, so the
+# shared console helper is one directory further away than usual. Added
+# explicitly rather than left implicit, because the alternative — not calling
+# `use_utf8` here — costs nothing until it does: `sys.stderr` uses
+# `backslashreplace`, so an unencodable `✓` does not crash, it is written as the
+# six literal characters `\u2713` while the process still exits 0. An exit code
+# that is right and an output that lies is the harder failure to notice.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+
+from _console import use_utf8
+
 from checks.framework import Issue, ScanContext, Severity, apply_exemptions
 from checks.registry import RULES, Rule, registry_meta
 
@@ -46,6 +57,7 @@ LABEL_WIDTH = 34
 
 def main(argv: list[str] | None = None) -> int:
     """Run the selected rules and report. Returns the process exit code."""
+    use_utf8()
     args = _parse_args(argv)
 
     repo_root = Path(args.root).resolve()
@@ -172,8 +184,11 @@ def _write_human(
 
     # Counts come from the deduplicated findings, attributed by error code.
     # Counting while the rules ran inflated every rule that opened a file
-    # containing an unreasoned `# noqa`, because the framework adds that finding
-    # once per rule that opened it.
+    # containing an unreasoned suppression comment, because the framework adds
+    # that finding once per rule that opened it. (Deliberately not naming that
+    # directive literally: ruff parses one inside a comment as a real
+    # suppression, which both warns on every run and silently exempts the line —
+    # see `.ai/status.md` §五.)
     owner = {rule.meta.code: rule.meta.check_id for rule in selected}
     per_rule: dict[str, tuple[int, int]] = {}
     for issue in findings:
