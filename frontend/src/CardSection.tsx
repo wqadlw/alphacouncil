@@ -9,6 +9,7 @@ import {
   type ClaimType,
 } from './api'
 import { formatMoment } from './format'
+import { Button, Input, Textarea } from './components/ui'
 
 /**
  * The knowledge layer on an instrument page (K1): what I have claimed about
@@ -131,24 +132,29 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
   }
 
   return (
-    <section className="mt-8 border-t border-rule pt-5">
-      <div className="flex items-baseline justify-between border-b border-rule pb-2">
-        <h2 className="serif text-[17px]">我对它说过什么</h2>
-        <span className="num text-[12px] text-ink-faint">{cards.length} 张卡片</span>
+    <section className="mt-4 border-t border-rule pt-4">
+      <div className="flex items-baseline gap-2 px-4 pb-1.5">
+        <h2 className="text-[11px] font-normal uppercase tracking-[0.06em] text-ink-faint">
+          我对它说过什么
+        </h2>
+        {cards.length > 0 ? (
+          <span className="num text-[11px] text-ink-faint">{cards.length} 张卡片</span>
+        ) : null}
       </div>
+      <div className="border-b border-rule" />
 
       {cards.length === 0 ? (
-        <p className="mt-3 text-ink-soft">
+        <p className="px-4 pt-2 text-[13px] text-ink-soft">
           还没有为它写过卡片。卡片是<strong className="text-ink">有来源的主张</strong> ——
           不是随手记，是「我这么说过，出处在这里」。
         </p>
       ) : (
-        <>
-          <p className="mt-3 text-[12px] text-ink-faint">
+        <div className="px-4 pt-2">
+          <p className="text-[12px] text-ink-faint">
             新的在前。来源和主张一起留底，每一张都可以回去核对 ——
             来源打不开的卡片，主张也就失去了重量。
           </p>
-          <ol className="mt-3">
+          <ol className="mt-1.5">
             {activeCards.map((card) => (
               <CardItem
                 key={card.id}
@@ -160,12 +166,18 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
           </ol>
 
           {convergedCards.length > 0 && (
-            <div className="mt-5 border-t border-rule pt-3">
-              <h3 className="text-[13px] text-ink-soft">已收敛的主张</h3>
+            <div className="mt-4 border-t border-rule pt-3">
+              {/* Still a real heading: `instrument.spec.ts` finds this by
+                  `getByRole('heading', { name: '已收敛的主张' })`, and a dimmed
+                  region is exactly the kind of thing someone navigating by
+                  region needs to be able to jump to. */}
+              <h3 className="text-[11px] font-normal uppercase tracking-[0.06em] text-ink-faint">
+                已收敛的主张
+              </h3>
               <p className="mt-0.5 text-[12px] text-ink-faint">
                 已退出当前观点，保留留痕，方便回看当时为什么放弃。
               </p>
-              <ol className="mt-2">
+              <ol className="mt-1.5">
                 {convergedCards.map((card) => (
                   <CardItem
                     key={card.id}
@@ -177,15 +189,16 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
               </ol>
             </div>
           )}
-        </>
+        </div>
       )}
 
-      <form className="mt-6" onSubmit={handleSubmit}>
+      <form className="mt-4 px-4" onSubmit={handleSubmit}>
         <label className="flex flex-col gap-1">
-          <span className="text-[12px] text-ink-faint">
-            记一张卡片（主张 + 出处） <span className="text-up">主张、出处标题、出处链接必填</span>
+          <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+            记一张卡片（主张 + 出处）{' '}
+            <span className="text-up">主张、出处标题、出处链接必填</span>
           </span>
-          <textarea
+          <Textarea
             value={content}
             onChange={(event) => setContent(event.target.value)}
             rows={2}
@@ -193,18 +206,20 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
           />
         </label>
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
           <label className="flex flex-col gap-1">
-            <span className="text-[12px] text-ink-faint">出处标题</span>
-            <input
+            <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">出处标题</span>
+            <Input
               value={sourceTitle}
               onChange={(event) => setSourceTitle(event.target.value)}
               placeholder="XX证券白酒渠道调研报告"
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[12px] text-ink-faint">出处链接（http/https）</span>
-            <input
+            <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+              出处链接（http/https）
+            </span>
+            <Input
               value={sourceUrl}
               onChange={(event) => setSourceUrl(event.target.value)}
               placeholder="https://…"
@@ -212,18 +227,34 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
           </label>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-[13px] text-ink-soft">
+        {/* ⭐ The two `<select>`s stay native, and that is a decision rather than
+            an omission. `前端资源与打磨规格` §4.3 asks for a `Select` with 28px
+            rows and a brass rule on the chosen item, and it is **not built** —
+            it needs a listbox with focus management and `aria-activedescendant`,
+            which is the first thing in this product that genuinely wants
+            `cmdk`-style plumbing. A native select gets keyboard behaviour and
+            screen-reader semantics for free and looks out of place; a hand-rolled
+            one without that plumbing would be worse than out of place. */}
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-1.5 text-[12px] text-ink-soft">
             立场
-            <select value={claimType} onChange={(event) => setClaimType(event.target.value as ClaimType)}>
+            <select
+              value={claimType}
+              onChange={(event) => setClaimType(event.target.value as ClaimType)}
+              className="rounded-[2px] border border-rule bg-surface px-1.5 py-1 text-[13px] outline-none focus:border-navy"
+            >
               <option value="supporting">支持</option>
               <option value="challenging">质疑</option>
               <option value="neutral">中性</option>
             </select>
           </label>
-          <label className="flex items-center gap-2 text-[13px] text-ink-soft">
+          <label className="flex items-center gap-1.5 text-[12px] text-ink-soft">
             权重
-            <select value={priority} onChange={(event) => setPriority(event.target.value)}>
+            <select
+              value={priority}
+              onChange={(event) => setPriority(event.target.value)}
+              className="num rounded-[2px] border border-rule bg-surface px-1.5 py-1 text-[13px] outline-none focus:border-navy"
+            >
               {[1, 2, 3, 4, 5].map((value) => (
                 <option key={value} value={String(value)}>
                   {value}
@@ -231,16 +262,21 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
               ))}
             </select>
           </label>
-          <label className="flex items-center gap-2 text-[13px] text-ink-soft">
+          <label className="flex items-center gap-1.5 text-[12px] text-ink-soft">
             数据截至（可选）
-            <input type="date" value={asOf} onChange={(event) => setAsOf(event.target.value)} />
+            <input
+              type="date"
+              value={asOf}
+              onChange={(event) => setAsOf(event.target.value)}
+              className="num rounded-[2px] border border-rule bg-surface px-1.5 py-1 text-[13px] outline-none focus:border-navy"
+            />
           </label>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <button type="submit" disabled={!complete || busy}>
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+          <Button type="submit" variant="primary" disabled={!complete || busy}>
             {busy ? '写入中…' : '记下这张卡片'}
-          </button>
+          </Button>
           <span className="text-[12px] text-ink-faint">
             {complete
               ? '卡片只增不改 —— 改主意是写一张新的，不是擦掉旧的。'
@@ -249,14 +285,14 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
         </div>
 
         {error && (
-          <div className="mark mt-3 border-l-2 border-l-up py-1">
-            <p className="text-up">{error.message}</p>
+          <div className="mark mt-2 border-l-2 border-l-up py-1">
+            <p className="text-[13px] text-up">{error.message}</p>
             {error.fix && <p className="text-[12px] text-ink-soft">{error.fix}</p>}
           </div>
         )}
         {notice && (
-          <div className="mark mt-3 border-l-2 border-l-navy py-1">
-            <p className="text-navy">{notice}</p>
+          <div className="mark mt-2 border-l-2 border-l-navy py-1">
+            <p className="text-[13px] text-navy">{notice}</p>
           </div>
         )}
       </form>
@@ -297,7 +333,7 @@ function CardItem({
       : CLAIM_TONE[card.claim_type]
 
   return (
-    <li className={`mark border-t border-t-rule border-l-2 py-3 ${tone}`}>
+    <li className={`mark border-b border-[color:var(--color-rule-soft)] border-l-2 py-1.5 ${tone}`}>
       <div className="flex flex-wrap items-baseline gap-x-3">
         <span className="text-[13px] text-ink">
           {converged ? '已收敛' : (CLAIM_LABEL[card.claim_type] ?? card.claim_type)}
@@ -315,18 +351,27 @@ function CardItem({
           ))}
       </div>
 
-      <p className="serif mt-1 text-[16px] leading-relaxed">{card.content}</p>
+      {/* Serif at 15px: a quotation of the reader's own claim (rule 1). It was
+          16px; the step down is because a card row now carries a status line, a
+          provenance line and up to two event lines, and 16px made a page of cards
+          feel like a page of headlines. */}
+      <p className="serif mt-0.5 text-[15px] leading-relaxed">{card.content}</p>
 
-      <div className="mt-1 text-[12px] text-ink-soft">
+      <div className="mt-0.5 text-[12px] text-ink-soft">
         出处：
-        <a className="text-navy no-underline hover:underline" href={card.source_url} target="_blank" rel="noreferrer">
+        <a
+          className="text-navy no-underline hover:underline"
+          href={card.source_url}
+          target="_blank"
+          rel="noreferrer"
+        >
           {card.source_title}
         </a>
         <span className="num text-ink-faint"> · 采集于 {formatMoment(card.captured_at)}</span>
       </div>
 
       {card.events.length > 0 && (
-        <ul className="mt-2 space-y-0.5 text-[12px] text-ink-faint">
+        <ul className="mt-1 space-y-0.5 text-[12px] text-ink-faint">
           {card.events.map((event) => (
             <li key={event.id} className="num">
               {event.event_type === 'verified' ? (
@@ -342,43 +387,48 @@ function CardItem({
       )}
 
       {!converged && (
-        <div className="mt-2 flex flex-wrap items-center gap-3">
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
           {aiGenerated && (
-            <button type="button" onClick={onVerify}>
+            <Button size="sm" onClick={onVerify}>
               我已对照过出处
-            </button>
+            </Button>
           )}
-          <button
-            type="button"
-            className="text-ink-faint"
+          <Button
+            size="sm"
+            variant="ghost"
             onClick={() => {
               setShowForm((value) => !value)
               setFormError(null)
             }}
           >
             收敛这张卡
-          </button>
+          </Button>
         </div>
       )}
 
       {showForm && !converged && (
-        <form className="mark mt-2 border-l-2 border-l-rule py-2 pl-3" onSubmit={submitConverge}>
+        <form
+          className="mark mt-1.5 border-l-2 border-l-rule py-1.5 pl-3"
+          onSubmit={submitConverge}
+        >
           <label className="flex flex-col gap-1">
             <span className="text-[12px] text-ink-faint">
               为什么它不再代表你当前的主张？
             </span>
-            <textarea
+            <Textarea
               rows={2}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
               placeholder="例如：公司改直营，渠道库存的先行关系失效了。"
             />
           </label>
-          <div className="mt-2 flex gap-3">
-            <button type="submit">确认收敛</button>
-            <button type="button" className="text-ink-faint" onClick={() => setShowForm(false)}>
+          <div className="mt-1.5 flex gap-2">
+            <Button size="sm" type="submit" variant="primary">
+              确认收敛
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>
               取消
-            </button>
+            </Button>
           </div>
           {formError && <p className="mt-1 text-[12px] text-up">{formError}</p>}
         </form>

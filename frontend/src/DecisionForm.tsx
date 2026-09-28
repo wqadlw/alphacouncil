@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ApiError, recordDecision, type ComparisonOperator, type Decision, type DecisionAction } from './api'
 import { ACTION_LABEL, OPERATOR_LABEL } from './format'
+import { Button, Input, Textarea } from './components/ui'
 
 /**
  * Recording a decision — the gate, and the only screen in the product that
@@ -126,41 +127,49 @@ export default function DecisionForm({ market, code, onRecorded }: Props) {
 
   return (
     <form
-      className="mt-5 border-t border-rule pt-4"
+      className="mt-4 border-t border-rule pt-3"
       onSubmit={(event) => {
         event.preventDefault()
         void handleSubmit()
       }}
     >
-      <h3 className="serif text-[16px]">记录一个决策</h3>
+      <h3 className="text-[11px] font-normal uppercase tracking-[0.06em] text-ink-faint">
+        记录一个决策
+      </h3>
       <p className="mt-1 text-[12px] text-ink-faint">
         写下来之后不能改、不能删 —— 「改变想法」是再写一条。这三项都是必填，
         因为一条缺了反面证据的决策，事后会被记忆补全成它从来不是的样子。
       </p>
 
-      <fieldset className="mt-3">
-        <legend className="text-[12px] text-ink-faint">做了什么</legend>
-        <div className="mt-1 flex flex-wrap gap-2">
+      <fieldset className="mt-2.5">
+        <legend className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">做了什么</legend>
+        <div className="mt-1 flex flex-wrap gap-1.5">
           {ACTIONS.map((value) => (
-            <button
+            <Button
               key={value}
               type="button"
-              onClick={() => setAction(value)}
+              size="sm"
               aria-pressed={action === value}
-              className={action === value ? 'border-navy text-navy' : ''}
+              // ⭐ Filled navy marks the *current selection*, not the recommended
+              // one. 买入 / 加仓 / 持有 / 减仓 / 清仓 is a five-way choice the reader
+              // has already made; giving any of them a "primary" look as if the
+              // product had an opinion is the same mistake the review page avoids
+              // by giving all five ratings identical weight.
+              variant={action === value ? 'primary' : 'default'}
+              onClick={() => setAction(value)}
             >
               {ACTION_LABEL[value]}
-            </button>
+            </Button>
           ))}
         </div>
       </fieldset>
 
-      <label className="mt-4 flex flex-col gap-1">
-        <span className="text-[12px] text-ink-faint">
+      <label className="mt-3 flex flex-col gap-1">
+        <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
           为什么 <span className="text-up">必填</span>
-          <span className="text-ink-faint"> —— 你以后会被这句话审问</span>
+          <span className="normal-case text-ink-faint"> —— 你以后会被这句话审问</span>
         </span>
-        <textarea
+        <Textarea
           value={rationale}
           onChange={(event) => setRationale(event.target.value)}
           rows={2}
@@ -168,15 +177,15 @@ export default function DecisionForm({ market, code, onRecorded }: Props) {
         />
       </label>
 
-      <label className="mt-3 flex flex-col gap-1">
-        <span className="text-[12px] text-ink-faint">
+      <label className="mt-2.5 flex flex-col gap-1">
+        <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
           反面证据 <span className="text-up">必填</span>
-          <span className="text-ink-faint">
+          <span className="normal-case text-ink-faint">
             {' '}
             —— 反对你自己的那一面。这是唯一能对抗确认偏差的字段
           </span>
         </span>
-        <textarea
+        <Textarea
           value={counterEvidence}
           onChange={(event) => setCounterEvidence(event.target.value)}
           rows={2}
@@ -184,18 +193,23 @@ export default function DecisionForm({ market, code, onRecorded }: Props) {
         />
       </label>
 
-      <div className="mt-4">
-        <div className="flex items-baseline justify-between">
-          <span className="text-[12px] text-ink-faint">
+      <div className="mt-3">
+        <div className="flex items-baseline gap-2">
+          <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
             失效条件 <span className="text-up">至少一条</span>
-            <span className="text-ink-faint"> —— 什么能证明我错了</span>
+            <span className="normal-case text-ink-faint"> —— 什么能证明我错了</span>
           </span>
-          <button type="button" onClick={() => setRows((c) => [...c, blankRow()])} className="text-[12px]">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto"
+            onClick={() => setRows((c) => [...c, blankRow()])}
+          >
             + 再加一条
-          </button>
+          </Button>
         </div>
 
-        <ol className="mt-2">
+        <ol className="mt-1.5">
           {rows.map((row, index) => (
             <CriterionEditor
               key={row.id}
@@ -214,10 +228,10 @@ export default function DecisionForm({ market, code, onRecorded }: Props) {
         </p>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button type="submit" disabled={blocked || busy}>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button type="submit" variant="primary" disabled={blocked || busy}>
           {busy ? '写入中…' : '记下来'}
-        </button>
+        </Button>
         <span className="text-[12px] text-ink-faint">
           {blocked
             ? `还差：${[
@@ -232,8 +246,8 @@ export default function DecisionForm({ market, code, onRecorded }: Props) {
       </div>
 
       {error && (
-        <div className="mark mt-3 border-l-2 border-l-up py-1">
-          <p className="text-up">{error.message}</p>
+        <div className="mark mt-2 border-l-2 border-l-up py-1">
+          <p className="text-[13px] text-up">{error.message}</p>
           {error.fix && <p className="text-[12px] text-ink-soft">{error.fix}</p>}
         </div>
       )}
@@ -263,11 +277,13 @@ function CriterionEditor({
   onRemove: () => void
 }) {
   return (
-    <li className="mark mt-2 border-l-2 border-l-rule py-2">
-      <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+    <li className="mark mt-1.5 border-l-2 border-l-rule py-1.5">
+      <div className="flex flex-wrap items-end gap-x-2 gap-y-1.5">
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] text-ink-faint">指标 #{index + 1}</span>
-          <input
+          <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+            指标 #{index + 1}
+          </span>
+          <Input
             value={row.metric}
             onChange={(event) => onChange({ metric: event.target.value })}
             placeholder="gross_margin"
@@ -277,11 +293,14 @@ function CriterionEditor({
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] text-ink-faint">关系</span>
+          <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">关系</span>
+          {/* Native, for the same reason as the pool page's selects: a real
+              listbox needs `aria-activedescendant` and focus management, and
+              hand-rolling that badly is worse than looking slightly plain. */}
           <select
             value={row.operator}
             onChange={(event) => onChange({ operator: event.target.value as ComparisonOperator })}
-            className="border border-rule bg-transparent px-2 py-1"
+            className="h-8 rounded-[2px] border border-rule bg-surface px-2 text-[13px] outline-none focus:border-navy"
           >
             {OPERATORS.map((operator) => (
               <option key={operator} value={operator}>
@@ -292,8 +311,8 @@ function CriterionEditor({
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] text-ink-faint">阈值</span>
-          <input
+          <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">阈值</span>
+          <Input
             type="number"
             inputMode="decimal"
             step="any"
@@ -305,8 +324,10 @@ function CriterionEditor({
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] text-ink-faint">按截至哪天公布的数据</span>
-          <input
+          <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+            按截至哪天公布的数据
+          </span>
+          <Input
             type="date"
             value={row.asOf}
             onChange={(event) => onChange({ asOf: event.target.value })}
@@ -315,14 +336,14 @@ function CriterionEditor({
         </label>
 
         {removable && (
-          <button type="button" onClick={onRemove} className="text-[12px]">
+          <Button size="sm" variant="ghost" onClick={onRemove}>
             删掉
-          </button>
+          </Button>
         )}
       </div>
 
       {isComplete(row) && (
-        <p className="mt-1 text-[12px] text-ink-soft">
+        <p className="mt-0.5 text-[12px] text-ink-soft">
           读作：截至 {row.asOf}，{row.metric.trim()} {OPERATOR_LABEL[row.operator]} {row.threshold}
         </p>
       )}

@@ -244,7 +244,14 @@ export default function InstrumentPage({ market, code }: Props) {
           </Section>
 
           <section className="mt-4 border-t border-rule pt-4">
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit} className="max-w-[660px]">
+              {/*
+                Capped measure, and the reason is the same as everywhere else:
+                the pane is as wide as the window, and a one-sentence rationale
+                stretched across 900px is two lines of something nobody reads
+                carefully. This is the sentence the reader will be held to in six
+                months — it deserves a width a person can actually read.
+              */}
               <label className="flex flex-col gap-1">
                 <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
                   {followed ? '改成什么（会追加一条记录，原句不会消失）' : '写下你为什么关注它'}{' '}
@@ -417,7 +424,28 @@ function QuoteBody({ quote }: { quote: QuoteResult }) {
           </span>
         </div>
 
-        <dl className="mt-2 grid grid-cols-2 gap-x-6 text-[13px] sm:grid-cols-4">
+        {/*
+          Five fields, and the column count is chosen so five always divide
+          evenly.
+
+          This was `sm:grid-cols-4` with five children, which put 成交额 alone on
+          a second row — a ragged edge that reads as a rendering mistake rather
+          than as a layout. Then the first fix used `xl:grid-cols-5`, which is
+          **worse in the common case**: `xl` is 1280px and the *viewport* is
+          1280px only before the sidebar takes its 176px, so a real window lands
+          on 3 columns and orphans two fields instead of one.
+
+          ⭐ The breakpoint has to be measured against the viewport, not against
+          the pane. The pane is the viewport minus the sidebar, so a column
+          count keyed on the viewport is the only thing available — and it has to
+          be picked low enough that the pane still fits the rows.
+
+          `md` (768px) is the lowest width at which five pairs of "label / 1244.01"
+          stay legible side by side. Below it, 3 columns — which orphans two, and
+          that is the acceptable failure: at that width the numbers are the
+          priority and the labels can stack.
+        */}
+        <dl className="mt-2 grid grid-cols-2 gap-x-6 sm:grid-cols-3 md:grid-cols-5">
           <Field label="今开" value={formatPrice(quote.value.open)} />
           <Field label="最高" value={formatPrice(quote.value.high)} />
           <Field label="最低" value={formatPrice(quote.value.low)} />
