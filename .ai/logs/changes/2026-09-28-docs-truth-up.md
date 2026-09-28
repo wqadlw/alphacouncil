@@ -89,6 +89,37 @@ DDL 与版本同事务 · 快照 + SHA-256 · append-only 触发器）· 四态�
 - 后端测试 **528 passed**
 - `ruff` / `mypy --strict` 全绿
 
+### 顺手发现的一个**交接阻塞项**（不在三处缺陷里，但比其中两处更急）
+
+`git commit` 报了一条错：
+
+```
+error: refs/remotes/origin/main does not point to a valid object!
+```
+
+查证：
+
+| 检查 | 结果 |
+|---|---|
+| `.git/refs/remotes/origin/main` 内容 | `fe9750b97c4b7bd697670457cf8f03ec6d19ffba` |
+| `git cat-file -t fe9750b9` | **`fatal: Not a valid object name`** —— 该对象**不在本仓库** |
+| `git show-ref` | `fatal: bad ref refs/remotes/origin/HEAD` |
+| 本地 `main` | `ef38fab`（本次提交，正常） |
+
+**成因**：上一位 agent 用 Git Data API 推送后执行了
+`git update-ref refs/remotes/origin/main <远程SHA>`（HANDOFF §四 记着这个惯例），
+但那个 SHA **从没被 fetch 回来**。于是跟踪 ref 指向一个不存在的对象。
+
+**影响**：任何带 upstream 的 `git status` 直接报错，`git pull` 会失败。
+
+**没有直接修**，理由：**我无法知道 GitHub 上真正的 main 在哪** ——
+`github.com:443` 直连被墙，查不到。**凭空把 `origin/main` 指到某个本地提交是危险的猜测**：
+若 GitHub 上其实有更多提交，猜错会让后续 `push` 静默漏掉它们。
+这正是本项目"不假装做过"的纪律在 git 层面的应用 ——
+**不知道就说不知道，并且把"怎么才能知道"写下来。**
+
+已写进 `HANDOFF.md` §四，并在原有的 API 推送惯例上加了一句警告。
+
 ### 本次**顺手发现**的（不属于三处缺陷，但同一类）
 
 `sqlalchemy` / `aiosqlite` / `fsrs` 三个运行期依赖**全仓零 import**。

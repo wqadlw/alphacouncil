@@ -75,7 +75,16 @@
 （已因此踩过一次，见 `regressions/0004` §变异检查。）
 
 **网络（关键坑）**：
+- ⛔ **`refs/remotes/origin/main` 是悬空 ref（2026-09-28 发现，尚未修）** ——
+  它指向 `fe9750b9`，**而这个对象在本仓库里不存在**。后果：任何带 upstream 的
+  `git status` 直接报 `refs/remotes/origin/main does not point to a valid object!`，
+  `git pull` 也会失败。这是上一位 agent 用 Git Data API 推送后
+  `git update-ref` 写进去的 SHA，但**从没 fetch 回来过**。
+  **修法需要先知道 GitHub 上真正的 main 在哪** —— 而 `github.com:443` 直连被墙，
+  查不到。所以**不要凭空把 origin/main 指到某个本地提交**：猜错会让后续 push 漏提交。
+  先恢复网络或用 `gh api` 查一次真实 SHA，再 `git update-ref`。
 - `github.com:443` 直连被墙；用户 Clash 代理（git 全局配置 `127.0.0.1:7897`）**通常没开** → `git push` 会挂。**解法：用 `gh` 走 GitHub Git Data API 推送**（blob→tree→commit→ref，SHA 可与本地字节级一致；脚本按 `backend/_push_via_api.py` 惯例临时写、用完删，需支持删除文件=`sha:null`、多提交深度探测）。推完 `git update-ref refs/remotes/origin/main <远程SHA>` 校正跟踪 ref。
+  ⚠️ **但先读上一条**：这个 `update-ref` 正是悬空 ref 的来源。**先 fetch 或先查真实 SHA，再校正。**
 - `registry.npmjs.org` 直连可达；npm 全局配置里也有死代理 → 安装包加 `--userconfig=<空文件>` 绕过（别动用户全局 npmrc）。
 - curl 本地端口必须 `--noproxy '*'`（环境可能残留代理变量，会产生 502 假故障）。
 - 东财源**间歇性不可达**（降级链会自动切腾讯，属正常）；腾讯指数日线已支持。
