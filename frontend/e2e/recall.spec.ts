@@ -109,6 +109,10 @@ async function openRecall(page: Page): Promise<void> {
 }
 
 test.describe('笔记的复习队列（spec 028）', () => {
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
+  })
+
   test('⭐ 那个答案是「我的想法变了」，不是「忘了」', async ({ page }) => {
     await routeRecall(page, { due: [DUE] })
     await openRecall(page)
@@ -124,6 +128,10 @@ test.describe('笔记的复习队列（spec 028）', () => {
     }
   })
 
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
+  })
+
   test('⭐ 复习时看到的是全文，不是一个让人猜的标题', async ({ page }) => {
     await routeRecall(page, { due: [DUE] })
     await openRecall(page)
@@ -135,6 +143,10 @@ test.describe('笔记的复习队列（spec 028）', () => {
     const active = page.getByTestId('recall-active')
     await expect(active).toContainText('利率上行先杀周期股')
     await expect(active).toContainText('成长股滞后三周')
+  })
+
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
   })
 
   test('⭐ 整个队列页面上不出现任何数字', async ({ page }) => {
@@ -158,6 +170,10 @@ test.describe('笔记的复习队列（spec 028）', () => {
     expect(text.length).toBeGreaterThan(0)
   })
 
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
+  })
+
   test('空队列说的是状态，不是欠账', async ({ page }) => {
     await routeRecall(page, { due: [] })
     await openRecall(page)
@@ -167,6 +183,10 @@ test.describe('笔记的复习队列（spec 028）', () => {
     for (const word of ['欠', '剩', '还有', '待办']) {
       await expect(page.getByTestId('recall-empty')).not.toContainText(word)
     }
+  })
+
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
   })
 
   test('⭐ 入队是一个决定，而且就放在那条笔记上', async ({ page }) => {
@@ -186,6 +206,10 @@ test.describe('笔记的复习队列（spec 028）', () => {
     expect(seen.some((r) => r.method === 'POST' && r.path.endsWith('/schedule'))).toBe(true)
   })
 
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
+  })
+
   test('「还没想清楚」推后，且不评分', async ({ page }) => {
     const seen = await routeRecall(page, { due: [DUE] })
     await openRecall(page)
@@ -195,6 +219,10 @@ test.describe('笔记的复习队列（spec 028）', () => {
     await expect(page.getByTestId('recall-active')).toHaveCount(0)
     const call = seen.find((r) => r.path.endsWith('/defer'))
     expect(call?.method).toBe('POST')
+  })
+
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
   })
 
   test('评分之后回到队列，而队列仍然没有数字', async ({ page }) => {
@@ -208,3 +236,23 @@ test.describe('笔记的复习队列（spec 028）', () => {
     await expect(page.locator('body')).not.toContainText(/\d+\s*条/)
   })
 })
+
+/**
+ * The lesson queue, which fetches on mount (spec 030).
+ *
+ * ⭐ Added because the suite was green **and** printing `ECONNREFUSED` for
+ * `/api/v1/lessons/due`: nothing here mocks it, so the request fell through the dev
+ * proxy to a backend that is not running, and no assertion looked at the queue. A
+ * bare array, because the server returns one — a fixture that invented a wrapper
+ * would make any count assertion vacuous.
+ */
+async function routeLessonQueue(page: Page): Promise<void> {
+  await page.route('**/api/v1/lessons**', async (route) => {
+    const url = new URL(route.request().url())
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(url.pathname === '/api/v1/lessons/due' ? [] : []),
+    })
+  })
+}

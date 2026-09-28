@@ -154,6 +154,10 @@ async function openVault(page: Page): Promise<void> {
 }
 
 test.describe('搜索知识库（spec 027/029）', () => {
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
+  })
+
   test('⭐ 两个字也照发 —— 中文最常搜的就是两个字', async ({ page }) => {
     const seen = await routeNotes(page, VAULT)
     await openVault(page)
@@ -167,6 +171,10 @@ test.describe('搜索知识库（spec 027/029）', () => {
     expect(last?.query.get('q')).toHaveLength(2)
   })
 
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
+  })
+
   test('⭐ 打字就搜 —— 不用按回车', async ({ page }) => {
     const seen = await routeNotes(page, VAULT)
     await openVault(page)
@@ -177,6 +185,10 @@ test.describe('搜索知识库（spec 027/029）', () => {
     // so a future version cannot pass by being broken in a new way.
     await search(page, '先行', 1)
     expect(seen[seen.length - 1]?.query.get('q')).toBe('先行')
+  })
+
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
   })
 
   test('一次输入只发一次请求，而不是每个字一次', async ({ page }) => {
@@ -192,6 +204,10 @@ test.describe('搜索知识库（spec 027/029）', () => {
     expect(after, `发了 ${after} 次请求，逐字搜索就是这样`).toBeLessThanOrEqual(2)
   })
 
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
+  })
+
   test('搜不到与「你还没有笔记」是两句话', async ({ page }) => {
     await routeNotes(page, VAULT)
     await openVault(page)
@@ -205,12 +221,20 @@ test.describe('搜索知识库（spec 027/029）', () => {
     await expect(page.getByTestId('vault-empty')).toHaveCount(0)
   })
 
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
+  })
+
   test('空库说的是另一句话', async ({ page }) => {
     await routeNotes(page, [])
     await page.goto('/#/vault')
     await expect(page.getByTestId('vault-empty')).toBeVisible()
     await expect(page.getByTestId('vault-empty')).toContainText('这里还没有笔记')
     await expect(page.getByTestId('vault-no-match')).toHaveCount(0)
+  })
+
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
   })
 
   test('标签和检索一起发，两个条件同时生效', async ({ page }) => {
@@ -229,6 +253,10 @@ test.describe('搜索知识库（spec 027/029）', () => {
     expect(last?.query.get('tag')).toBe('宏观')
   })
 
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
+  })
+
   test('只点标签不搜，就是那个标签下的全部', async ({ page }) => {
     await routeNotes(page, VAULT)
     await openVault(page)
@@ -238,6 +266,10 @@ test.describe('搜索知识库（spec 027/029）', () => {
     await expect(
       page.getByTestId('data-row').filter({ hasText: '宏观但正文无关' }),
     ).toHaveCount(1)
+  })
+
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
   })
 
   test('清除把列表恢复成全部', async ({ page }) => {
@@ -253,12 +285,20 @@ test.describe('搜索知识库（spec 027/029）', () => {
     expect(seen[seen.length - 1]?.query.get('q')).toBeNull()
   })
 
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
+  })
+
   test('搜索框读标题与正文，不读标签 —— 而且界面上说清楚', async ({ page }) => {
     await routeNotes(page, VAULT)
     await openVault(page)
 
     await search(page, '估值', 1)
     await expect(page.getByTestId('vault-search-note')).toContainText('标签不参与这次搜索')
+  })
+
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
   })
 
   test('搜索时页面上不渲染任何计数', async ({ page }) => {
@@ -281,6 +321,10 @@ test.describe('搜索知识库（spec 027/029）', () => {
 })
 
 test.describe('知识库页的布局（spec 029）', () => {
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
+  })
+
   test('⭐ 列表在「记一条」上面', async ({ page }) => {
     /**
      * The decision this spec exists for, asserted on geometry rather than on
@@ -302,6 +346,10 @@ test.describe('知识库页的布局（spec 029）', () => {
     ).toBeLessThan((composer as { y: number }).y)
   })
 
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
+  })
+
   test('⭐ 库里有东西时，「记一条」收成一行，但一直都在', async ({ page }) => {
     /**
      * ⭐ The refusal to hide the recorder, made testable. Earlier drafts proposed
@@ -319,6 +367,10 @@ test.describe('知识库页的布局（spec 029）', () => {
     await expect(page.getByTestId('note-title')).toHaveCount(0)
   })
 
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
+  })
+
   test('点开就展开，收起后又回到一行', async ({ page }) => {
     await routeNotes(page, VAULT)
     await openVault(page)
@@ -330,6 +382,10 @@ test.describe('知识库页的布局（spec 029）', () => {
     await page.getByTestId('note-compose-close').click()
     await expect(page.getByTestId('note-title')).toHaveCount(0)
     await expect(page.getByTestId('note-compose-open')).toBeVisible()
+  })
+
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
   })
 
   test('⭐ 空库时表单自己打开', async ({ page }) => {
@@ -344,6 +400,10 @@ test.describe('知识库页的布局（spec 029）', () => {
     await expect(page.getByTestId('vault-empty')).toBeVisible()
   })
 
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
+  })
+
   test('展开之后仍然能记下来', async ({ page }) => {
     await routeNotes(page, VAULT)
     await openVault(page)
@@ -355,6 +415,10 @@ test.describe('知识库页的布局（spec 029）', () => {
     await page.getByTestId('note-submit').click()
 
     await expect(page.getByTestId('note-notice')).toContainText('已记下')
+  })
+
+  test.beforeEach(async ({ page }) => {
+    await routeLessonQueue(page)
   })
 
   test('「该复习」是一个筛选，作曲时不出现表单', async ({ page }) => {
@@ -379,3 +443,23 @@ test.describe('知识库页的布局（spec 029）', () => {
     await expect(page.getByTestId('data-row')).toHaveCount(0)
   })
 })
+
+/**
+ * The lesson queue, which fetches on mount (spec 030).
+ *
+ * ⭐ Added because the suite was green **and** printing `ECONNREFUSED` for
+ * `/api/v1/lessons/due`: nothing here mocks it, so the request fell through the dev
+ * proxy to a backend that is not running, and no assertion looked at the queue. A
+ * bare array, because the server returns one — a fixture that invented a wrapper
+ * would make any count assertion vacuous.
+ */
+async function routeLessonQueue(page: Page): Promise<void> {
+  await page.route('**/api/v1/lessons**', async (route) => {
+    const url = new URL(route.request().url())
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(url.pathname === '/api/v1/lessons/due' ? [] : []),
+    })
+  })
+}

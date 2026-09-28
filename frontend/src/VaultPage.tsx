@@ -69,6 +69,7 @@ import {
   readNoteSchedule,
   removeNoteTag,
 } from './notes'
+import LessonRecallView from './components/knowledge/LessonRecallView'
 import RecallView from './components/knowledge/RecallView'
 import { displayCode, formatMoment } from './format'
 import { ApiError } from './api'
@@ -251,8 +252,27 @@ export default function VaultPage() {
         came here to read, and the thing that pushed the reading below the fold
         was a form used occasionally.
       */}
+      {/*
+        ⭐ **One 「该复习」 for both kinds, not two views.** Two queues to visit is
+        the fragmentation this product refuses everywhere else, and the reader does
+        not experience a note and a lesson as different *kinds of interruption* —
+        both are 「something you wrote came back」.
+
+        The difference is in **why**, and it is a label on the row rather than a
+        second page: a note is here because the reader asked to be reminded of it, a
+        lesson because red line 7 made the enrolment automatic. Rendering them as
+        one undifferentiated list would make an un-asked-for interruption look like
+        a forgotten errand — the 「你欠 N 条」 feeling reached by a different road.
+
+        Notes first, then lessons, and each group keeps its own `due_at` ordering.
+        Merging them into one date-sorted list would claim the two are
+        interchangeable, which the label says they are not.
+      */}
       {view === 'recall' ? (
-        <RecallView onDone={() => void notes.reload()} />
+        <>
+          <RecallView onDone={() => void notes.reload()} />
+          <LessonRecallView onDone={() => void notes.reload()} />
+        </>
       ) : notes.loading ? (
         <p className="px-4 py-3 text-[13px] text-ink-faint">读取中…</p>
       ) : (

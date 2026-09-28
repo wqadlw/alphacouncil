@@ -153,7 +153,7 @@ cd backend && .venv/Scripts/python.exe scripts/dev.py check
 
 ## 六、开发纪律（宪法摘要，动手前必读全文）
 
-1. ⭐ **教训的界面**（spec 030 剩下的，且是主人口头的那一半）—— J5 后端已完整（四张表 · 一次事务 · 五个路由 · 红线 7 升到 full），但**完全没有界面**。这条比 J5 本身更紧张：**教训会到期，但界面上没有地方看到它回来**，数据在积累而不可见。已有端点：`POST /api/v1/reviews/{decision_id}/lesson`、`GET /api/v1/lessons`、`GET /api/v1/lessons/due`、`POST /api/v1/lessons/{id}/promote`、`POST /api/v1/lessons/{id}/review`。客观上要满足的两件：**复盘页上的入口**，**教训的到期队列**（它必须沿用 spec 029 的三个拒绝：无标题、无计数、不按你自己的优先级排）。
+1. ⭐ **教训皌「转卡」的界面**（记一条教训已有）（spec 030 剩下的，且是主人口头的那一半）—— J5 后端已完整（四张表 · 一次事务 · 五个路由 · 红线 7 升到 full），但**完全没有界面**。这条比 J5 本身更紧张：**教训会到期，但界面上没有地方看到它回来**，数据在积累而不可见。已有端点：`POST /api/v1/reviews/{decision_id}/lesson`、`GET /api/v1/lessons`、`GET /api/v1/lessons/due`、`POST /api/v1/lessons/{id}/promote`、`POST /api/v1/lessons/{id}/review`。客观上要满足的两件：**复盘页上的入口**，**教训的到期队列**（它必须沿用 spec 029 的三个拒绝：无标题、无计数、不按你自己的优先级排）。
 
 2. **变异检查**：缺陷修复必须回答"故意改坏，测试会不会红？"——**并先确认变异真的生效**（有过假绿教训）。
 3. **台账 append-only**：变更日志用四段式（想做什么/做了什么/结果/留下了什么）。

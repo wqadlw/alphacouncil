@@ -73,6 +73,7 @@ import {
 } from './api'
 import { instrumentHref, TODAY_HREF } from './routing'
 import { Button, EmptyState, ErrorNote, Skeleton } from './components/ui'
+import LessonComposer from './components/knowledge/LessonComposer'
 import { useResource } from './useResource'
 
 export default function RetrospectivePage() {
@@ -323,6 +324,26 @@ export default function RetrospectivePage() {
         <p className="mt-4 text-[12px] text-ink-faint" data-testid="retro-previous">
           你在 {previous.reviewed_at.slice(0, 10)} 写过一条。
         </p>
+      ) : null}
+
+      {/*
+        ⭐ 「记一条教训」 appears only once a review exists for this decision, and
+        that is the **server's** rule rather than a UI preference: a lesson is a
+        statement about what a review taught you, so it has nothing to attach to
+        before the review is written (`LESSON_REVIEW_MISSING` is a 409).
+
+        And this is the answer to where 「经验」 gets recorded — **here**, on the
+        screen where the review is, rather than on a page of its own that the reader
+        has to go and find. A lesson is derived from a review, and a page you must
+        go looking for is a page most people never visit. Same reasoning as spec
+        029's 「记一条」 on the vault: not hidden behind a control.
+
+        `previous || verdict` is a **derivation**, and unlike spec 029's `formOpen`
+        this one cannot be wrong — neither term is a quantity the reader's own action
+        changes after the fact.
+      */}
+      {current && (previous || verdict) ? (
+        <LessonComposer decisionId={current.decision_id} />
       ) : null}
 
       {submitError ? (
