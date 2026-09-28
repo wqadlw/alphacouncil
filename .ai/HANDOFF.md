@@ -47,8 +47,22 @@
 | 012 | **K1 知识卡片**：`cards` + `card_symbols`（0003 迁移，出处必填）+ 四动词 API + 标的页第五块 | `2a783b1` |
 | 013 | **K2 卡片生命周期**：append-only `card_events`（0004 迁移）+ 带理由的 `converge` 出口 | `08d6a3c` |
 | **014** | **门禁工具的控制台编码**（回归 0004）—— 见 `.ai/specs/014-console-encoding/` | 未提交 |
+| **015** | 重写 `docs/ARCHITECTURE.md` + 更正 `status.md` / `HANDOFF.md` | 未提交 |
+| **016** | 撤回"LangGraph 已被移除"的错误陈述（ADR-0027）+ `git rm` 重复 ADR `docs/adr/0001` | 未提交 |
+| **017** | P0 静态检查 `tool_encoding`（S-13）+ `dev.py eval` 红线评测集 | 未提交 |
+| **018 / 019** | K3 FSRS 排程机制 + 复习界面（ADR-0028） | 未提交 |
+| **020** | **J3 四象限 + 结果分硬门禁**（本轮）—— 机制已落地，**界面未做** | `2b4000b` |
+
+> ⭐ **015 ~ 020 的提交号见 `git log`（`afb451f` 与 `2b4000b` 已推上 GitHub）。**
+> 本表上半部分的"未提交"是**写这张表时**的状态，不代表现在；
+> 真实进度以 `git log --oneline` 与 `.ai/status.md` 为准。
 
 \* 注：远程历史里 010/011 前有一处**两提交被 API 推送合并为一**（`323daa2`，内容与本地逐字节一致）——推历史时若 `git pull --rebase` 会自动收敛，不影响任何内容。
+
+> ⭐ **2026-09-28：012/013 在 GitHub 上是"重复记录"** —— 远端另有同消息的
+> `fe9750b` / `f44c50f` / `74e497f`。**K2 两边树完全一致**，
+> 唯一差异是 spec 016 刻意删掉的重复 ADR。已用 `--force-with-lease` 收敛为
+> 单一历史（`2b4000b`），**没有丢内容**。细节见 §四「网络」。
 
 **还没落库的欠账**（前任们积攒的批次决定，**接手后应尽早找机会落进宪法/specs**）：T-01~T-20（TSP）、S-01~S-11（SuperMemo）、F/L/V 三批（同类调研/可复用库/前端打磨）。详见 `.workbuddy-ai/memory/` 与 `references/deep-dives/`。
 
@@ -75,16 +89,29 @@
 （已因此踩过一次，见 `regressions/0004` §变异检查。）
 
 **网络（关键坑）**：
-- ⛔ **`refs/remotes/origin/main` 是悬空 ref（2026-09-28 发现，尚未修）** ——
-  它指向 `fe9750b9`，**而这个对象在本仓库里不存在**。后果：任何带 upstream 的
-  `git status` 直接报 `refs/remotes/origin/main does not point to a valid object!`，
-  `git pull` 也会失败。这是上一位 agent 用 Git Data API 推送后
-  `git update-ref` 写进去的 SHA，但**从没 fetch 回来过**。
-  **修法需要先知道 GitHub 上真正的 main 在哪** —— 而 `github.com:443` 直连被墙，
-  查不到。所以**不要凭空把 origin/main 指到某个本地提交**：猜错会让后续 push 漏提交。
-  先恢复网络或用 `gh api` 查一次真实 SHA，再 `git update-ref`。
-- `github.com:443` 直连被墙；用户 Clash 代理（git 全局配置 `127.0.0.1:7897`）**通常没开** → `git push` 会挂。**解法：用 `gh` 走 GitHub Git Data API 推送**（blob→tree→commit→ref，SHA 可与本地字节级一致；脚本按 `backend/_push_via_api.py` 惯例临时写、用完删，需支持删除文件=`sha:null`、多提交深度探测）。推完 `git update-ref refs/remotes/origin/main <远程SHA>` 校正跟踪 ref。
-  ⚠️ **但先读上一条**：这个 `update-ref` 正是悬空 ref 的来源。**先 fetch 或先查真实 SHA，再校正。**
+- ✅ **已解决（2026-09-28）：`github.com` 走 Clash 代理，端口 `127.0.0.1:7897`。**
+  进程名 `clash-verge` / `verge-mihomo`。**已写进本仓库的 `.git/config`**
+  （`git config --local http.proxy http://127.0.0.1:7897`），所以
+  `git push` / `fetch` / `ls-remote` **不需要再带任何参数**。
+  ⚠️ 只改了**仓库级**配置，没动用户全局 —— 端口若变，先
+  `Test-NetConnection -ComputerName 127.0.0.1 -Port 7897` 确认再改。
+  直连 `github.com:443` 仍然被墙，所以**这个代理不是可选项**。
+- ✅ **悬空 ref 已修**：原因不是"对象不存在"，而是 `origin/main` 停在
+  `fe9750b`（上一位 agent 用 Git Data API 推送后手工 `update-ref` 写进去的）。
+  一次 `git fetch` 就把它快进到了真实的 `74e497f`。
+  **`git status` 不再报 `does not point to a valid object!`。**
+- ⚠️ **GitHub 上是"同一批工作的重复记录"** —— 这解释了历史里那次 force-push：
+  远端曾有 `fe9750b` / `f44c50f` / `74e497f`（K1 + K2），
+  本地另有同消息的 `2a783b1` / `08d6a3c`。**K2 两边树完全一致**；
+  唯一的"远端有本地没有"的文件是 `docs/adr/0001-agent-orchestration-langgraph.md`
+  —— 那是 spec 016 **刻意删除**的重复 ADR。
+  所以 2026-09-28 用 `--force-with-lease` 把远端 `74e497f` 换成 `2b4000b`，
+  **没有丢任何内容**。被丢弃的提交仍可达：`refs/backup/origin-main-2026-09-28`。
+  ⭐ **教训**：把 `origin/main` 手工 `update-ref` 到一个"以为对"的 SHA，
+  会让远端和本地长出两条平行历史 —— 而**只有真的 fetch 一次**才能发现。
+  宁可 `--force-with-lease`（远端一动就中止），不要裸 `--force`。
+- **不再需要 `gh` Git Data API 那套绕行**（`_push_via_api.py` 惯例）。
+  代理通了以后 `git push` 就是正解。`gh` 是否可用**未验证**。
 - `registry.npmjs.org` 直连可达；npm 全局配置里也有死代理 → 安装包加 `--userconfig=<空文件>` 绕过（别动用户全局 npmrc）。
 - curl 本地端口必须 `--noproxy '*'`（环境可能残留代理变量，会产生 502 假故障）。
 - 东财源**间歇性不可达**（降级链会自动切腾讯，属正常）；腾讯指数日线已支持。
