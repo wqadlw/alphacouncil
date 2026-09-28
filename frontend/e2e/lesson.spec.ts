@@ -60,7 +60,27 @@ async function routeRetrospective(page: Page): Promise<void> {
     kill_criteria: [],
     created_at: REVIEW_ID,
   }
+  /**
+   * ⭐ **Empty, and that is the truth.** `due_reviews` filters on
+   * `reviewed_at IS NULL` — regression 0007's fix, which exists so a graded decision
+   * leaves the queue. The first version of this fixture put an *already-reviewed*
+   * decision in here anyway, which the server can never return; the suite passed,
+   * and the lesson composer was unreachable in the real app.
+   */
   await page.route('**/api/v1/decision-reviews/due**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([]),
+    })
+  })
+
+  /**
+   * ⭐ The reviewed decision, in the list that exists for it. `is_due: false`
+   * always — a decision can be both due *and* graded, and that is the case this
+   * list is for.
+   */
+  await page.route('**/api/v1/decision-reviews/recent**', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -69,7 +89,8 @@ async function routeRetrospective(page: Page): Promise<void> {
           decision_id: REVIEW_ID,
           is_due: false,
           due_at: '2026-09-20T02:15:00.000Z',
-          latest: null,
+          reviewed_at: '2026-09-20T02:15:00.000Z',
+          reviews: 1,
         },
       ]),
     })
@@ -210,6 +231,47 @@ test.describe('教训队列（spec 030）', () => {
 })
 
 test.describe('记一条教训（spec 030）', () => {
+  test('⭐ 已复盘的决策看得到自己的分数，而不是打分按钮', async ({ page }) => {
+    /**
+     * ⭐ The browser showed the page contradicting itself in consecutive lines:
+     * 「都不会再变」 directly above five buttons that change it. The score block sat
+     * outside the `is_due` conditional, on the assumption that 「not due」 meant
+     * 「not yet graded」 — true while the page listed only due decisions.
+     *
+     * And the number is **shown**, not hidden: the reader came here to look at their
+     * own reasoning, and it is their number — this system never assigns one.
+     */
+    await routeLessons(page, LESSONS)
+    await routeRetrospective(page)
+    await page.goto('/#/retrospective')
+
+    await expect(page.getByTestId('retro-score-value')).toHaveText('2')
+    // ⭐ Scoped to `button`, because the prefix alone also matches
+    // `retro-score-given` and `retro-score-value` — **the two testids this very
+    // change introduced.** A prefix selector that catches the elements the test
+    // just added fails in a way that reads like a product bug.
+    await expect(page.locator('button[data-testid^="retro-score-"]')).toHaveCount(0)
+    await expect(page.getByTestId('retro-already-done')).toContainText('你已经复盘过了')
+  })
+
+  test('⭐ composer 只能通过「已复盘」这条路到达（这正是它坏掉的地方）', async ({ page }) => {
+    /**
+     * ⭐ The reachability test for the bug itself. Before `/recent` existed the page
+     * had exactly one list, the due one, and a reviewed decision was not in it — so
+     * the composer was correctly hidden before a review and gone from the only list
+     * after one. **Unreachable, with a green E2E suite throughout.**
+     *
+     * The `/due` fixture is empty in this file, deliberately. If the composer ever
+     * becomes reachable again *only* through a queue the server cannot return, this
+     * test goes red rather than the feature quietly disappearing.
+     */
+    await routeLessons(page, LESSONS)
+    await routeRetrospective(page)
+    await page.goto('/#/retrospective')
+
+    await expect(page.getByTestId('lesson-open')).toBeVisible()
+  });
+
   test('⭐ 表单里说清楚「没有入队按钮」', async ({ page }) => {
     /**
      * ⭐ The sentence has to be on the screen. There is no 「入队」 button — there

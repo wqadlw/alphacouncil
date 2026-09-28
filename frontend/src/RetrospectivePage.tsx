@@ -60,10 +60,11 @@
  */
 const READING_COLUMN = 'max-w-[660px]'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   ApiError,
   getDecisionReview,
+  getRecentDecisionReviews,
   getDueDecisionReviews,
   recordDecisionReview,
   type Decision,
@@ -81,6 +82,15 @@ export default function RetrospectivePage() {
     (cause: unknown) => (cause instanceof ApiError ? cause.message : '无法读取复盘队列。'),
     [],
   )
+  const describeRecent = useCallback(
+    (cause: unknown) => (cause instanceof ApiError ? cause.message : '无法读取复盘记录。'),
+    [],
+  )
+  const { data: recent } = useResource<ReviewState[]>(
+    getRecentDecisionReviews,
+    [],
+    describeRecent,
+  )
   const { data: rows, error: loadError, loading, reload } = useResource<ReviewState[]>(
     getDueDecisionReviews,
     [],
@@ -95,7 +105,29 @@ export default function RetrospectivePage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
-  const queue = rows ?? []
+  /**
+   * ⭐ **Due first, then reviewed**, deduped by id.
+   *
+   * The page's only list used to be the *due* one, and a decision leaves it the
+   * moment its review is written — so a review you had already done was invisible
+   * here, and the lesson composer was unreachable: correctly hidden before the
+   * review, gone from the only list afterwards. Found by opening the app.
+   *
+   * Due leads because those are waiting on an answer. Reviewed follow because they
+   * are there to be read and to yield a lesson, not to be worked through. A
+   * decision that is both due *and* already graded appears in both lists, and
+   * listing it twice would let the reader grade it twice from one page.
+   */
+  const queue = useMemo(() => {
+    const seen = new Set<string>()
+    const out: ReviewState[] = []
+    for (const row of [...(rows ?? []), ...(recent ?? [])]) {
+      if (seen.has(row.decision_id)) continue
+      seen.add(row.decision_id)
+      out.push(row)
+    }
+    return out
+  }, [rows, recent])
   const current = queue[index] ?? null
   const currentId = current?.decision_id ?? null
 
@@ -120,6 +152,20 @@ export default function RetrospectivePage() {
   const { data: detail } = useResource(loadOne, [currentId], describeOne)
   const decision = detail?.decision ?? null
   const previous = detail?.latest ?? null
+
+  /**
+   * ⭐ **Has this decision already been graded?** A separate question from
+   * is_due, and the page needs both: is_due decides whether to offer the outcome
+   * choice, this decides whether to offer a score at all. They coincide only for a
+   * decision that is due *and* ungraded — the one case this page was built for, and
+   * the only one where the two answers being equal is not a coincidence.
+   *
+   * Declared **here** rather than next to current, because previous comes from
+   * the second resource below and TS2448 says so. ⭐ A cast or an ny would
+   * have silenced both errors and left the ordering bug in place — and a flag
+   * whose definition depends on declaration order is not obviously anything.
+   */
+  const graded = Boolean(previous ?? verdict)
 
   const submit = useCallback(
     async (body: { process_score: number; outcome?: DecisionOutcome }) => {
@@ -267,22 +313,49 @@ export default function RetrospectivePage() {
         <p className="mt-5 text-[13px] text-ink-faint">读取这条决策…</p>
       )}
 
-      <div className="mt-7" data-testid="retro-scores">
-        <p className="text-[12px] text-ink-faint">过程分：当时这个推理有多站得住？</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {[1, 2, 3, 4, 5].map((value) => (
-            <Button
-              key={value}
-              disabled={submitting}
-              onClick={pickScore(value)}
-              data-testid={`retro-score-${value}`}
-              className="num w-11"
-            >
-              {value}
-            </Button>
-          ))}
+      {/*
+        ⭐ **Gated on 「has this been graded?」, not on `is_due`.** Those are two
+        different questions and the page needs the second one: `is_due` decides
+        whether to offer the *outcome* choice, while a reviewed decision still owes
+        the reader their own score.
+
+        The score block used to sit outside the `is_due` conditional, on the
+        assumption that 「not due」 meant 「not yet graded」 — true while this page
+        listed only due decisions, and false once spec 030's follow-up added the
+        reviewed ones. ⭐ The browser showed the page contradicting itself in
+        consecutive lines: 「都不会再变」 directly above five buttons that change it.
+
+        ⭐ And when it *has* been graded, the score is **shown** rather than hidden.
+        The reader came here to look at their own reasoning; a page that omits the
+        number it is about does not answer the question. It is their number — this
+        system never assigns one, and the quadrant verdict above already refuses to
+        render a grade.
+      */}
+      {graded ? (
+        <div className="mt-7" data-testid="retro-score-given">
+          <p className="text-[12px] text-ink-faint">你当时给的过程分</p>
+          <p className="serif mt-1 text-[20px] text-ink num" data-testid="retro-score-value">
+            {(previous ?? verdict)?.process_score}
+          </p>
         </div>
-      </div>
+      ) : (
+        <div className="mt-7" data-testid="retro-scores">
+          <p className="text-[12px] text-ink-faint">过程分：当时这个推理有多站得住？</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {[1, 2, 3, 4, 5].map((value) => (
+              <Button
+                key={value}
+                disabled={submitting}
+                onClick={pickScore(value)}
+                data-testid={`retro-score-${value}`}
+                className="num w-11"
+              >
+                {value}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {current?.is_due ? (
         picked === null ? (
@@ -309,6 +382,21 @@ export default function RetrospectivePage() {
             </p>
           </div>
         )
+      ) : previous || verdict ? (
+        /*
+         * ⭐ **The third branch, and it exists because the second one's copy became
+         * false.** Once reviewed decisions could appear here, a decision you had
+         * already graded arrived with `is_due: false` and fell into 「没到期」 — which
+         * is untrue for it. What it should say is 「你已经复盘过了」.
+         *
+         * A simple sentence that is false on a page is worse than no sentence, and
+         * the lesson composer lives in exactly this branch — so without it the
+         * reader lands on a claim the page has just contradicted, and *then* finds a
+         * form for writing a lesson.
+         */
+        <p className="mt-5 text-[12px] text-ink-faint" data-testid="retro-already-done">
+          你已经复盘过了。过程分和结果都不会再变 —— 复盘是只追加的。
+        </p>
       ) : (
         /*
          * Not rendered at all, and that is the gate (red line 4, `项目总纲` P0-3).

@@ -219,6 +219,59 @@ def count_reviews(connection: sqlite3.Connection, decision_id: str) -> int:
     return int(row[0])
 
 
+def recent_reviews(
+    connection: sqlite3.Connection,
+    *,
+    limit: int = 20,
+) -> tuple[ReviewStateRow, ...]:
+    """Decisions that **have** been reviewed, most recently first.
+
+    ⭐ This exists because the retrospective page's only other list is the **due**
+    one, and a decision leaves that queue the moment its review is written
+    (``due_reviews`` filters on ``reviewed_at IS NULL`` — regression 0007's fix). So
+    without this, a review you already wrote is **invisible on the page whose entire
+    subject is reviews**, and spec 030's lesson composer is unreachable: before the
+    review the form is correctly hidden, and after it the decision is gone from the
+    only list that could show it.
+
+    Found by opening the app. ⭐ The E2E suite passed throughout, because the fixture
+    returned an already-reviewed decision in the *due* queue — a state this
+    repository cannot produce. **A fixture describing a state the product cannot be in
+    makes the test agree with the fixture rather than with the product.**
+
+    ⭐ **Ordered by ``reviewed_at DESC`` and nothing else.** Sorting a reader's own
+    retrospectives by process score or outcome would be grading them, and red line 11
+    is about not doing that — in a place nobody was looking. Ties break on
+    ``decision_id`` so the order is stable between calls.
+
+    ``limit`` is small on purpose (20): this is a place to go and read, not a history
+    to scroll. A decision older than twenty reviews is not something you came back
+    for, and a list that grows without bound is a list you stop reading.
+    """
+    # ⭐ The same five columns `due_reviews` selects, because the same
+    # `_row_to_state` reads them. The first version selected two and raised
+    # `IndexError: No item with that key` — an error naming the **consumer** of the
+    # row rather than the SELECT that under-supplied it, which is the signature of a
+    # guessed helper contract. Fourth such guess this session.
+    rows = connection.execute(
+        "SELECT decision_id, due_at, reviewed_at, created_at, updated_at "
+        "FROM decision_review_state "
+        "WHERE decision_id IN (SELECT decision_id FROM reviews) "
+        # ⭐ Ordered by the ledger's latest `reviewed_at`, **not** by the state row's
+        # copy. The state row is stamped when a review is *written*; the ledger holds
+        # one row per review. Sorting by the state row would order a decision
+        # reviewed twice by its **first** review — the same class of bug as
+        # `due_reviews`' missing `reviewed_at IS NULL` filter (regression 0007): a
+        # plausible number that is quietly the wrong one.
+        "ORDER BY (SELECT MAX(reviewed_at) FROM reviews r "
+        "           WHERE r.decision_id = decision_review_state.decision_id) DESC, "
+        "         decision_id ASC "
+        "LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return tuple(_row_to_state(row) for row in rows)
+
+
 def due_reviews(
     connection: sqlite3.Connection,
     *,

@@ -356,6 +356,23 @@ export interface DecisionReview {
   reviewed_at: string
 }
 
+/**
+ * Decisions already reviewed, most recent first.
+ *
+ * ⭐ Added 2026-09-28 (spec 030 follow-up) because the retrospective page's only
+ * other list is the **due** one, and a decision leaves it the moment its review is
+ * written — so a review you had already done was invisible on the page whose entire
+ * subject is reviews, and the lesson composer was unreachable.
+ *
+ * Found by opening the app. ⭐ The E2E suite had passed throughout, because its
+ * fixture returned an already-reviewed decision *inside the due queue* — a state
+ * the server cannot produce. **A fixture describing a state the product cannot be in
+ * makes the test agree with the fixture rather than with the product.**
+ */
+export function getRecentDecisionReviews(limit = 20): Promise<ReviewState[]> {
+  return request<ReviewState[]>(`/api/v1/decision-reviews/recent?limit=${limit}`)
+}
+
 export function getDueDecisionReviews(asOf?: string, limit = 50): Promise<ReviewState[]> {
   const params = new URLSearchParams()
   if (asOf) params.set('as_of', asOf)

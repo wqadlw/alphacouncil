@@ -201,6 +201,57 @@ def to_review_read(row: ReviewRow) -> DecisionReviewRead:
 
 
 @router.get(
+    "/recent",
+    summary="Decisions already reviewed, most recent first",
+)
+def recent(
+    connection: DatabaseConnection,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> list[dict[str, Any]]:
+    """⭐ **The reviews you already wrote**, which the due queue cannot show you.
+
+    Found by opening the app (spec 030). The retrospective page's only list was the
+    *due* one, and a decision leaves it the moment its review is written — so a
+    review you had already done was invisible on the page whose subject is reviews,
+    and the lesson composer was unreachable: correctly hidden before the review,
+    gone from the only list afterwards.
+
+    ⭐ **No count, and no ordering by how the decision went.** Newest first, ties on
+    id. Sorting a reader's own retrospectives by process score would be grading them,
+    and red line 11 is about not doing that.
+    """
+    rows = repository.recent_reviews(connection, limit=limit)
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        # ⭐ Asked for once, into a name. The first draft called
+        # `_latest_review(...)` three times in one expression — twice inside a
+        # conditional and once as the value — which mypy rejected as `union-attr`
+        # because it cannot prove the second call returns the same thing. It
+        # probably does; the point is that three calls to ask one question is three
+        # chances to be wrong, and the narrow one reads better.
+        latest = _latest_review(connection, row.decision_id)
+        out.append(
+            {
+                "decision_id": row.decision_id,
+                "due_at": row.due_at,
+                "reviewed_at": latest.reviewed_at if latest else None,
+                # ⭐ **`is_due` is always False here**, and saying so is the point of
+                # this endpoint existing. The due list computes it as
+                # `as_of >= due_at`, which is right *there* because that list has
+                # already filtered on `reviewed_at IS NULL`. Reusing it made the
+                # demo offer a 1-5 score for a decision that had already been
+                # graded — the field is not decorative, it picks the page's branch.
+                # ⭐ A reviewed decision has nothing to grade; and a decision can be
+                # both due *and* graded, which is exactly the case this list exists
+                # to show.
+                "is_due": False,
+                "reviews": repository.count_reviews(connection, row.decision_id),
+            }
+        )
+    return out
+
+
+@router.get(
     "/due",
     summary="Decisions whose review has come round",
     response_model=list[ReviewStateRead],
