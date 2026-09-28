@@ -57,6 +57,10 @@ class ErrorCode(StrEnum):
     # with nothing that could ever falsify it" has to stay answerable.
     DECISION_KILL_CRITERIA_REQUIRED = "DECISION_KILL_CRITERIA_REQUIRED"
     DECISION_TEXT_TOO_LONG = "DECISION_TEXT_TOO_LONG"
+    # Added 2026-09-28 (spec 021) for the retrospective page. The only
+    # DECISION_* code that is not about the input — hence 404 rather than the
+    # 400 the rest of this namespace gets.
+    DECISION_NOT_FOUND = "DECISION_NOT_FOUND"
 
 
     # -- CARD_* : knowledge cards (K1) -------------------------------------

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { instrumentHref, parseHash, POOL_HREF, TODAY_HREF } from './routing'
+import {
+  instrumentHref,
+  parseHash,
+  POOL_HREF,
+  RETROSPECTIVE_HREF,
+  REVIEW_HREF,
+  TODAY_HREF,
+} from './routing'
 
 describe('parseHash', () => {
   it('reads an empty hash as the today page', () => {
@@ -12,6 +19,25 @@ describe('parseHash', () => {
 
   it('reads the pool route', () => {
     expect(parseHash('#/pool')).toEqual({ name: 'pool' })
+  })
+
+  it('reads the review route', () => {
+    expect(parseHash('#/review')).toEqual({ name: 'review' })
+  })
+
+  it('reads the retrospective route', () => {
+    expect(parseHash('#/retrospective')).toEqual({ name: 'retrospective' })
+  })
+
+  it('does not let the two review routes be confused', () => {
+    // `#/decision-review` would have been three characters from `#/review` and
+    // means something else entirely: one recalls a claim, the other grades your
+    // own reasoning about a past decision. It must not resolve.
+    expect(parseHash('#/decision-review')).toEqual({
+      name: 'unknown',
+      raw: '#/decision-review',
+    })
+    expect(RETROSPECTIVE_HREF).not.toBe(REVIEW_HREF)
   })
 
   it('reads an instrument route', () => {

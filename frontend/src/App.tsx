@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import InstrumentPage from './InstrumentPage'
 import PoolPage from './PoolPage'
+import RetrospectivePage from './RetrospectivePage'
 import ReviewPage from './ReviewPage'
 import TodayPage from './TodayPage'
 import { POOL_HREF, useRoute } from './routing'
@@ -16,7 +17,9 @@ export default function App() {
           ? 'AlphaCouncil · 关注池'
           : route.name === 'review'
             ? 'AlphaCouncil · 复习'
-            : 'AlphaCouncil · 今天'
+            : route.name === 'retrospective'
+              ? 'AlphaCouncil · 复盘'
+              : 'AlphaCouncil · 今天'
   }, [route])
 
   if (route.name === 'instrument') {
@@ -34,6 +37,10 @@ export default function App() {
 
   if (route.name === 'pool') return <PoolPage />
   if (route.name === 'review') return <ReviewPage />
+  // A separate route from `review` rather than a tab inside it: the two queues
+  // grade different things — recalling a claim versus grading your own reasoning
+  // — and a tab would invite the reader to treat them as one list to clear.
+  if (route.name === 'retrospective') return <RetrospectivePage />
   if (route.name === 'today') return <TodayPage />
 
   // TypeScript narrowing leaves only `unknown` here.

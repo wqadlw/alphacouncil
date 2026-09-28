@@ -53,7 +53,9 @@ __all__ = [
     "due_reviews",
     "get_review_state",
     "has_been_reviewed",
+    "latest_review",
     "record",
+    "reviews_for",
     "schedule",
 ]
 
@@ -171,6 +173,37 @@ def has_been_reviewed(connection: sqlite3.Connection, decision_id: str) -> bool:
     for why deriving this from ``reviews`` is not allowed.
     """
     return get_review_state(connection, decision_id).reviewed_at is not None
+
+
+def latest_review(connection: sqlite3.Connection, decision_id: str) -> ReviewRow | None:
+    """The most recent review of a decision, or ``None`` if it has none.
+
+    Ordered by ``reviewed_at`` then ``id`` so the answer is **total**: two reviews
+    written in the same millisecond have distinct ids, and the tie-break makes
+    the choice deterministic instead of dependent on the query planner.
+
+    This is the latest *review*, not the reviewed state. They are different
+    questions and reading either one for the other is the mistake ADR-0014 warns
+    about — see the module docstring.
+    """
+    row = connection.execute(
+        "SELECT id, decision_id, process_score, outcome, reviewed_at, "
+        "due_at_snapshot, note FROM reviews "
+        "WHERE decision_id = ? ORDER BY reviewed_at DESC, id DESC LIMIT 1",
+        (decision_id,),
+    ).fetchone()
+    return None if row is None else _row_to_review(row)
+
+
+def reviews_for(connection: sqlite3.Connection, decision_id: str) -> tuple[ReviewRow, ...]:
+    """Every review of a decision, oldest first. Append-only, so the order is the record."""
+    rows = connection.execute(
+        "SELECT id, decision_id, process_score, outcome, reviewed_at, "
+        "due_at_snapshot, note FROM reviews "
+        "WHERE decision_id = ? ORDER BY reviewed_at ASC, id ASC",
+        (decision_id,),
+    ).fetchall()
+    return tuple(_row_to_review(row) for row in rows)
 
 
 def count_reviews(connection: sqlite3.Connection, decision_id: str) -> int:

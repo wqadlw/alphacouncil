@@ -21,7 +21,7 @@ user, and the database is the floor under both.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -39,6 +39,7 @@ from alphacouncil.models.market import Market, Symbol
 from alphacouncil.storage.db import transaction
 from alphacouncil.storage.repositories import decisions as repository
 from alphacouncil.storage.repositories import instruments as instrument_repository
+from alphacouncil.storage.repositories import reviews as review_repository
 
 __all__ = ["DecisionRead", "KillCriterionRead", "router", "to_read"]
 
@@ -118,6 +119,19 @@ class DecisionCreateRequest(BaseModel):
         default=None,
         description="The thesis this decision serves. Not built yet (J2) — accepted so "
         "records made now do not have to be rewritten later.",
+    )
+    review_due_at: datetime | None = Field(
+        default=None,
+        description=(
+            "When you want to come back and review this decision. **Optional, and "
+            "yours to set.** Leaving it out means \"not yet\", which is a real "
+            "answer; the system will not pick an interval for you, because "
+            "\"review after 90 days\" is a suggestion with no stated criterion "
+            "(spec 020 §六). What it buys you is a commitment made *before* the "
+            "outcome exists, which is the whole anti-hindsight arrangement (red "
+            "line 4) — and a queue that is full because you promised to look, "
+            "rather than because a default filled it."
+        ),
     )
 
 
@@ -221,4 +235,13 @@ def create(payload: DecisionCreateRequest, connection: DatabaseConnection) -> De
         thesis_id=payload.thesis_id,
     )
     with transaction(connection):
-        return to_read(repository.append(connection, decision))
+        row = repository.append(connection, decision)
+        if payload.review_due_at is not None:
+            # **Same transaction as the decision itself** (spec 021 §二). A decision
+            # that landed without its review commitment would be a decision the
+            # retrospective queue can never find, and nothing downstream would
+            # notice: the decision looks complete, it simply never comes round.
+            review_repository.schedule(
+                connection, row.id, due_at=payload.review_due_at
+            )
+        return to_read(row)

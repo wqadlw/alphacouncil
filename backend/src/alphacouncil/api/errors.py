@@ -23,6 +23,7 @@ from alphacouncil.core.error_codes import ErrorCode
 from alphacouncil.domain.card import CardError
 from alphacouncil.domain.decision import DecisionError
 from alphacouncil.domain.instrument import InstrumentError
+from alphacouncil.domain.review import ReviewError
 from alphacouncil.domain.scheduling import SchedulingError
 from alphacouncil.domain.watchlist import WatchlistError
 
@@ -44,7 +45,23 @@ _STATUS_BY_CODE: dict[str, int] = {
     # would tell the user their card is gone when it is sitting right there.
     ErrorCode.CARD_ALREADY_SCHEDULED.value: 409,
     ErrorCode.CARD_NOT_SCHEDULED.value: 409,
-
+    # J3 (spec 021). Three codes, and the statuses are chosen so the frontend can
+    # act without reading prose:
+    #
+    # - A decision that was never given a review slot is **404**, not 409. The
+    #   decision exists; what is missing is a *review commitment* the user never
+    #   made. Saying 409 ("conflict with state") would imply the request fought
+    #   with something, when in fact the thing does not exist.
+    # - Scoring an outcome early is **409**, not 400. The request is well-formed;
+    #   it conflicts with a *state* — the review is not due yet. Same reasoning as
+    #   the K3 codes above, and it is what lets the UI say "not due yet" rather
+    #   than "your input was wrong".
+    ErrorCode.REVIEW_STATE_MISSING.value: 404,
+    ErrorCode.REVIEW_NOT_DUE.value: 409,
+    # The one DECISION_* code that is not about the input: the request named a
+    # decision that does not exist. 404, so the client can say "no such decision"
+    # instead of implying the reader sent something malformed.
+    ErrorCode.DECISION_NOT_FOUND.value: 404,
 }
 
 _DEFAULT_STATUS = 400
@@ -105,4 +122,10 @@ CODED_ERRORS: tuple[type[Exception], ...] = (
     # request. The domain raises coded errors; registering the base is what makes
     # the code mean anything at the HTTP edge.
     SchedulingError,
+    # J3 (spec 021). Same trap as K3, hit again on the way in: without the base
+    # registered, every decision-review failure answers a flat **400** — so "this
+    # decision was never given a review date" (404) and "you tried to score the
+    # outcome before it was due" (409) would both look like a malformed request,
+    # and the UI could not tell the user which mistake they made.
+    ReviewError,
 )

@@ -199,6 +199,13 @@ export interface DecisionInput {
   counter_evidence: string
   kill_criteria: KillCriterion[]
   thesis_id?: string | null
+  /**
+   * When the user wants to come back and review this decision. Omitted means
+   * "not yet", which is a real answer — the system will not invent an interval,
+   * because "review after 90 days" is a suggestion with no stated criterion.
+   * What it buys: a commitment made *before* the outcome exists (red line 4).
+   */
+  review_due_at?: string | null
 }
 
 /** The four states a fetch can be in (constitution 4.6). Never collapsed. */
@@ -296,6 +303,92 @@ export function recordReview(
   body: { outcome: 'reviewed'; rating: ReviewRating } | { outcome: 'deferred'; days?: number },
 ): Promise<ReviewReceipt> {
   return request<ReviewReceipt>(`/api/v1/review/${cardId}`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+/**
+ * Decision reviews (J3) — the retrospective queue.
+ *
+ * **Named `decision-reviews`, not `reviews`.** `/api/v1/review` is the *card*
+ * queue; one letter apart is not a distinction, and a client that mistypes it
+ * would get a 200 full of the wrong shape.
+ */
+export type ProcessBand = 'good' | 'bad'
+
+export type Quadrant = 'repeat' | 'acceptable' | 'dangerous' | 'fix' | 'unknown'
+
+/**
+ * A decision's review outcome — a **category**, never a number.
+ *
+ * There is no `figure` here and that is the point (red line 10): a bad decision
+ * that happened to pay must not display its profit, so nothing stores one. A
+ * future field named `*_pct` or `profit` in this shape is a regression, and the
+ * E2E spec asserts the rendered page contains no digits in the dangerous case.
+ */
+export type DecisionOutcome = 'good' | 'bad' | 'failed'
+
+export interface ReviewState {
+  decision_id: string
+  due_at: string
+  /** Non-null only once an outcome is recorded: a process score alone is a half-review. */
+  reviewed_at: string | null
+  is_due: boolean
+  reviews: number
+}
+
+export interface DecisionReview {
+  decision_id: string
+  review_id: string
+  process_score: number
+  outcome: DecisionOutcome | null
+  process: ProcessBand
+  quadrant: Quadrant
+  /**
+   * The one sentence this quadrant is permitted to print, **served by the server**.
+   *
+   * The frontend renders it and does not retype it: a UI-authored version of the
+   * dangerous-quadrant warning is one careless PR away from congratulating
+   * someone for a decision that lost them money the next time.
+   */
+  guidance: string
+  reviewed_at: string
+}
+
+export function getDueDecisionReviews(asOf?: string, limit = 50): Promise<ReviewState[]> {
+  const params = new URLSearchParams()
+  if (asOf) params.set('as_of', asOf)
+  if (limit !== 50) params.set('limit', String(limit))
+  const query = params.toString()
+  return request<ReviewState[]>(`/api/v1/decision-reviews/due${query ? `?${query}` : ''}`)
+}
+
+export function getDecisionReview(decisionId: string): Promise<{
+  state: ReviewState
+  /**
+   * The words being graded, returned with the review so the page cannot show a
+   * verdict without them. `decisions` is append-only, so this text cannot have
+   * been edited to look better than it was.
+   */
+  decision: Decision
+  latest: DecisionReview | null
+}> {
+  return request(`/api/v1/decision-reviews/${decisionId}`)
+}
+
+/**
+ * Record a review. `outcome` is omitted before the review is due — not sent as
+ * null, because "I have not scored it yet" and "I scored it as nothing" are
+ * different statements and only one of them is a thing this product records.
+ */
+export function recordDecisionReview(body: {
+  decision_id: string
+  process_score: number
+  outcome?: DecisionOutcome
+  note?: string
+}): Promise<DecisionReview> {
+  return request<DecisionReview>('/api/v1/decision-reviews', {
     method: 'POST',
     body: JSON.stringify(body),
   })

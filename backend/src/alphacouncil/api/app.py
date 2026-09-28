@@ -20,6 +20,7 @@ from alphacouncil.api.errors import CODED_ERRORS, domain_failure
 from alphacouncil.api.routes import (
     capabilities,
     cards,
+    decision_reviews,
     decisions,
     instruments,
     reviews,
@@ -183,6 +184,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # `/api/v1/cards/due`, so the queue has its own prefix — see reviews.py.
     app.include_router(reviews.card_router)
     app.include_router(reviews.queue_router)
+    # Decision reviews (J3). Imported under its own name because the card queue
+    # above already owns "review" — `/api/v1/decision-reviews` cannot be confused
+    # with `/api/v1/review`, and the module name says which is which at the call
+    # site. Registered after the card routers so a reader scanning this list sees
+    # the two queues in the order they were built.
+    app.include_router(decision_reviews.router)
 
     @app.get("/health", tags=["ops"], summary="Liveness and configuration probe")
     async def health() -> dict[str, Any]:

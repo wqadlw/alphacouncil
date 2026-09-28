@@ -29,7 +29,7 @@ from alphacouncil.domain.decision import Decision, DecisionAction, KillCriterion
 from alphacouncil.models.market import Market, Symbol
 from alphacouncil.storage.repositories import instruments
 
-__all__ = ["DecisionRow", "append", "for_symbol", "recent"]
+__all__ = ["DecisionRow", "append", "for_symbol", "get_by_id", "list_all", "recent"]
 
 #: The column list is written out in each statement rather than built from a
 #: shared constant. Two reasons, and the second is the real one: a constructed
@@ -126,6 +126,22 @@ def append(
         kill_criteria=decision.kill_criteria,
         thesis_id=decision.thesis_id,
     )
+
+
+def get_by_id(connection: sqlite3.Connection, decision_id: str) -> DecisionRow | None:
+    """One decision by its id, or ``None``.
+
+    A ``decisions`` primary key is the moment the decision was written, so this
+    lookup is exact rather than fuzzy — which is what makes it safe for the
+    retrospective page, where the text and the review of that text must be the
+    same row and not two rows that happen to be adjacent.
+    """
+    row = connection.execute(
+        "SELECT id, market, code, action, rationale, counter_evidence, kill_criteria, thesis_id "
+        "FROM decisions WHERE id = ?",
+        (decision_id,),
+    ).fetchone()
+    return None if row is None else _to_row(row)
 
 
 def for_symbol(connection: sqlite3.Connection, symbol: Symbol) -> tuple[DecisionRow, ...]:

@@ -143,6 +143,19 @@ class DecisionTextTooLongError(DecisionError):
     code = ErrorCode.DECISION_TEXT_TOO_LONG
 
 
+class DecisionNotFoundError(DecisionError):
+    """No decision with that id.
+
+    Its own code because it is the only decision failure that is **not** about the
+    input: the request was well-formed and the thing it names is simply absent,
+    which is a 404 rather than a 400. Without a distinct code the retrospective
+    page could not tell "you asked about a decision that does not exist" from
+    "you sent something malformed", and the two call for different replies.
+    """
+
+    code = ErrorCode.DECISION_NOT_FOUND
+
+
 def _normalise(text: str, *, field: str, blank_error: type[DecisionError]) -> str:
     """Trim ``text`` and refuse it if it is blank or over-long.
 

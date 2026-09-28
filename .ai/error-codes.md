@@ -112,6 +112,7 @@ class DataFetchError(RuntimeError): ...
 | `DECISION_CLIENT_SUPPLIED_ID` | error | 客户端试图传入主键（**禁止伪造"结果之前"**） |
 | `DECISION_KILL_CRITERIA_REQUIRED` | error | **失效条件为空**，或谓词形状不合法（2026-09-26 随 J1 新增） |
 | `DECISION_TEXT_TOO_LONG` | error | 理由 / 反面证据超过 2000 字（2026-09-26 随 J1 新增） |
+| `DECISION_NOT_FOUND` | error | **该 id 的决策不存在**（2026-09-28 随 spec 021 新增）。本命名空间里**唯一不是关于"输入"的码** —— 所以它是 **404** 而不是其余的 400 |
 
 > **为什么 `DECISION_KILL_CRITERIA_REQUIRED` 需要独立一条**：schema 只能强制
 > `kill_criteria` 是 **JSON 数组**，**空数组同样通过**。而"没有任何可证伪条件"正是

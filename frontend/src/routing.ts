@@ -28,6 +28,7 @@ export type Route =
   | { name: 'today' }
   | { name: 'pool' }
   | { name: 'review' }
+  | { name: 'retrospective' }
   | { name: 'instrument'; market: string; code: string }
   | { name: 'unknown'; raw: string }
 
@@ -37,6 +38,7 @@ export function parseHash(hash: string): Route {
   if (hash === '' || hash === '#' || hash === '#/') return { name: 'today' }
   if (hash === '#/pool') return { name: 'pool' }
   if (hash === '#/review') return { name: 'review' }
+  if (hash === '#/retrospective') return { name: 'retrospective' }
   const match = INSTRUMENT.exec(hash)
   if (match) return { name: 'instrument', market: match[1], code: match[2] }
   return { name: 'unknown', raw: hash }
@@ -57,6 +59,16 @@ export const POOL_HREF = '#/pool'
  * line, and the compiler finds the call sites.
  */
 export const REVIEW_HREF = '#/review'
+
+/**
+ * The retrospective queue's address.
+ *
+ * **`#/retrospective`, not `#/decision-review`** — the latter is three characters
+ * from `#/review`, and the two are genuinely different things: one is recalling
+ * a claim, the other is grading your own reasoning about a past decision. 复盘 is
+ * the product's own word for the second, and it cannot be mistaken for the first.
+ */
+export const RETROSPECTIVE_HREF = '#/retrospective'
 
 export function useRoute(): Route {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash))

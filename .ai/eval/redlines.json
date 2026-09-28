@@ -15,7 +15,7 @@
     "partial": 5,
     "none": 4,
     "pass_rate": 0.4,
-    "note": "Bumped 2026-09-28 with spec 020 (J3): red line 5 went none → full, red line 10 went none → partial. `pass` moved 5 → 6 because red line 5 is now guarded by an executed test. **Red line 10 is deliberately `partial`, so it still does not count** — the mechanism exists and is tested, but no review page means the user has not yet faced the data, and `partial` never passes by construction. Two bookkeeping slips happened while writing this note and are recorded rather than quietly fixed: the previous breakdown read 2 / 8 when the measurement said 4 / 6, and the first draft of this bump read `partial 4 / none 5` because red line 10's move to `partial` was not carried through. Both were invisible to the gate because the pinning test only compared `pass` and `total`; it now compares all four counts."
+    "note": "Bumped 2026-09-28 with spec 020 (J3): red line 5 went none → full, red line 10 went none → partial. `pass` moved 5 → 6 because red line 5 is now guarded by an executed test. **Red line 10 is deliberately `partial`, so it still does not count** — and it was left `partial` again after spec 021, but **for a completely different reason**, which is the part worth keeping: the first `partial` said \"no interface exists\", and spec 021 built the interface, so that reason became false. The reason it is still `partial` now is that **the page has no way in** — no link to `#/retrospective`, and nothing that goes and finds the user when a review falls due (which `项目总纲` §2.1 requires by name: the 4th and 5th moments are ones the user will not come for on their own). Marking it `full` on the strength of a passing E2E would have been the optimistic accounting this file exists to prevent. Two bookkeeping slips happened while writing the first version of this note and are recorded rather than quietly fixed: the previous breakdown read 2 / 8 when the measurement said 4 / 6, and the first draft of that bump read `partial 4 / none 5` because red line 10's move to `partial` was not carried through. Both were invisible to the gate because the pinning test only compared `pass` and `total`; it now compares all four counts."
   },
   "verifier_kinds": {
     "static": "A rule in `.ai/checks/static/` (S-01..S-13). `eval` executes it now via `python -m checks --json` and requires the rule to have run (not skipped) with zero error findings.",
@@ -126,20 +126,32 @@
       "coverage": "partial",
       "verifier": {
         "kind": "test",
-        "node": "tests/unit/test_reviews.py::TestTheModelHoldsNoFigure"
+        "node": "tests/unit/test_decision_reviews_api.py::TestTheResponseCarriesNoFigure"
       },
       "also": [
         {
+          "kind": "gate",
+          "gate": "e2e",
+          "file": "frontend/e2e/retrospective.spec.ts",
+          "selector": "坏决策+好结果：整页没有任何数字"
+        },
+        {
+          "kind": "gate",
+          "gate": "e2e",
+          "file": "frontend/e2e/retrospective.spec.ts",
+          "selector": "到期前不渲染结果分选项"
+        },
+        {
           "kind": "test",
-          "node": "tests/unit/test_reviews.py::TestTheFourQuadrants::test_the_dangerous_quadrant_says_the_reason_does_not_hold"
+          "node": "tests/unit/test_reviews.py::TestTheModelHoldsNoFigure"
         },
         {
           "kind": "test",
           "node": "tests/unit/test_reviews.py::TestTheFourQuadrants::test_every_quadrant_has_a_line_and_none_mentions_a_number"
         }
       ],
-      "evidence": "「坏决策+好结果时不显示盈利数字」**由数据模型保证而不是渲染时隐藏**：`reviews` 没有任何金额 / 收益率列（`TestTheModelHoldsNoFigure` 枚举真实列名，加回 `profit` 列即变红 —— 变异 M4 已确认），所以没有数字可泄漏到日志、导出或下一个 API 字段。「不美化」由 `Quadrant.DANGEROUS` 那句被强制住在领域层的文案承担，并被「文案里不得出现数字」这一条钉住。",
-      "gap": "**没有界面，所以用户还没有真正「面对」过这些数据。** 机制齐了（模型 + 判定 + 文案 + 测试），但红线 10 的落点是用户眼前那一屏 —— 复盘页属切片 2。所以标 `partial`，而 `partial` 按 T-19 永远不算通过。"
+      "evidence": "三层，每层证明前一层证明不了的事：**模型**（spec 020）`reviews` 无任何金额 / 收益率列，所以没有数字可泄漏到日志、导出或下一个 API 字段；**接口**（spec 021）响应字段名被枚举，加回 `outcome_figure` 即变红（变异 M3 已确认）；**屏幕**（E2E）危险象限下**整页正文不含任何数字**，也不含 %/元/收益率/赚/涨幅。「不美化」由领域层强制下发的句子承担 —— 前端自己拼「干得漂亮」会变红（变异 M4 已确认）。",
+      "gap": "**页面建好了，但用户走不到它，红线 10 的落点因此还差最后一段。** 具体三点：① `#/retrospective` **没有任何入口链接**，只能手敲地址；② `项目总纲` §2.1 的原则是「第 ④⑤ 个时刻用户**不会主动来**，所以产品必须主动找他」—— 而目前没有任何地方提示「有 1 条决策到期该复盘了」，这与 K3 复习队列同样缺主动触达；③ 「不打折」的另一半（不为亏损写「失败但…」式的措辞）**靠人负责**，字段不判断（spec 020 §六）。**这三条都不是能靠加检查解决的，所以标 `partial`，而 `partial` 按 T-19 永远不算通过。**"
     },
     {
       "id": 11,
