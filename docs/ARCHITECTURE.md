@@ -5,14 +5,28 @@
 > were made, see `.ai/memory/decisions.md`. For *what is left to build*, see
 > `.ai/status.md`.
 >
-> **Corrected 2026-09-28.** The previous version of this file described
-> LangGraph, Qdrant, LightRAG, RRF fusion, a four-route retrieval layer, and
-> three packages (`graph/`, `agents/`, `retrieval/`) that **do not exist in this
-> repository**. That text was left over from v1; the constitution removed every
-> one of those technologies on 2026-09-26 (v1.0 → v2.0, item 2: *"把'智能检索层'
-> 当产品卖点，已被纠正。我们做决策记录，不做检索框架"*). It is summarised under
-> [Deliberate non-goals](#deliberate-non-goals) rather than deleted, because
-> "this was removed on purpose, and here is why" is worth more than silence.
+> **Corrected twice on 2026-09-28 — read this before trusting anything below.**
+>
+> **Correction 1.** The previous version of this file described LangGraph, Qdrant,
+> LightRAG, RRF fusion, a four-route retrieval layer, and three packages
+> (`graph/`, `agents/`, `retrieval/`) that do not exist in this repository. That
+> text was left over from v1.
+>
+> **Correction 2 (mine, hours later, and the more embarrassing one).** The first
+> correction said the constitution "removed every one of those technologies on
+> 2026-09-26" and filed LangGraph under [deliberate non-goals](#deliberate-non-goals).
+> **That was false.** The v1 → v2 removal (constitution item 2) covered the
+> *retrieval* stack — LlamaIndex, Qdrant, LightRAG, AKShare, Next.js (ADR-0002 /
+> 0003 / 0004 / 0006). **LangGraph was not on that list.** It is listed in the
+> constitution's locked stack (第三条) and ADR-0001 is **Accepted**; the second
+> copy of that ADR, under `docs/adr/`, was simply never updated and nobody
+> referenced it. A grep of a mis-encoded line is not a source of truth, and
+> generalising a removal list into "everything in the old architecture doc was
+> removed" is exactly the confidently-wrong error this file existed to fix.
+> Recorded as regression `0005`.
+>
+> The accurate statement is the boring one, and it is in
+> [Adopted but not implemented](#adopted-but-not-implemented).
 
 ---
 
@@ -195,26 +209,59 @@ Two disciplines that are easy to state and hard to keep:
 
 ## Deliberate non-goals
 
-These are **choices**, not omissions. The first four were removed *from this
-repository* on 2026-09-26 and are listed so nobody re-adds them by accident
-(`pyproject.toml` carries the same list next to the dependency block):
+These are **choices**, not omissions. All of them were removed *from this
+repository* on 2026-09-26 (ADR-0002 / 0003 / 0004 / 0006, superseded by ADR-0006)
+and are listed so nobody re-adds them by accident — `pyproject.toml` carries the
+same list next to the dependency block:
 
 | Not used | Why |
 |---|---|
-| LangGraph / agent graph orchestration | The agent pipeline is a *development* discipline (`.ai/`), not a runtime component. There is no agent in the shipped product. |
 | Qdrant / dense retrieval | Replaced by SQLite FTS5 when it is built. A vector database is not a knowledge base. |
 | LightRAG / graph retrieval | Same removal. |
+| LlamaIndex | Same removal. |
 | Four-route recall + RRF fusion + cross-encoder rerank | The "intelligent retrieval layer" was v1's mistaken product claim. |
 | `akshare` | Measured as rate-limited and key-dependent. |
 | `pandas` | The standard library is sufficient for OHLCV. |
+| Next.js | SSR is dead weight inside a desktop shell. |
 | Brokerage integration | The system produces records, not orders. Product *and* security decision. |
 | Recommendations, target prices, forecasts | Red line 1. Not a missing feature. |
 | Fine-tuned models | Not a cost this project is willing to pay yet. |
 
-The one runtime dependency staged ahead of its use is `fsrs` (spaced repetition,
-K3): declared, and **not yet imported anywhere** — along with `sqlalchemy` and
-`aiosqlite`, which are declared and now genuinely unused. See
-`.ai/status.md` §5.
+> ⚠️ **This list once wrongly contained LangGraph.** It does not belong here —
+> see the next section. If you are checking whether something was *removed*, the
+> authority is `.ai/memory/decisions.md` §决策索引, not this file.
+
+## Adopted but not implemented
+
+A third category, and the one that is easiest to get wrong in both directions.
+These are **adopted decisions that have never been built**:
+
+| Decision | Status | What exists today |
+|---|---|---|
+| **LangGraph** for agent orchestration (ADR-0001, constitution 第三条) | ✅ Accepted · ❌ not installed | **No dependency, no `graph/` package.** The pipeline that actually runs is `.ai/` — spec → implement → review → verify → ledger — and it is carried by written discipline, not by a state machine |
+| **Langfuse** observability (constitution 第三条) | ✅ Accepted as the data model · ❌ service not wired | `core/trace.py` hand-rolls Langfuse's `Trace → Observation → Score` model as local JSONL. The constitution marks Langfuse "可替换/降级"; the hand-rolled writer *is* the degradation |
+| **fastmcp** tool protocol (constitution 第三条) | ✅ Accepted · ❌ not installed | No MCP server. Red line 15's read-only-tool rule is currently enforced by *not having tools*, which is weaker than it sounds |
+| **`fsrs`** spaced repetition | ✅ dependency declared · ❌ never imported | K3 is unwritten |
+| **SQLAlchemy 2 + Alembic** (constitution 第三条, 数据 row) | ⚠️ **superseded in practice** | `storage/` hand-rolls both on raw `sqlite3`. `sqlalchemy` / `aiosqlite` are still declared in `pyproject.toml` and imported nowhere — the residue of the original intent |
+| **`py-fsrs`** (constitution 第三条, 记忆调度 row) | ⚠️ **factually wrong name** | The distribution is `fsrs`; `py-fsrs` does not exist on PyPI (verified 2026-09-26, recorded in `pyproject.toml`) |
+
+Two things follow, and both matter more than the table:
+
+1. **There is no agent in the shipped product, and that is not a bug.** Spec 003's
+   own banner says the agent is "只是数据的搬运工…不是产品差异化核心". Every product
+   capability shipped so far (S1–S4, K1, K2) is satisfied without an LLM.
+2. **The resume claim is therefore about the *development* pipeline, not a
+   runtime agent.** What can honestly be demonstrated today: an append-only
+   ledger, a constitution, per-change specs, 12 static checks, mutation-checked
+   regressions, and replayable traces. What cannot: "I shipped an agent
+   pipeline", because there isn't one at runtime — and `make eval` does not exist
+   yet, which is the piece that would make the claim measurable.
+
+> Three runtime dependencies are declared in `backend/pyproject.toml` and
+> imported **nowhere**: `sqlalchemy`, `aiosqlite`, `fsrs`. The first two are the
+> residue of an intent the code outgrew (raw `sqlite3` won); the third is staged
+> for K3. `scripts/check_licenses.py` counts them, and PyInstaller will bundle
+> them, for nothing. Removing the first two needs an ADR. See `.ai/status.md` §5.
 
 ## Extension points
 
@@ -225,6 +272,7 @@ K3): declared, and **not yet imported anywhere** — along with `sqlalchemy` and
 | A knowledge-card state | `domain/card.py` + an event type | the event must be append-only, and `card_events` must learn the new type |
 | A page | `frontend/src/` + a route | pin its red lines in `frontend/e2e/` |
 | An error code | `core/error_codes.py` **and** `.ai/error-codes.md` | S-05 fails the build if the two disagree |
+| **A technology decision** | **`.ai/memory/decisions.md` only** | that file is the single source of truth. `docs/adr/` is a pointer, not a second store — two ADR stores is what produced regression `0005` |
 
 ## Known structural gaps
 
