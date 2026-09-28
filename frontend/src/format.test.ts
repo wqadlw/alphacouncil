@@ -18,7 +18,11 @@ import {
  * Reading the file off disk is deterministic and skips the plugin pipeline
  * entirely, which is what a test of the *contents* wants anyway.
  */
-const css = readFileSync(new URL('./index.css', import.meta.url), 'utf8')
+// The token layer moved to `styles/globals.css` (guide §9), so this reads the
+// file that actually holds the tokens. Pointing it at a path that no longer
+// exists would fail at read time with ENOENT — which is at least loud, but the
+// assertions below would silently stop checking anything if the read were wrapped.
+const css = readFileSync(new URL('./styles/globals.css', import.meta.url), 'utf8')
 
 describe('formatChange', () => {
   it('reads a rise as up and a fall as down', () => {

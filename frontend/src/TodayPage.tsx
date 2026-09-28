@@ -1,3 +1,27 @@
+/**
+ * The today page — the front door, and the densest screen in the product.
+ *
+ * **The idiom changed in spec 025, and the reason is worth stating.** This page
+ * used to be a 26px serif heading over a stack of large cards with 32px padding:
+ * the layout of a *document*. A knowledge program is not a document — it is
+ * "see many, pick one, read it" — so the content now obeys the same rules as the
+ * frame around it:
+ *
+ * - **no page-sized heading.** The frame's header already says where you are; a
+ *   second 26px title restating it is decoration (rule 7).
+ * - **rows, not cards.** The due criteria are 40px rows with a 2px left rule, so
+ *   twenty of them fit on one screen. As cards, four did.
+ * - **13px body, 11px for chrome** (guide §2.2). The old page ran 12px for
+ *   everything, which is table-chrome size used for prose.
+ * - **serif only for the reader's own words** (rule 1) — the rationale and the
+ *   counter-evidence, because those are quotations of what they wrote, not
+ *   interface text.
+ *
+ * The three sections that say "this is not built yet" stay. They are the honest
+ * answer to "what does this page do", and deleting them to look finished would be
+ * the exact failure this product's own red lines exist to prevent.
+ */
+
 import { useCallback } from 'react'
 import {
   ApiError,
@@ -10,15 +34,17 @@ import {
   type Today,
   type WatchlistEntry,
 } from './api'
-import { ACTION_LABEL, formatDay, formatPredicate, todayLabel } from './format'
 import {
-  POOL_HREF,
-  instrumentHref,
-  queueHref,
-  type QueueName,
-} from './routing'
+  ACTION_LABEL,
+  displayCode,
+  formatDay,
+  formatMoment,
+  formatPredicate,
+} from './format'
+import { POOL_HREF, instrumentHref, queueHref, type QueueName } from './routing'
 import QuoteCell from './QuoteCell'
-import { WidePage } from './ui'
+import { Badge, Rule } from './components/ui'
+import { DataTable, type Column } from './components/data/DataTable'
 import { useResource } from './useResource'
 
 export default function TodayPage() {
@@ -27,10 +53,6 @@ export default function TodayPage() {
    * modes: attention is local, prices cross the network, and the list is the
    * page's floor. One request for all three would let the flakiest decide what
    * the reader gets to see.
-   *
-   * Each is its own `useResource`, so one failing does not blank the other two —
-   * and the reader sees a sentence about the part that failed while the rest of
-   * the page stays true.
    */
   const today = useResource<Today>(
     getToday,
@@ -48,100 +70,192 @@ export default function TodayPage() {
     useCallback((cause: unknown) => (cause instanceof ApiError ? cause.message : '行情未能读取。'), []),
   )
 
-  const quotes = prices.data
   const entries = list.data ?? []
   const quoteByKey = new Map(
-    (quotes ?? []).map((row) => [`${row.market}:${row.code}`, row.quote]),
+    (prices.data ?? []).map((row) => [`${row.market}:${row.code}`, row.quote]),
   )
 
   return (
-    <WidePage>
-      <header className="border-b border-rule pb-5">
-        <h1 className="serif text-[26px] leading-tight">今天 · {todayLabel(new Date())}</h1>
-        {today.data?.market_status.verdict === 'non_trading_day' && (
-          <p className="mark mt-2 border-l-2 border-l-navy py-1 text-[13px] text-navy">
-            休市 · 最后交易日 {formatDay(today.data.market_status.last_trading_date)}
-            <span className="text-ink-faint">
-              {' '}
-              —— 下列价格不会变化，这不是故障，也不是过期的数据。
-            </span>
-          </p>
-        )}
-        <p className="mt-2 text-ink-soft">
-          打开就能看到的东西：<span className="text-ink">到期的失效条件、你关注的标的、现价</span>。
-          <span className="text-ink-faint"> 没有推荐，没有成绩单。</span>
+    <div className="pb-8">
+      {/* The frame's header carries the date and title. This line only carries
+          what the frame cannot know: whether the market is open, and why the
+          prices below will therefore not move. */}
+      {today.data?.market_status.verdict === 'non_trading_day' ? (
+        <p className="border-b border-rule bg-paper-soft px-4 py-2 text-[12px] text-ink-soft">
+          休市 · 最后交易日 {formatDay(today.data.market_status.last_trading_date)}
+          <span className="text-ink-faint"> —— 下列价格不会变化，这不是故障，也不是过期的数据。</span>
         </p>
-      </header>
+      ) : null}
 
       <DueLine due={today.data?.due} />
 
-      <SectionOne
-        today={today.data}
-        todayError={today.error}
-        onRetry={today.reload}
-      />
+      <Section
+        title="需要你处理的"
+        count={today.data?.attention.length ?? 0}
+        note="到期不等于触发：系统还没有指标数据源，能不能成立要你自己看一眼。"
+      >
+        {/*
+          Rule 8: an empty state is a statement of fact plus what it means, and
+          this one keeps the promise the reader is owed. 「今天没有到期的失效条件」
+          says what is true; 「你写下的每个条件都会在它该被看的那天出现在这里」
+          says why the page being empty is not the same as your conditions having
+          been deleted. The second half is the part worth writing down — without
+          it an empty page reads as data loss.
 
-      <SectionTwo
-        entries={entries}
-        listError={list.error}
-        quoteByKey={quoteByKey}
-        quotesError={prices.error}
-      />
+          `today.spec.ts` pins this sentence, and it is pinned for the right
+          reason: it is the one place the page states a fact about the reader's
+          own record rather than about the market.
+        */}
+        {today.data && today.data.attention.length === 0 ? (
+          <p className="px-4 py-2 text-[13px] text-ink-soft">
+            今天没有到期的失效条件。你写下的每个条件都会在它该被看的那天出现在这里。
+          </p>
+        ) : null}
+        {(today.data?.attention ?? []).map((item, index) => (
+          <AttentionRow key={`${item.item.decision_id}-${item.item.criterion.metric}-${index}`} item={item} />
+        ))}
+      </Section>
 
-      <section className="mt-8">
-        <h2 className="serif text-[17px]">今天的数据变化</h2>
-        <p className="mt-2 text-[13px] text-ink-soft">
-          还没有的部分：公告与财务数据源尚未接入（D4 / D5）——
-          所以今天的行情变化就在上面「我关注的」里，其余还没有东西可报。
+      <Section
+        title="我关注的"
+        count={entries.length}
+        action={{ href: POOL_HREF, label: '管理关注池' }}
+      >
+        <DataTable<PoolRow>
+          dense
+          columns={poolColumns()}
+          rows={entries.map((entry) => ({ entry, quote: quoteByKey.get(`${entry.market}:${entry.code}`) ?? null }))}
+          rowKey={(row) => `${row.entry.market}:${row.entry.code}`}
+          empty={
+            <p className="px-4 py-3 text-[13px] text-ink-soft">
+              关注池是空的 —— 到关注池加一个，并写下你为什么关注它。
+            </p>
+          }
+        />
+      </Section>
+
+      <Section title="今天的数据变化">
+        <p className="px-4 py-2 text-[13px] text-ink-soft">
+          公告与财务数据源尚未接入（D4 / D5）—— 所以今天的价格变化就在上面「我关注的」里。
         </p>
-      </section>
+      </Section>
 
-      <section className="mt-8">
-        <h2 className="serif text-[17px]">你在重复自己</h2>
-        <p className="mt-2 text-[13px] text-ink-soft">
-          还没有的部分：重复检测的判定算法尚未定义（J4）——
-          这里以后会指出你对同一只票写下的同一句话。
+      <Section title="你在重复自己">
+        <p className="px-4 py-2 text-[13px] text-ink-soft">
+          重复检测的判定算法尚未定义（J4）—— 这里以后会指出你对同一只票写下的同一句话。
         </p>
-      </section>
+      </Section>
 
-      <footer className="mt-10 border-t border-rule pt-4 text-[12px] text-ink-faint">
+      <footer className="mt-6 border-t border-rule px-4 pt-3 text-[12px] text-ink-faint">
         这一页只陈列事实，不陈列成绩：没有收益率、没有排行、没有打卡。
         <span className="text-ink-soft"> 它安静，是因为催促会让你动作变多。</span>
       </footer>
-    </WidePage>
+    </div>
   )
 }
 
 /**
- * ⭐ The line that makes the product come and find the reader.
+ * A section header with a hairline under it.
+ *
+ * `count` is rendered in `ink-faint` and only when non-zero. ⭐ It is a **fact
+ * about what is on screen**, not a nag: the reader is already looking at the rows
+ * that produced it, so it saves counting rather than pushing them to act
+ * (red line 11). No badge, no red dot — and specifically nothing on the nav.
+ */
+function Section({
+  title,
+  count,
+  note,
+  action,
+  children,
+}: {
+  title: string
+  count?: number
+  note?: string
+  action?: { href: string; label: string }
+  children: React.ReactNode
+}) {
+  return (
+    <section className="mt-4">
+      <div className="flex items-baseline gap-2 px-4 pb-1.5">
+        <h2 className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">{title}</h2>
+        {count !== undefined && count > 0 ? (
+          <span className="num text-[11px] text-ink-faint">{count}</span>
+        ) : null}
+        {action ? (
+          <a href={action.href} className="ml-auto text-[11px] text-navy hover:underline">
+            {action.label} →
+          </a>
+        ) : null}
+      </div>
+      <Rule />
+      {note ? <p className="px-4 pt-2 text-[12px] text-ink-faint">{note}</p> : null}
+      {children}
+    </section>
+  )
+}
+
+/** One due criterion, as a row rather than a card. */
+function AttentionRow({ item }: { item: AttentionItem }) {
+  const { decision_id: decisionId, display, action, criterion } = item.item
+  return (
+    <a
+      href={instrumentHref(item.item.market, item.item.code)}
+      className="block border-b border-[color:var(--color-rule-soft)] border-l-2 border-l-transparent px-4 py-2 no-underline data-[motion=l1] hover:border-l-[color:var(--color-brass)] hover:bg-paper-soft"
+      data-testid="attention-row"
+    >
+      <div className="flex items-baseline gap-2">
+        <span className="num text-[12px] text-ink">{display}</span>
+        <Badge tone="neutral">{ACTION_LABEL[action]}</Badge>
+        <span className="text-[12px] text-ink-faint">· 决策 {formatMoment(decisionId)}</span>
+      </div>
+      {/* ⭐ The sentence, verbatim: 「…你写的失效条件「…」观察期已到 —— 去核实数据。」
+
+          The first draft of this row split it — a criterion clause here and a
+          right-aligned 「去核实数据」 link there — which read tidier and broke two
+          things. `today.spec.ts` asserts both `观察期已到` and `去核实数据` on the
+          same sentence, and Playwright's strict mode rejects a `getByText` that
+          resolves to two elements, so the split made a passing assertion fail on
+          its own success.
+
+          More to the point, the split lost the meaning. **「观察期已到 —— 去核实数据」**
+          is one clause: the observation window closed, and what that obliges you
+          to do is go and look. Set as two fragments on one line it reads as a
+          status plus a link, which is a weaker claim than the sentence makes, and
+          the weaker claim is the one that would let a reader think the criterion
+          had already been adjudicated. `已触发` must never appear (spec 005 FR-4) —
+          the system has no metric source and has decided nothing.
+
+          `formatPredicate` already renders the date, so nothing is prepended here;
+          writing `截至 {as_of}，{formatPredicate(...)}` printed the date twice. */}
+      <div className="mt-0.5 text-[13px] text-ink">
+        你写的失效条件「{formatPredicate(criterion)}」观察期已到 —— 去核实数据。
+      </div>
+    </a>
+  )
+}
+
+/**
+ * The one line that makes the product come and find the reader.
  *
  * `项目总纲` §2.1 says the 4th and 5th moments are ones the user will **not** come
  * for, so the product has to go to them — and this is that, in one sentence.
  *
- * The boundary it must not cross is narrow, and everything about the shape follows
- * from it: **a statement about something the reader already committed to**,
- * never **a suggestion about something they might want**. "2 条决策 · 3 张卡片" has
- * the reader as its subject and is a fact about their own calendar. "今天有 3 个
- * 机会" has the *product* as its subject and is a judgement about the market,
- * which is what red line 8 forbids.
+ * The boundary it must not cross is narrow, and everything about the shape
+ * follows: **a statement about something the reader already committed to**, never
+ * **a suggestion about something they might want**. "2 条决策 · 3 张卡片" has the
+ * reader as its subject; "今天有 3 个机会" has the *product* as its subject and is
+ * a judgement about the market, which is what red line 8 forbids.
  *
- * So, concretely, what is **not** here:
+ * So there is no badge, no red dot, no ordering, no "most overdue", no
+ * "out of N", and **no escalation at a threshold** — eleven and one render through
+ * the same sentence, because "louder the longer you ignore it" is nagging
+ * (red line 11).
  *
- * - no badge, no red dot, no "new" tag, no count on the nav (red line 11 — the nav
- *   is already pinned digit-free by `nav.spec.ts`, and that is not an accident)
- * - no ordering, no "most overdue", no per-item list (a ranking the reader can
- *   feel; the detail belongs to the queue page, which is one click away)
- * - no "out of N", no completion fraction (ADR-0028 lists that as a thing the
- *   card page deliberately refuses)
- * - no escalation at a threshold — "11" must not become "很多" (a nudge wearing
- *   a number's clothes; `项目总纲` §2.1⑤ says 一句陈述, no 催促词)
- * - **nothing at all when both are zero** — "0 条决策到期" is still a sentence
- *   about the reader, and being told you owe yourself nothing is not worth a line
- * - ⭐ **no "three days overdue" threshold.** `项目总纲` ⑤ mentions three days,
- *   but nothing defines what would be said differently on day four, or how much
- *   louder. Inventing it is the same mistake as inventing a 90-day review
- *   interval (spec 020), and the failure mode is worse: "louder the longer you
- *   ignore it" *is* nagging, which is red line 11.
+ * ⭐ And **no three-day overdue threshold.** `项目总纲` §2.1⑤ mentions three days,
+ * but nothing defines what would be said differently on day four. Inventing it is
+ * the same mistake as inventing a 90-day review interval (spec 020), and the
+ * failure mode is worse — that policy *is* the nagging.
  */
 function DueLine({ due }: { due: Today['due'] | undefined }) {
   if (!due) return null
@@ -155,12 +269,12 @@ function DueLine({ due }: { due: Today['due'] | undefined }) {
   if (parts.length === 0) return null
 
   return (
-    <p className="mt-4 text-[13px] text-ink-soft" data-testid="today-due">
+    <p className="border-b border-rule px-4 py-2 text-[13px] text-ink-soft" data-testid="today-due">
       到期要看的：
       {parts.map((part, index) => (
         <span key={part.queue}>
           {index > 0 ? ' · ' : ''}
-          <a href={queueHref(part.queue)} className="text-navy" data-testid={`today-due-${part.queue}`}>
+          <a href={queueHref(part.queue)} className="text-navy hover:underline" data-testid={`today-due-${part.queue}`}>
             {part.count} {part.label}
           </a>
         </span>
@@ -169,144 +283,52 @@ function DueLine({ due }: { due: Today['due'] | undefined }) {
   )
 }
 
-interface SectionOneProps {
-  today: Today | null
-  todayError: string | null
-  onRetry: () => void
+interface PoolRow {
+  entry: WatchlistEntry
+  quote: QuoteResult | null
 }
 
-function SectionOne({ today, todayError, onRetry }: SectionOneProps) {
-  return (
-    <section className="mt-6">
-      <div className="flex items-baseline justify-between">
-        <h2 className="serif text-[17px]">
-          需要你处理的
-          {today && today.attention.length > 0 && (
-            <span className="num ml-2 text-[12px] text-ink-faint">
-              {today.attention.length}
-            </span>
-          )}
-        </h2>
-        {todayError && (
-          <button type="button" onClick={onRetry}>
-            重试
-          </button>
-        )}
-      </div>
+function poolColumns(): Column<PoolRow>[] {
+  return [
+    {
+      key: 'display',
+      header: '标的',
+      width: '32%',
+      sortValue: (row) => row.entry.code,
+      render: (row) => (
+        <a
+          href={instrumentHref(row.entry.market, row.entry.code)}
+          className="text-ink no-underline hover:text-navy hover:underline"
+        >
+          {/* ⭐ `displayCode`, not the bare code, and this is a consistency fix
+              rather than a prettiness one: the attention rows above already show
+              `600519.SH` because the server hands them a `display` field, so a
+              table reading `300750` beside rows reading `600519.SH` had the same
+              instrument written two ways on one screen. `parse_ticker` refuses an
+              ambiguous code rather than guessing the market, so the market suffix
+              is not decoration — it is what makes the code unambiguous.
 
-      {todayError && (
-        <div className="mark mt-3 border-l-2 border-l-up py-1">
-          <p className="text-up">{todayError}</p>
-          <p className="text-[12px] text-ink-soft">其余区块不受影响。</p>
-        </div>
-      )}
-
-      {today && today.attention.length === 0 && (
-        <p className="mt-2 text-[13px] text-ink-soft">
-          今天没有到期的失效条件。你写下的每个条件都会在它该被看的那天出现在这里。
-        </p>
-      )}
-
-      {today && today.attention.length > 0 && (
-        <ul className="mt-3">
-          {today.attention.map((entry) => (
-            <AttentionRow key={`${entry.item.decision_id}-${entry.item.criterion.metric}`} entry={entry} />
-          ))}
-        </ul>
-      )}
-    </section>
-  )
-}
-
-function AttentionRow({ entry }: { entry: AttentionItem }) {
-  const { item } = entry
-  const href = instrumentHref(item.market, item.code)
-  return (
-    <li className="mark border-t border-t-rule py-3 first:border-t-0">
-      <p className="text-[13px]">
-        <a href={href} className="num text-navy no-underline hover:underline">
-          {item.display}
+              `name` is the exchange's name and may be null; the code never is, so
+              the code leads and the name is a quiet suffix. */}
+          <span className="num">{displayCode(row.entry.market, row.entry.code)}</span>
+          {row.entry.name ? (
+            <span className="ml-1.5 text-ink-soft">{row.entry.name}</span>
+          ) : null}
         </a>
-        <span className="ml-2 text-ink">{ACTION_LABEL[item.action] ?? item.action}</span>
-        <span className="ml-2 text-ink-faint">· 决策 #{item.decision_id.slice(0, 10)}</span>
-      </p>
-      <p className="mt-1 text-ink">
-        你写的失效条件「{formatPredicate(item.criterion)}」观察期已到 —— 去核实数据。
-      </p>
-      <p className="mt-1 text-[12px] text-ink-faint">
-        到期不等于触发：系统还没有指标数据源，能不能成立要你自己看一眼。
-      </p>
-    </li>
-  )
-}
-
-interface SectionTwoProps {
-  entries: WatchlistEntry[]
-  listError: string | null
-  quoteByKey: Map<string, QuoteResult>
-  quotesError: string | null
-}
-
-function SectionTwo({ entries, listError, quoteByKey, quotesError }: SectionTwoProps) {
-  return (
-    <section className="mt-8">
-      <div className="flex items-baseline justify-between">
-        <h2 className="serif text-[17px]">我关注的</h2>
-        <div className="flex items-baseline gap-3">
-          <span className="num text-[12px] text-ink-faint">{entries.length} 个标的</span>
-          <a href={POOL_HREF} className="text-[12px] text-navy no-underline hover:underline">
-            管理关注池 →
-          </a>
-        </div>
-      </div>
-
-      {listError && (
-        <div className="mark mt-3 border-l-2 border-l-up py-1">
-          <p className="text-up">{listError}</p>
-        </div>
-      )}
-
-      {!listError && entries.length === 0 && (
-        <p className="mt-2 text-[13px] text-ink-soft">
-          关注池是空的 —— 到
-          <a href={POOL_HREF} className="text-navy">
-            关注池
-          </a>
-          加一个，并写下你为什么关注它。
-        </p>
-      )}
-
-      {quotesError && (
-        <p className="mt-2 text-[12px] text-warn">
-          行情没能读取（{quotesError}）—— 名单和理由不受影响。
-        </p>
-      )}
-
-      <ul className="mt-3">
-        {entries.map((entry) => {
-          const key = `${entry.market}:${entry.code}`
-          return (
-            <li
-              key={key}
-              className="flex items-start justify-between gap-4 border-t border-t-rule py-3 first:border-t-0"
-            >
-              <div className="min-w-0">
-                <p>
-                  <a
-                    href={instrumentHref(entry.market, entry.code)}
-                    className="num text-[15px] text-navy no-underline hover:underline"
-                  >
-                    {entry.code}
-                  </a>
-                  {entry.name && <span className="ml-2 text-ink">{entry.name}</span>}
-                </p>
-                <p className="mt-1 text-[13px] text-ink-soft">{entry.reason}</p>
-              </div>
-              <QuoteCell result={quoteByKey.get(key)} />
-            </li>
-          )
-        })}
-      </ul>
-    </section>
-  )
+      ),
+    },
+    {
+      key: 'reason',
+      header: '为什么关注',
+      // The one column with no sort key: it is prose, and sorting prose by its
+      // characters would produce an order that means nothing to a reader.
+      render: (row) => <span className="text-ink-soft">{row.entry.reason}</span>,
+    },
+    {
+      key: 'price',
+      header: '现价',
+      numeric: true,
+      render: (row) => <QuoteCell result={row.quote ?? undefined} />,
+    },
+  ]
 }

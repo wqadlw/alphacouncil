@@ -49,6 +49,15 @@ out/
 
 # ---- Data / artifacts (never commit local data or indexes) ----
 data/
+# ⚠️ `data/` above has no leading slash, so git matches it at ANY depth — which
+# silently swallowed `frontend/src/components/data/` (spec 025's `DataTable.tsx`,
+# a core source file) the first time it was created. `git add -A` reported
+# success and `git status` showed a clean staged set; the file was simply absent
+# from it. Cloning that commit would have failed the frontend build.
+#
+# Same trap as `.ai/checks/data/` below, and the same fix. Every new source
+# directory named `data` needs its own negation here.
+!frontend/src/components/data/
 *.sqlite
 *.sqlite3
 *.db

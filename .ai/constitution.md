@@ -207,7 +207,7 @@ v1.0 写于 2026-09-25，当时项目方向尚未收敛。v2.0 做了四处**结
 | Agent 工具协议 **fastmcp** | ✅ 已采纳 · ❌ **未实现** | 无 MCP server。红线 15 的"只读工具"目前靠**没有工具**实现 —— 该条暂时无法被违反，也就无法被验证 |
 | 记忆调度 **py-fsrs** | ⚠️ **包名有误** | 实际是 **`fsrs`**；`py-fsrs` **在 PyPI 上不存在**（2026-09-26 实测，已记在 `backend/pyproject.toml`） |
 | 数据 **SQLAlchemy 2 + Alembic** | ⚠️ **实现已超越原选型** | `storage/` 在裸 `sqlite3` 上自研迁移器（`VACUUM INTO` 快照 + SHA-256 + DDL 与版本同事务）。`sqlalchemy` / `aiosqlite` 仍声明在 `pyproject.toml`，**全仓零 import**，删除需另开 ADR |
-| 前端 **shadcn/ui** | ✅ 已采纳 · ❌ **未引入** | 2026-09-28 补记（spec 022）。`package.json` 的 `dependencies` **只有 react / react-dom**。界面是纯 Tailwind 手写，视觉刻意朴素（"金融软件不做动画"）。**同期一并被否决的还有 TanStack Router / Query** —— 它们**不在本表里**，所以连"已采纳"都算不上，属于**从未采纳**。三者都属**未落地**，按第零条"未经明确批准禁止引入"处理 |
+| 前端 **shadcn/ui** | ✅ 已采纳 · ⚠️ **以"手写最小集"方式落地，Radix 未引入** | 2026-09-28 两次补记。**spec 022** 时 `dependencies` 只有 `react` / `react-dom`，纯 Tailwind 手写。**spec 025** 起引入 shadcn 的**运行时三件套**（`class-variance-authority` / `clsx` / `tailwind-merge`）并手写 `components/ui/`，**理由是 `前端资源与打磨规格` §4.1 本身就要求 shadcn**（源码复制进仓库、无运行时依赖）——而**没有引入 Radix**：规范里的组件不需要。**TanStack Router / Query 仍不在本表里**，属于**从未采纳**，不重提 |
 
 > **为什么单列这一节**：这张表曾经被"整体当作已移除"（我自己犯过，见 `regressions/0005`），
 > 也曾经被"整体当作已实现"。真相是第三种状态：**已采纳、未落地**。
@@ -236,6 +236,22 @@ v1.0 写于 2026-09-25，当时项目方向尚未收敛。v2.0 做了四处**结
 经人工确认后方可加入。
 
 **禁止**：为了一行代码的便利引入一个包。能用标准库解决的，用标准库。
+
+#### 3.2.1 已批准的新增（**逐条记录，因为"批准过"这件事最容易丢**）
+
+> 宪法要求批准，批准这件事就必须留在宪法里。只写在变更日志里，
+> 等于让"这些包为什么合法"变成一个需要考古的问题。
+
+| 日期 | 包 | 批准范围 | 记录 |
+|---|---|---|---|
+| **2026-09-28** | `lucide-react` | **仅此一个图标库**。`前端资源与打磨规格` §3.1 **早已选定 Lucide**（ISC，~1,600 图标），§5 规定"细描边、只用 `currentColor`、⛔ 禁止 emoji 作功能图标" —— 规范已定，只是从未实现 | spec 025 |
+| **2026-09-28** | `class-variance-authority` · `clsx` · `tailwind-merge` | **仅作为组件变体与类名合并的工具**。这三者**就是 shadcn/ui 的全部运行时**。`前端资源与打磨规格` §4.1 坚持 shadcn 的理由是"源码复制进仓库 + **没有运行时依赖**" —— 本条即按该理由落地：**手写组件，不引入 Radix** | spec 025 |
+
+**明确未批准、且不得擅自引入**：shadcn/ui 全量（Radix 一整套）· TanStack Query / Router ·
+Zustand · React Hook Form + Zod · Recharts · auto-animate / motion / GSAP · 图表库 · 自托管字体包。
+
+**机制**：`frontend/src/styleguide.test.ts` 的 **V-07** 直接读 `package.json`，
+出现上表以外的任何运行时依赖即测试失败 —— 批准清单是**可执行的**，不是一段散文。
 
 ---
 

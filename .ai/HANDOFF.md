@@ -116,6 +116,25 @@
 - curl 本地端口必须 `--noproxy '*'`（环境可能残留代理变量，会产生 502 假故障）。
 - 东财源**间歇性不可达**（降级链会自动切腾讯，属正常）；腾讯指数日线已支持。
 
+**PowerShell 发中文 JSON（2026-09-28 新增，会静默写坏数据）**：
+`ConvertTo-Json` + `Invoke-RestMethod` 把中文 body 按 cp936 发出去，服务端**照收**，
+存进去的是一串 `????????`。**没有报错** —— 写演示数据时中了两发，
+直到看页面才发现「为什么关注」列全是问号。
+**要 POST 中文就写个 Python 脚本**（`json.dumps(...).encode("utf-8")` + 显式 charset 头），
+别用 PowerShell 拼 JSON。
+
+**看渲染结果的两个坑（2026-09-28 新增，都会让人去改一个不存在的 bug）**：
+- ⭐ **`evaluate` 探针读到的是加载态。** `navigate` 之后立刻
+  `document.querySelectorAll(...)` 会看到空表，**看起来像"接口有数据但界面不画"**。
+  我差点为一个不存在的 bug 去改代码。用 `browser.wait({condition:'text', text:'…'})`
+  等到真实内容再断言。**这和台账里 4 次 harness 失败是同一类**：
+  先确认探针真的跑到了要测的地方，再相信它的结论。
+- `browser.screenshot` 需要**可见**的标签页；`tabs.open` 新开的那一个常常不可见，
+  `tabs.focus` 也救不回来时，关掉多余标签页再截图。
+  另外**三个同地址标签页会互相干扰** —— 留着旧的比新开一个更省事。
+- `getByText` 在 Playwright 里是**严格模式**：一个句子渲染两遍会让**两个**测试同时红
+  （spec 025 §6 踩过：外壳标题和页面内容各写了一遍同一个句子）。
+
 ## 五、跑起来与验收命令
 
 ```bash
@@ -146,24 +165,34 @@ cd backend && .venv/Scripts/python.exe scripts/dev.py check
 > 上一版的第 1 条（"K1 知识卡片建表 + 界面"）**已经做完了**（spec 012/013）——
 > 这份文档自己落后了一个提交。所以下面每一条都标了依据，且**动手前请回到 `status.md` 复核**。
 
-1. ⭐ **specs 001/003 按 v3 修订** + 把积压的批次决定（T/S/F/L/V）落进宪法 —— **S0 收尾**。
+1. ⭐ **把另外四个页面迁到应用语汇** —— spec 025 之后的头号入口。
+   `docs/FRONTEND_STYLE_GUIDE.md` 与三栏外壳已就位，**但只有 `TodayPage` 真的迁了**；
+   `PoolPage` / `ReviewPage` / `RetrospectivePage` / `InstrumentPage` 还是 26px 衬线标题 + 大卡片。
+   **收益最大、风险最低**：同一套改法，`styleguide.test.ts` 会替你挡住越界。
+2. ⭐ **把 `detail` 槽位用上** —— `AppShellFrame` 有第三栏，**目前没有任何页面传它**。
+   列表/详情真正分栏是"知识程序"与"任务列表"的分界。
+3. ⭐ **`BacklinkList` / `RecordTimeline`** —— 规范 §8.2 已列，**未实现**。
+   `card_events` / `reviews` / `decisions` 都是 append-only，**界面一条都没渲染**。
+4. ⭐ **补 ⌘K 的 E2E 断言** —— 现在只有手动验证，**没被测试钉住**，
+   是这一轮唯一一个"做完了但没测"的东西。
+5. ⭐ **specs 001/003 按 v3 修订** + 把积压的批次决定（T/S/F/L/V）落进宪法 —— **S0 收尾**。
    理由：知识层已连做两块，spec 目录却还有 3 个 v1 方向的旧 spec（`002` 已标废弃），
    规格与实现已经对不上。**规格不可信时，"规格驱动"就是一句口号。**
-2. ⭐ **`make eval` 评测集骨架** —— 简历验收①第二块。trace 写入器已就位（spec 011），
+6. ⭐ **`make eval` 评测集骨架** —— 简历验收①第二块。trace 写入器已就位（spec 011），
    现在缺的是**消费它的东西**。注意前提：`core/config.py` 有 `llm_provider` 配置项，
    但**运行期没有任何 LLM 调用**，所以"token/成本记录"要等真有 agent 之后才成立。
-3. **K3 FSRS 队列** —— 知识层剩下的最大一块。`fsrs` 依赖**已预装但从未 import**。
+7. **K3 FSRS 队列** —— 知识层剩下的最大一块。`fsrs` 依赖**已预装但从未 import**。
    前任探针问过的五个问题（是否就地改传入对象 / 关 fuzz 是否确定 / 字典往返 /
    朴素 datetime / learning→review 毕业）记在 `.ai/logs/changes/2026-09-28-console-encoding.md` §②，
    按自己的 spec 重做一遍探针。注意 `fsrs.State` 只有三态，**"已推迟"必须自建表**。
-4. **把 `scripts/` 纳入 mypy strict** —— 门禁工具本身无类型约束（`status.md` §五已登记）。
+8. **把 `scripts/` 纳入 mypy strict** —— 门禁工具本身无类型约束（`status.md` §五已登记）。
    优先级不高但很便宜，且它是"这个项目有没有被验证"的那一层。
-5. **清理 `sqlalchemy` / `aiosqlite`** —— 声明了但全仓零 import（`status.md` §五已登记）。
+9. **清理 `sqlalchemy` / `aiosqlite`** —— 声明了但全仓零 import（`status.md` §五已登记）。
    删除需走 ADR（`pyproject.toml` 明写 "Do not re-add without an ADR"）。
-6. **S5 预研**：前端构建产物接入 PyInstaller（"打开即用"最后一公里）。
-   顺带能验掉两条"未验证"：交互式控制台渲染、`pythonw.exe` 无控制台启动。
-7. 交易日早晨核实 spec 007 的**盘中当日 bar 假设**（`status.md` §五 已登记；若证伪改常量即可）。
-8. 全栈 E2E 冒烟（Playwright 打真实 uvicorn，作为第二个 project）——可选项。
+10. **S5 预研**：前端构建产物接入 PyInstaller（"打开即用"最后一公里）。
+    顺带能验掉两条"未验证"：交互式控制台渲染、`pythonw.exe` 无控制台启动。
+11. 交易日早晨核实 spec 007 的**盘中当日 bar 假设**（`status.md` §五 已登记；若证伪改常量即可）。
+12. 全栈 E2E 冒烟（Playwright 打真实 uvicorn，作为第二个 project）——可选项。
 
 ---
 
