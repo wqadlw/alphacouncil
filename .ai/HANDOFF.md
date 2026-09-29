@@ -210,7 +210,7 @@ fixture 藏起来的值是同一个值」。
 
 1. ⭐ **把 Milkdown 接进知识库页** —— **已批准、已安装、MIT 已验，但没接**（spec 026）。当前编辑器是纯 textarea、正文按源码原样显示不渲染。**理由是「没验证过的所见即得比纯文本框更坏」** —— 它看起来做完了，而它存下来的东西可能不对
 2. ⭐ **J5 教训转卡** —— 「经验」的入口，**红线 7 唯一能去上的机制**。`LinkKind.LESSON` 已在枚举与 schema 里，但目标表还不存在
-3. ⭐ **把 npm 许可扫描变成门禁** —— `backend/scripts/check_licenses.py` 用 `importlib.metadata`，**只扫 Python**。**209 个 npm 包从未过门禁**。本轮手扫了（338 包 / 0 传染性 / 0 未知），但**手扫一次不构成护栏**。spec 027 手写了扫描脚本，**接下来就是把它接进 `dev.py check`**
+3. ~~把 npm 许可扫描变成门禁~~ **已完成（spec 031）** —— 313 个包 —— `backend/scripts/check_licenses.py` 用 `importlib.metadata`，**只扫 Python**。**209 个 npm 包从未过门禁**。本轮手扫了（338 包 / 0 传染性 / 0 未知），但**手扫一次不构成护栏**。spec 027 手写了扫描脚本，**接下来就是把它接进 `dev.py check`**
 4. ⭐ **把 `detail` 槽位用上** —— `AppShellFrame` 有第三栏，**目前没有任何页面传它**。⭐ **但复习页与复盘页是故意不用的**，理由写在 `ReviewPage` / `RetrospectivePage` 的头注释里：**队列列表 = 用图片代替数字的进度条**（撞红线 11），且危险象限整页不能有数字。**别当缺口填。** 知识库页是可以用的
 5. ⭐ **`BacklinkList` / `RecordTimeline`** —— 规范 §8.2 已列。**反链的仓储函数 `backlinks_for()` 已实现且有测试，界面没画**
 6. ⭐ **Lucide 图标真正用上** —— **已批准、已安装、规范 §5 全部未落地，一个都没用**
