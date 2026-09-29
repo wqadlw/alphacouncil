@@ -398,19 +398,44 @@ def annualised_volatility(closes: Sequence[float], *, period: int = 20) -> list[
     ⭐ Log returns rather than percentage returns: compounding multiplies, and the
     volatility of a compounded series is not the compounding of volatilities.
     """
-    returns: list[float] = [0.0]
+    returns: list[Indicator] = [None]
     for index in range(1, len(closes)):
-        returns.append(
-            0.0 if closes[index - 1] == 0 else math_log(closes[index] / closes[index - 1])
-        )
+        previous = closes[index - 1]
+        current = closes[index]
+        # ⭐ `None` when **either** end of the ratio is zero, **not** 0.0. `Quote.close` is
+        # ``ge=0.0``, so both are states the schema permits and real data never reaches.
+        # ⭐ Both make the return undefined rather than infinite: a zero *base* has no ratio
+        # at all, and a zero *price* is a return of -inf, which makes the variance infinite.
+        # ⭐ **`inf` is as much a fabrication as `0.0`**, for the same reason.
+        if previous == 0.0 or current == 0.0:
+            returns.append(None)
+        else:
+            returns.append(math_log(current / previous))
+
     out: list[Indicator] = []
     for index in range(len(closes)):
         if index < period:
             out.append(None)
             continue
         window = returns[index - period + 1 : index + 1]
-        mean = sum(window) / period
-        variance = sum((value - mean) ** 2 for value in window) / period
+        # ⭐ Counted directly rather than as a running counter. ⭐ The running version was
+        # wrong twice in a row — a None enters the trailing window at ``pos + period - 1``
+        # and leaves at ``pos + period``, and both off-by-ones are invisible because the
+        # symptom is a series that is *masked for the rest of its life* rather than one
+        # that raises. At ``period = 20`` over 320 bars this is 6 400 comparisons; ⭐ the
+        # cost of being wrong by one bar is a chart that never draws again.
+        undefined = sum(1 for value in window if value is None)
+        if undefined > 0:
+            # ⭐ The window is defined over **bars**, so one bar with an undefined return
+            # makes every window containing it undefined. ⭐ The tempting alternative —
+            # drop the ``None`` and compute over 「the returns we could find」 — is a
+            # *different series*: it emits a value at a bar whose own trailing window is
+            # not defined, and it silently changes the meaning of every other bar too.
+            out.append(None)
+            continue
+        known = [value for value in window if value is not None]
+        mean = sum(known) / period
+        variance = sum((value - mean) ** 2 for value in known) / period
         out.append(variance**0.5 * TRADING_DAYS_PER_YEAR**0.5)
     return out
 

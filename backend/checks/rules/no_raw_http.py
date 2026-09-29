@@ -1,18 +1,18 @@
-"""S-01 — no raw HTTP outside the one construction site.
+"""S-01 — no raw network egress outside the named sites.
 
 **Defect guarded:** constitution 7.8 / 4.5. Rate limiting has to be *a function*,
 not a note asking everyone to remember to add a sleep. The moment a second call
-site reaches for ``httpx.get`` directly, the serialisation, jitter, user agent,
-circuit breaker and cache are all silently bypassed — and the symptom is not a
-crash, it is an IP ban twenty minutes later.
+site reaches for ``httpx.get`` directly — or opens its own socket, or its own SMTP
+session — the serialisation, jitter, user agent, circuit breaker and cache are all
+silently bypassed, and the symptom is not a crash, it is an IP ban twenty minutes later.
 
 Anti-pattern (forbidden)::
 
-    # anywhere outside core/http.py
+    # anywhere outside a named network site
     import httpx
     response = httpx.get(url, timeout=5)          # no UA, no jitter, no breaker
 
-    # even inside core/http.py, the module-level helper skips the shared Client
+    # even inside a network site, the module-level helper skips the shared Client
     response = httpx.get(url, headers=HEADERS)    # a new connection every call
 
 Correct form::
@@ -21,48 +21,44 @@ Correct form::
     def build_client(*, user_agent: str, headers=None) -> httpx.Client:
         return httpx.Client(timeout=DEFAULT_TIMEOUT, headers=merged, follow_redirects=True)
 
-    def _fetch(self, symbol: Symbol) -> str:
-        with build_client(user_agent=_MARKET_DATA_UA) as client:
-            response = client.get(url)
-
 Why a test cannot catch this: a test exercises the calls that exist. It cannot
-observe the call that *should not* exist — a second HTTP path is only reachable
+observe the call that *should not* exist — a second network path is only reachable
 through code the test never runs, and it looks perfectly correct in isolation.
 
-⭐ **Why this is a module allowlist and not a directory one (ADR-0031)**
+⭐ **Why this covers sockets and SMTP, not just HTTP (spec 042)**
 
-The rule used to allow *any* file under ``providers/``. That conflated two different
-things: the directory where market-data egress happens, and the set of places where
-building a client is legitimate. The gap between them is not hypothetical — a
-notification channel needs an HTTP client and is not a market data source, and
-``default_router()`` is a ⭐ **wrong** answer for it (routing, failover and a disk
-cache built for 腾讯/新浪/东财, applied to 「一条飞书消息」).
+It did not, until a real requirement forced the question. BaoStock — the candidate
+financial source measured in ``spec 041`` — speaks a **private socket protocol on port
+10030**, and ``smtplib`` has been in ``notify/email.py`` since spec 033.
 
-The rewrite is a **tightening**, not a loosening, and the number is countable:
+⭐ So for a year the rule's own premise was false. 「唯一入口」 is a claim about *all*
+egress, and the rule only enforced it for one transport. ⭐ **A socket opened in
+``providers/``'s neighbour would have been invisible** — not flagged, not reviewed,
+not rate limited. That is not a loophole to be exploited; it is a hole that was there
+waiting for the first requirement that used it.
 
-===================================  =========================================
-before: every ``.py`` under ``providers/``  4 files today, unbounded tomorrow
-after:  ``core/http.py``                     **1**
-===================================  =========================================
+⭐ **Matching is on the exact dotted module, never the top-level package.**
 
-``providers/sources.py`` no longer constructs a client; it calls the factory. A
-directory is not a reason — ⭐ 「the clients live here」 is a reason, and it can be
-said in one sentence and reviewed in one diff.
+``urllib`` is the proof that a coarse name cannot stand in for a capability: the same
+package ships ``urllib.parse`` (pure string parsing, which ``domain/card.py`` uses to
+read a card's ``source_url``) and ``urllib.request`` (an HTTP client). Matching
+``name.split(".")[0]`` would flag the parser as an egress path — ⭐ the same mistake
+ADR-0031 fixed one layer up, where a *directory* was standing in for a *module*.
 
 Three rules are enforced, in this order:
 
-1. Outside ``HTTP_AWARE_MODULES``, naming a raw-HTTP module at all is an error.
-2. Anywhere, the module-level helpers (``httpx.get``, ``requests.post``,
+1. Outside ``NETWORK_AWARE_MODULES``, naming a network module at all is an error.
+2. Anywhere, the module-level convenience helpers (``httpx.get``, ``requests.post``,
    ``urlopen`` …) are an error: they take no shared configuration.
-3. **Anywhere**, ``httpx.Client(...)`` may only be constructed inside
-   ``CONSTRUCTION_SITES`` and only in a factory function.
+3. **Anywhere**, a transport client may only be **constructed** inside
+   ``NETWORK_SITES``, and only in a factory function.
 
-⭐ **Rules 2 and 3 are unconditional, and that is what makes rule 1's allowlist
-safe to widen.** The old rule only checked construction *inside* the allowed
-directory, which is precisely how a directory turned into a permission. Now that
-construction is caught everywhere, a module may be allowed to *name* ``httpx`` in
-order to catch ``httpx.HTTPError`` without any way to build a rogue client — and
-that second, weaker permission gets its own list.
+⭐ **Rules 2 and 3 are unconditional, and that is what makes rule 1's allowlist safe to
+widen.** The old rule only checked construction *inside* the allowed directory, which is
+precisely how a directory turned into a permission. Now that construction is caught
+everywhere, a module may be allowed to *name* ``httpx`` in order to catch
+``httpx.HTTPError`` without any way to build a rogue client — and that second, weaker
+permission gets its own list.
 """
 
 from __future__ import annotations
@@ -84,15 +80,42 @@ CODE = "CHECK_RAW_HTTP"
 META = CheckMeta(
     check_id="S-01",
     slug="no-raw-http",
-    title="no raw HTTP outside the single construction site",
+    title="no raw network egress outside the named sites",
     priority="P0",
     code=CODE,
 )
 
 
-#: Modules that talk to the network. Importing any of these outside
-#: ``CONSTRUCTION_SITES`` means the single construction site has been bypassed.
-RAW_HTTP_MODULES = frozenset({"httpx", "requests", "aiohttp", "urllib3"})
+#: ⭐ **Exact dotted module names**, never top-level packages.
+#:
+#: ``urllib`` is why: it contains both ``urllib.parse`` (string parsing) and
+#: ``urllib.request`` (a client). A prefix rule cannot tell them apart, and
+#: ``domain/card.py`` legitimately imports the parser to read a card's provenance.
+#:
+#: ⭐ Written as literals so a static analyser can resolve them — the CWE-73 lesson is
+#: that an allowlist expressed in a computed form is an allowlist nothing can check.
+NETWORK_MODULES: frozenset[str] = frozenset(
+    {
+        "httpx",
+        "requests",
+        "aiohttp",
+        "urllib3",
+        # transports the rule did not used to know about (spec 042)
+        "socket",
+        "ssl",
+        "ftplib",
+        "imaplib",
+        "poplib",
+        "smtplib",
+        "http.client",
+        "urllib.request",
+        "urllib.error",
+        "xmlrpc.client",
+        # ⭐ **`urllib.parse` is deliberately absent.** It parses strings and opens
+        # nothing. Naming it here would make the rule cry wolf on real provenance code,
+        # and a rule that cries wolf is a rule somebody turns off.
+    }
+)
 
 #: Module-level convenience helpers that skip connection reuse entirely.
 CONVENIENCE_CALLS = frozenset(
@@ -117,30 +140,73 @@ CONVENIENCE_CALLS = frozenset(
     }
 )
 
-#: The functions allowed to build a client. Named rather than "the first one
+#: The functions allowed to build a transport client. Named rather than "the first one
 #: found" so the rule stays reviewable: there is one factory and it has a name.
-CLIENT_FACTORY_NAMES = frozenset({"_client", "_make_client", "_http_client", "build_client"})
+#:
+#: ⭐ **Adding a name here is the sanctioned way to satisfy this rule. The alternative —
+#: renaming the function to match an existing entry — is the mistake the project's own ruff
+#: config warns about** (``pyproject.toml``: 「editing a quotation to satisfy a linter is
+#: worse than the warning」). ⭐ A descriptive name that is missing here gets added with a
+#: reason; a good name never gets bent to fit a proxy.
+#:
+#: Each entry is a function that **returns a transport and does nothing else**. That is
+#: the property the rule actually wants, and this list is only a proxy for it — ⭐ which is
+#: why the proxy stays short and every addition carries a sentence.
+CLIENT_FACTORY_NAMES = frozenset(
+    {
+        "_client",  # providers/sources.py, spec 040
+        "build_client",  # core/http.py, ADR-0031
+        "_make_client",
+        "_http_client",
+        # SMTP. ⭐ `_smtp` is the obvious name; `notify/email.py` uses `_smtp_session`
+        # because what it returns is a *session* — already past `starttls`, and that
+        # distinction is the reason the function exists. Spec 042 found this by running
+        # the rule over the real tree, so the name is what the code wanted and the list
+        # moved to meet it.
+        "_smtp",
+        "_smtp_session",
+    }
+)
 
-CLIENT_CONSTRUCTORS = frozenset({"httpx.Client", "httpx.AsyncClient"})
+CLIENT_CONSTRUCTORS = frozenset(
+    {
+        "httpx.Client",
+        "httpx.AsyncClient",
+        "smtplib.SMTP",
+        "smtplib.SMTP_SSL",
+        "socket.socket",
+        "ftplib.FTP",
+        "imaplib.IMAP4",
+        "imaplib.IMAP4_SSL",
+        "urllib.request.OpenerDirector",
+    }
+)
 
 #: Relative to ``ScanContext.product``, which already points at ``src/alphacouncil``.
 #: ⭐ Paths, not package names: a package is a neighbourhood, and a neighbourhood's
 #: every future file inherits the permission. See ADR-0031.
-CONSTRUCTION_SITES: frozenset[Path] = frozenset({Path("core/http.py")})
+#:
+#: ⭐ **A construction site is named after the transport it opens**, and there are two:
+#: an HTTP client and an SMTP session. ⭐ This is the shape ADR-0031 arrived at — named
+#: modules, no directory, no exemption — and the reason it can absorb a second transport
+#: without becoming the thing it replaced.
+CONSTRUCTION_SITES: frozenset[Path] = frozenset(
+    {
+        Path("core/http.py"),  # the one place an HTTP client is constructed
+        Path("notify/email.py"),  # the one place an SMTP session is opened
+    }
+)
 
-#: ⭐ **Naming** a raw-HTTP module is a second, weaker permission than **constructing** a
-#: client, and the two have different scopes — which the old rule could not express,
-#: because it answered the second question with the first one's directory.
+#: ⭐ A module may **name** a network module — for its exceptions and its types —
+#: without being able to **construct** anything. A second, weaker permission with its own
+#: list, and a different scope from construction. ⭐ `providers/sources.py` is here and
+#: **not** in the set above: it catches `httpx.HTTPError` and annotates
+#: `httpx.Response`, and it does not build a client. Putting it in both is the mistake
+#: spec 039 removed, and the guard test in the suite is what keeps it gone.
 #:
-#: ``providers/sources.py`` must import ``httpx`` to catch ``httpx.HTTPError`` and to
-#: annotate ``httpx.Response``. That is not a bypass; the bypass would be constructing a
-#: client or calling a module-level helper, and ⭐ **rules 2 and 3 now catch both
-#: unconditionally** — so widening the import permission costs no safety at all.
-#:
-#: It was free only because the tightening happened first. Had rule 1 been widened before
-#: rule 3 stopped being conditional, this would have been a hole.
-#:
-#: Every entry needs a reason that is not 「it also wants to make requests」.
+#: It is free only because the tightening happened first: rule 3 is unconditional, so
+#: widening this list costs no safety. Had it been widened before rule 3 stopped being
+#: conditional, this would have been a hole.
 HTTP_AWARE_MODULES: frozenset[Path] = CONSTRUCTION_SITES | frozenset(
     {
         # catches `httpx.HTTPError` / `TimeoutException`, annotates `httpx.Response`
@@ -157,8 +223,19 @@ def _relative(ctx: ScanContext, path: Path) -> Path | None:
         return None
 
 
+def _is_network_module(name: str) -> bool:
+    """Whether a dotted module name is one of the network modules.
+
+    ⭐ **Exact match only.** An earlier version compared ``name.split(".")[0]`` against a
+    set of top-level names, which cannot tell ``urllib.parse`` from
+    ``urllib.request`` — and the first of those is a string parser that
+    ``domain/card.py`` imports to read a card's provenance.
+    """
+    return name in NETWORK_MODULES
+
+
 def run(ctx: ScanContext) -> CheckResult:
-    """Scan the product for HTTP access that bypasses the construction site."""
+    """Scan the product for network access that bypasses the named sites."""
     result = CheckResult()
     for path in ctx.python_files(ctx.product):
         tree = ctx.tree(path)
@@ -189,9 +266,7 @@ def run(ctx: ScanContext) -> CheckResult:
             elif called in CLIENT_CONSTRUCTORS:
                 # ⭐ Reported **everywhere**, not only outside a construction site. A
                 # client built anywhere else is the same defect whether or not the
-                # directory happens to be allowed, and branching on the allowlist here is
-                # how the old rule ended up permitting a whole package. This is also what
-                # makes widening `HTTP_AWARE_MODULES` above free.
+                # directory happens to be allowed.
                 enclosing = enclosing_function(tree, node)
                 if not may_construct or enclosing not in CLIENT_FACTORY_NAMES:
                     where = f"`{enclosing or '<module>'}`"
@@ -212,14 +287,12 @@ def run(ctx: ScanContext) -> CheckResult:
 
 
 def _report_imports(ctx: ScanContext, result: CheckResult, path: Path, tree: ast.Module) -> None:
-    """Rule 1: outside an http-aware module, naming a network library is the defect.
+    """Rule 1: outside a network-aware module, naming a transport library is the defect.
 
     ⭐ The fix text names ``build_client`` **and** ``default_router()``, because the old
-    text said only 「call the provider layer」 — which is correct for a caller that wants
-    market data and ⭐ **actively wrong for one that does not**: it tells a notification
-    channel to route a webhook through three-source failover and a disk cache. A rule
-    whose advice is wrong for a real case in this codebase teaches the next reader to
-    discount the whole rule.
+    text said only 「go through the provider layer」 — correct for a caller that wants
+    market data and ⭐ **actively wrong for one that does not**. A rule whose advice is
+    wrong for a real case in this codebase teaches the next reader to discount the rule.
     """
     fix = (
         "Build the client with `alphacouncil.core.http.build_client(...)`; "
@@ -228,24 +301,46 @@ def _report_imports(ctx: ScanContext, result: CheckResult, path: Path, tree: ast
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name.split(".")[0] in RAW_HTTP_MODULES:
+                if _is_network_module(alias.name):
                     result.error(
                         CODE,
-                        f"`import {alias.name}` outside an http-aware module",
+                        f"`import {alias.name}` outside a network-aware module",
                         target=format_target(ctx, path, node.lineno),
                         fix=fix,
                     )
-        elif (
-            isinstance(node, ast.ImportFrom)
-            and node.module
-            and node.module.split(".")[0] in RAW_HTTP_MODULES
-        ):
-            result.error(
-                CODE,
-                f"`from {node.module} import ...` outside an http-aware module",
-                target=format_target(ctx, path, node.lineno),
-                fix=fix,
-            )
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            # ⭐ Two forms, because the coarse package name and the fine capability are
+            # different things:
+            #
+            #   ``from urllib.request import urlopen``  → the module *is* the capability
+            #   ``from urllib import request``          → the module is the package, and
+            #                                                  the symbol is the capability
+            #
+            # A prefix rule catches the second by accident and ``urllib.parse`` with it.
+            if _is_network_module(node.module):
+                result.error(
+                    CODE,
+                    f"`from {node.module} import ...` outside a network-aware module",
+                    target=format_target(ctx, path, node.lineno),
+                    fix=fix,
+                )
+                continue
+            for alias in node.names:
+                if _is_network_module(f"{node.module}.{alias.name}"):
+                    result.error(
+                        CODE,
+                        f"`from {node.module} import {alias.name}` outside a "
+                        "network-aware module",
+                        target=format_target(ctx, path, node.lineno),
+                        fix=fix,
+                    )
 
 
-__all__ = ["CONSTRUCTION_SITES", "HTTP_AWARE_MODULES", "META", "run"]
+__all__ = [
+    "CLIENT_CONSTRUCTORS",
+    "CONSTRUCTION_SITES",
+    "HTTP_AWARE_MODULES",
+    "META",
+    "NETWORK_MODULES",
+    "run",
+]

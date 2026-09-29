@@ -281,6 +281,40 @@ class TestAnnualisedVolatility:
         result = annualised_volatility([100.0] * 40, period=20)
         assert result[-1] == pytest.approx(0.0)
 
+    def test_a_zero_close_makes_the_window_undefined_rather_than_flat(self) -> None:
+        """⭐ The `0.0` that was there before, and why it was wrong.
+
+        ``Quote.close`` is ``ge=0.0``, so a zero base is a state the schema permits and
+        real data never reaches. ⭐ A log return over a zero base is an **undefined
+        ratio**, so the volatility over any window containing it is undefined too — and
+        ``0.0`` claimed the price had not moved. The zero here is the *base*, and a
+        volatility of zero means 「nothing changed」, which is a different sentence.
+        """
+        closes = [100.0] * 35
+        closes[10] = 0.0  # ⭐ schema-legal, and it breaks two returns
+        result = annualised_volatility(closes, period=20)
+
+        assert len(result) == len(closes)
+        assert result[9] is None, "before the zero, the window is still warming up"
+        # ⭐ **Two** returns are undefined, not one: the fall *into* zero is -inf and the
+        # rise *out of* it has no base. Either end of the ratio being zero makes the
+        # return undefined, and both of them are here.
+        assert result[10] is None
+        assert result[11] is None
+        # ⭐ A return at position ``pos`` sits in the trailing window for bars
+        # ``pos … pos + period - 1``, so the last undefined one (``pos = 11``) masks
+        # through bar 30 and recovery is at 31. ⭐ Both ends asserted because the two
+        # off-by-ones that actually happened in this function were **one bar** wide, and
+        # the symptom was a series masked to the end rather than anything that raised.
+        assert result[11 + 20 - 1] is None
+        assert result[11 + 20] is not None
+        assert result[-1] is not None
+
+    def test_the_output_stays_one_entry_per_bar(self) -> None:
+        """⭐ Alignment is the property everything else rests on (spec 037 §1)."""
+        for closes in ([100.0] * 40, [0.0] + [100.0 + i for i in range(39)]):
+            assert len(annualised_volatility(closes, period=20)) == len(closes)
+
 
 class TestMaturityIsTheConstitution:
     """⭐ 红线 6: an immature result is blank, never a number."""
@@ -329,6 +363,19 @@ class TestMaturityIsTheConstitution:
             macd(values).dea,
             rsi(values, 14).rsi,
             bollinger(values, period=20).middle,
+            # ⭐ Added in spec 042, and the omission was the bug: `annualised_volatility`
+            # filled a zero log return whenever the previous close was 0, so a
+            # schema-legal zero base produced 0.0 where there is no ratio at all. ⭐ The
+            # list above was written by reading the function names off the module and
+            # **this one was not on it** — so the rule 「a warm-up bar is never 0.0」
+            # was never applied to it. Found by reading TSP's `scoring.py::_ratio`,
+            # which handles the same shape with `None`.
+            annualised_volatility(values, period=20),
+            true_range(
+                [value + 1.0 for value in values],
+                [value - 1.0 for value in values],
+                values,
+            ),
         ]
         for series in warmups:
             assert 0.0 not in series, "a warm-up bar is 0.0 rather than absent"

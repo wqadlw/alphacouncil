@@ -346,13 +346,26 @@ class TestS01NoRawHttp:
         )
         assert codes(no_raw_http.run(ctx)) == ["CHECK_RAW_HTTP"]
 
-    def test_the_construction_site_is_a_single_named_file(self, tmp_path: Path) -> None:
-        """⭐ A test, not a comment: the count is what makes 「改紧」 checkable.
+    def test_the_construction_sites_are_named_files_and_stay_few(self, tmp_path: Path) -> None:
+        """⭐ A property, not a count.
 
         The rewrite tightened this from 「every .py under providers/」 to one file. Nothing
         else records that, so nothing would notice it quietly widening again.
+
+        ⭐ **Spec 042 widened it to three, and that is deliberate** — the transport set
+        grew (HTTP · SMTP · soon a socket), and each site is a *transport*, not a
+        convenience. So the assertion changed shape: it no longer pins a number, it pins
+        the property that made the original narrowing worth doing. ⭐ A test that pins a
+        count is one that has to be edited the moment the world changes, and an edited
+        test is one nobody reads the second time.
         """
-        assert frozenset({Path("core/http.py")}) == no_raw_http.CONSTRUCTION_SITES
+        sites = no_raw_http.CONSTRUCTION_SITES
+        assert Path("core/http.py") in sites
+        # ⭐ Two-part paths only. A path with a directory in it is the ADR-0031 mistake
+        # returning, and it would be returning in a file that still cites ADR-0031.
+        assert all(len(site.parts) == 2 for site in sites), sorted(sites)
+        # ⭐ And it stays small. A dozen construction sites is a directory with extra steps.
+        assert len(sites) <= 4, f"the allowlist is growing again: {sorted(sites)}"
 
     def test_every_http_aware_module_is_a_construction_site_or_explains_itself(
         self, tmp_path: Path
@@ -360,6 +373,189 @@ class TestS01NoRawHttp:
         """⭐ A widened import allowlist must be justified by types, not by wanting HTTP."""
         for path in no_raw_http.HTTP_AWARE_MODULES - no_raw_http.CONSTRUCTION_SITES:
             assert path.parts[0] in {"providers"}, f"{path} may name httpx for no stated reason"
+
+
+class TestS01TransportsBeyondHttp:
+    """⭐ Spec 042: the rule's premise is 「唯一入口」, and that means *every* transport.
+
+    The gap was found by a requirement rather than by review: BaoStock — measured in
+    ``spec 041`` — speaks a private socket protocol, and ``smtplib`` had been in
+    ``notify/email.py`` since spec 033. ⭐ A socket opened next to ``providers/`` would
+    have been invisible to a rule whose title is 「no raw network egress」.
+    """
+
+    def test_a_socket_import_is_reported(self, tmp_path: Path) -> None:
+        ctx = make_ctx(tmp_path, {"backend/src/alphacouncil/services/feed.py": "import socket\n"})
+        assert codes(no_raw_http.run(ctx)) == ["CHECK_RAW_HTTP"]
+
+    def test_an_smtp_import_is_reported(self, tmp_path: Path) -> None:
+        ctx = make_ctx(
+            tmp_path, {"backend/src/alphacouncil/services/notify.py": "import smtplib\n"}
+        )
+        assert codes(no_raw_http.run(ctx)) == ["CHECK_RAW_HTTP"]
+
+    def test_a_raw_socket_construction_is_reported_even_in_a_named_package(
+        self, tmp_path: Path
+    ) -> None:
+        """⭐ Named file, wrong function: the two conditions again (see the test above)."""
+        ctx = make_ctx(
+            tmp_path,
+            {
+                "backend/src/alphacouncil/providers/sources.py": (
+                    "import socket\n\n\ndef fetch(host: str) -> None:\n"
+                    "    sock = socket.socket()\n"
+                )
+            },
+        )
+        assert codes(no_raw_http.run(ctx)) == ["CHECK_RAW_HTTP"]
+
+    def test_the_smtp_transport_itself_stays_silent(self, tmp_path: Path) -> None:
+        """⭐ ``notify/email.py`` opens the session; nothing else may."""
+        ctx = make_ctx(
+            tmp_path,
+            {
+                "backend/src/alphacouncil/notify/email.py": (
+                    "import smtplib\n\n\ndef _smtp(host: str, port: int):\n"
+                    "    return smtplib.SMTP(host, port, timeout=10)\n"
+                )
+            },
+        )
+        assert no_raw_http.run(ctx).issues == []
+
+    def test_the_socket_constructor_is_covered_too(self, tmp_path: Path) -> None:
+        """⭐ Not only the import — the construction, in a file that may import.
+
+        ⭐ The function is deliberately **not** factory-named. A factory name inside a
+        construction site is exactly what is allowed, so a test that used one would have
+        been asserting the opposite of what its name says.
+        """
+        ctx = make_ctx(
+            tmp_path,
+            {
+                "backend/src/alphacouncil/notify/email.py": (
+                    "import socket\n\n\ndef connect(host: str):\n"
+                    "    return socket.socket()\n"
+                )
+            },
+        )
+        assert codes(no_raw_http.run(ctx)) == ["CHECK_RAW_HTTP"]
+
+
+class TestS01TheUrllibTrap:
+    """⭐⭐ `urllib` is why matching cannot be on the top-level package.
+
+    The same package ships ``urllib.parse`` — pure string parsing, which
+    ``domain/card.py`` imports to read a card's ``source_url`` — and
+    ``urllib.request``, an HTTP client. ⭐ A ``name.split(".")[0]`` rule cannot tell
+    them apart, and this is the same mistake ADR-0031 fixed one layer up, where a
+    *directory* stood in for a *module*.
+    """
+
+    def test_urlparse_is_not_an_egress_path(self, tmp_path: Path) -> None:
+        """⭐ A real import in this codebase. If this test ever fails, the rule has started
+        crying wolf on provenance code — and a rule that cries wolf gets switched off."""
+        ctx = make_ctx(
+            tmp_path,
+            {
+                "backend/src/alphacouncil/domain/card.py": (
+                    "from urllib.parse import urlparse\n\n\n"
+                    "def host(url: str) -> str:\n"
+                    "    return urlparse(url).netloc\n"
+                )
+            },
+        )
+        assert no_raw_http.run(ctx).issues == []
+
+    def test_a_prefix_rule_would_have_failed_that(self, tmp_path: Path) -> None:
+        """⭐ The counterfactual, asserted — and it is **two** assertions, not one.
+
+        Making ``urllib.parse`` get flagged needs **two** changes at once: bare ``urllib``
+        in the set *and* a prefix match. ⭐ A single mutation cannot produce that, which is
+        why this pair of tests exists rather than a mutation: the mistake is a conjunction,
+        and a conjunction has no single point to break.
+
+        ⭐ Both halves are pinned separately, and the two halves are the two ways it can be
+        made — the next person to widen the set will reach for the top-level name, and a
+        prefix matcher is what makes that look correct.
+        """
+        assert "urllib" not in no_raw_http.NETWORK_MODULES
+        assert "urllib.parse" not in no_raw_http.NETWORK_MODULES
+        assert "urllib.request" in no_raw_http.NETWORK_MODULES
+
+    def test_matching_is_not_a_prefix_match(self, tmp_path: Path) -> None:
+        """⭐ The other half: a prefix matcher must not be able to reach ``urllib.parse``.
+
+        Asserted directly on the predicate rather than through a fixture, because the
+        predicate is the thing that would change and ⭐ a fixture can only show the
+        symptom.
+        """
+        assert not no_raw_http._is_network_module("urllib.parse")
+        assert not no_raw_http._is_network_module("urllib")
+        assert no_raw_http._is_network_module("urllib.request")
+        assert no_raw_http._is_network_module("http.client")
+        # ⭐ And a same-named module somewhere unrelated is not a network module.
+        assert not no_raw_http._is_network_module("alphacouncil.providers.socket_stub")
+
+    def test_the_client_form_is_caught(self, tmp_path: Path) -> None:
+        """⭐ ``from urllib.request import urlopen`` — the module *is* the capability."""
+        ctx = make_ctx(
+            tmp_path,
+            {
+                "backend/src/alphacouncil/services/pull.py": (
+                    "from urllib.request import urlopen\n"
+                )
+            },
+        )
+        assert codes(no_raw_http.run(ctx)) == ["CHECK_RAW_HTTP"]
+
+    def test_the_package_form_is_caught_too(self, tmp_path: Path) -> None:
+        """⭐ ``from urllib import request`` — the module is the package and the *symbol*
+        is the capability. ⭐ A prefix rule catches this by accident and ``urllib.parse``
+        along with it, which is exactly the trade this rule refuses to make."""
+        ctx = make_ctx(
+            tmp_path,
+            {"backend/src/alphacouncil/services/pull.py": "from urllib import request\n"},
+        )
+        assert codes(no_raw_http.run(ctx)) == ["CHECK_RAW_HTTP"]
+
+    def test_a_session_opened_outside_the_factory_is_reported(self, tmp_path: Path) -> None:
+        """⭐⭐ Written because a mutation survived, and this is the shape it missed.
+
+        ``test_the_smtp_transport_itself_stays_silent`` opens a session **inside** a
+        factory, and the real-tree test asserts the tree is silent. ⭐ Neither can tell
+        whether ``smtplib.SMTP(...)`` is even in the constructor set — drop it and both
+        stay green while a session opened outside a factory goes unreported.
+
+        That is the shape ``spec 042`` actually found in the product, one level up: the
+        session used to be opened inline in the retry loop, and nothing reported it until
+        the rule learned about SMTP. ⭐ A rule's coverage of 「the allowed shape」 is not
+        evidence about 「everything else」, and only a test of the second says so.
+        """
+        ctx = make_ctx(
+            tmp_path,
+            {
+                "backend/src/alphacouncil/notify/email.py": (
+                    "import smtplib\n\n\n"
+                    "def send(host: str, port: int) -> bool:\n"
+                    "    session = smtplib.SMTP(host, port, timeout=10)\n"
+                    "    return bool(session)\n"
+                )
+            },
+        )
+        assert codes(no_raw_http.run(ctx)) == ["CHECK_RAW_HTTP"]
+
+    def test_the_whole_real_product_is_silent(self) -> None:
+        """⭐ The false-positive test that matters: the real tree, not a fixture.
+
+        ``domain/card.py`` really does ``from urllib.parse import urlparse``, and
+        ``notify/email.py`` really does ``import smtplib``. ⭐ One of those is in the
+        allowlist and the other is not, and a rule that cannot tell them apart would
+        have made this project's own provenance code unreadable to its own gate.
+        """
+        product = Path(__file__).resolve().parents[2] / "src" / "alphacouncil"
+        assert product.is_dir(), f"the product tree moved: {product}"
+        ctx = ScanContext(repo_root=product.parents[2], registry=registry_meta())
+        assert no_raw_http.run(ctx).issues == []
 
     def test_a_new_file_beside_an_allowed_one_gets_nothing(self, tmp_path: Path) -> None:
         """⭐ The directory that used to be allowed is no longer allowed."""

@@ -74,6 +74,12 @@ SECURITY_MODES = frozenset({"ssl", "starttls", "none"})
 
 _MAX_ATTEMPTS = 2
 
+#: Connect timeout for the SMTP session, in seconds. ⭐ Named because the connect
+#: timeout and the per-attempt timeout are different numbers, and an inline ``10`` in
+#: two places is how they silently diverge — the same 「一个概念一个家」 rule the
+#: indicators module ran into with DEA's seed in ``regressions/0010``.
+_SMTP_TIMEOUT = 10.0
+
 #: Default subject. TSP's was ``"TickFlow 通知"`` — see the module docstring.
 _DEFAULT_SUBJECT = "AlphaCouncil"
 
@@ -104,6 +110,34 @@ def is_configured(config: dict[str, object]) -> bool:
     sender = str(config.get("from_address") or config.get("username") or "").strip()
     recipients = config.get("to_addresses")
     return bool(config.get("host") and sender and recipients)
+
+
+def _smtp_session(host: str, port: int, security: str) -> smtplib.SMTP:
+    """Open an SMTP session, already past ``starttls`` when that is the mode.
+
+    ⭐ **This is a factory, and it is one because ``S-01`` says a transport client may only
+    be constructed in a named factory function** (``CONSTRUCTION_SITES`` /
+    ``CLIENT_FACTORY_NAMES`` in ``checks/rules/no_raw_http.py``). ⭐ It was found by that
+    rule, on real code, when spec 042 widened S-01 to cover SMTP: the session used to be
+    opened inline inside the retry loop, so 「open a session」 and 「retry」 were the same
+    statement.
+
+    Splitting them is not only for the checker. The loop that calls this is about
+    **retry**, and the caller-facing contract is 「one message, or ``False``」; a TLS
+    handshake is neither. And the second ``ehlo`` below is the delicate part of the whole
+    file — ⭐ it belongs where there is exactly one of them, not inside a branch a retry
+    re-enters.
+    """
+    if security == "ssl":
+        return smtplib.SMTP_SSL(host, port, timeout=_SMTP_TIMEOUT)
+    session = smtplib.SMTP(host, port, timeout=_SMTP_TIMEOUT)
+    if security == "starttls":
+        session.ehlo()
+        session.starttls()
+        # ⭐ Required, not decorative: without the second `ehlo` the session
+        # keeps the pre-TLS capability set and some servers reject the login.
+        session.ehlo()
+    return session
 
 
 def send_email(
@@ -154,16 +188,7 @@ def send_email(
     for attempt in range(1, max_attempts + 1):
         smtp: smtplib.SMTP | None = None
         try:
-            if security == "ssl":
-                smtp = smtplib.SMTP_SSL(host, port, timeout=10)
-            else:
-                smtp = smtplib.SMTP(host, port, timeout=10)
-                if security == "starttls":
-                    smtp.ehlo()
-                    smtp.starttls()
-                    # ⭐ Required, not decorative: without the second `ehlo` the session
-                    # keeps the pre-TLS capability set and some servers reject the login.
-                    smtp.ehlo()
+            smtp = _smtp_session(host, port, security)
             if username:
                 smtp.login(username, password)
             smtp.send_message(message)
