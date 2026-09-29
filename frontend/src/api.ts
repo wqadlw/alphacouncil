@@ -519,6 +519,50 @@ export function getWatchlistQuotes(): Promise<PoolQuote[]> {
 }
 
 /** One predicate the server found due, with the decision it came from. */
+/**
+ * ⭐ Why the page says what it says about a due criterion.
+ *
+ * `crossed` / `not_crossed` are facts about the **comparison**.
+ * `warming` / `undetermined` / `no_bars` are facts about **us** — the metric is too
+ * young, or the catalogue has never heard of it, or the source has no bars.
+ *
+ * ⭐ The last three are kept apart because they call for different reader actions
+ * (「等一周」/「这里不会有」/「换个代码」), and collapsing them into 「条件没成立」 would
+ * have the program vouching for a comparison nobody performed.
+ */
+export type MetricState =
+  | 'crossed'
+  | 'not_crossed'
+  | 'warming'
+  | 'undetermined'
+  | 'no_bars'
+
+export interface MetricReading {
+  state: MetricState
+  /** The metric's name, e.g. `MA20`. Falls back to the raw token when unknown. */
+  label: string
+  /** `null` whenever `state` is not a comparison. ⭐ Never `0` (红线 6). */
+  value: number | null
+  /**
+   * Which bar the value came from. ⭐ `null` for `undetermined` and `no_bars`, and set
+   * for `warming` — a second, independent signal that separates 「too young to say」 from
+   * 「never going to say」 even if a caller only looks at this.
+   */
+  as_of: string | null
+  /**
+   * How many bars this metric needs before it has a value. ⭐ `null` for a price fact,
+   * which needs one bar and never warms up.
+   */
+  period: number | null
+  /**
+   * ⭐ How many bars were actually read, counted **server-side**. ⭐ Sent rather than
+   * derived here: trading days are not calendar days, and a client-side count is wrong by
+   * the number of public holidays — which would make 「还差 N 根」 a promise the page
+   * does not keep.
+   */
+  bars_available: number | null
+}
+
 export interface AttentionItem {
   kind: 'kill_criterion_due'
   item: {
@@ -529,6 +573,13 @@ export interface AttentionItem {
     action: DecisionAction
     criterion: KillCriterion
   }
+  /**
+   * ⭐ Absent means the server could not read any bars for this instrument, which is
+   * **not** the same as a metric that evaluated cleanly to `warming`. ⭐ The distinction
+   * is "we have no data at all" against "we have the data and the metric is too young" —
+   * a different fault, on a different side, with a different fix.
+   */
+  metric: MetricReading | null
 }
 
 /** Whether the market opens today — or that the probe could not tell. */

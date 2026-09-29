@@ -192,6 +192,18 @@ test.describe('今日页枢纽', () => {
                 as_of: '2026-09-20',
               },
             },
+            // ⭐ Added in spec 040. `revenue_yoy` is a financial metric and D4 is not
+            // built, so the honest state is `undetermined` — ⭐ and this fixture is a
+            // **regression** check on the pre-existing block, so it must carry the real
+            // contract rather than lean on the defensive `undefined` path.
+            metric: {
+              state: 'undetermined',
+              label: 'revenue_yoy',
+              value: null,
+              as_of: null,
+              period: null,
+              bars_available: null,
+            },
           },
         ],
         due: due(1, 0),

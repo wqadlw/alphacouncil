@@ -41,6 +41,7 @@ from pydantic import BaseModel, Field
 from alphacouncil.api.deps import DatabaseConnection, MarketData
 from alphacouncil.api.routes.decisions import KillCriterionRead
 from alphacouncil.core.time import utc_millis
+from alphacouncil.domain.criterion_eval import CriterionVerdict, evaluate
 from alphacouncil.domain.decision import DecisionAction
 from alphacouncil.domain.trading import (
     TradingDayBasis,
@@ -48,7 +49,7 @@ from alphacouncil.domain.trading import (
     TradingDayVerdict,
     verdict_for,
 )
-from alphacouncil.models.market import AssetType, DataStatus, Market, Symbol
+from alphacouncil.models.market import AssetType, DataStatus, Market, Quote, Symbol
 from alphacouncil.storage.repositories import decisions as decision_repository
 from alphacouncil.storage.repositories import reviews as review_repository
 from alphacouncil.storage.repositories import scheduling as scheduling_repository
@@ -92,11 +93,57 @@ class AttentionKind(StrEnum):
     KILL_CRITERION_DUE = "kill_criterion_due"
 
 
+class MetricStateRead(BaseModel):
+    """⭐ What we could say about the criterion's metric, and what that means.
+
+    ⭐ **This is the field the feature is for.** ``state`` is why the answer is the shape it
+    is, and it is separate from ``value`` because 「条件没成立」 and 「我们没法算这个」 are
+    different sentences with different next steps — a single nullable ``value`` would
+    render them identically.
+    """
+
+    state: CriterionVerdict = Field(
+        description=(
+            "⭐ `crossed` / `not_crossed` are facts about the comparison. "
+            "`warming` / `undetermined` / `no_bars` are facts about **us**, and the page "
+            "must not present them as facts about the reader's decision."
+        )
+    )
+    label: str = Field(description="The metric's name, e.g. `MA20`.")
+    value: float | None = Field(
+        default=None,
+        description="The current value. `None` whenever `state` is not a comparison.",
+    )
+    as_of: date | None = Field(
+        default=None, description="Which bar the value came from. `None` when there was none."
+    )
+    period: int | None = Field(
+        default=None,
+        description=(
+            "⭐ How many bars this metric needs. Present on `warming` so the page can say "
+            "「还差 N 根」 — a deferral with a date, rather than a dead end. `None` for a "
+            "price fact, which never warms up."
+        ),
+    )
+    bars_available: int | None = Field(
+        default=None,
+        description=(
+            "⭐ How many bars were actually read. ⭐ Sent rather than derived in the client: "
+            "counting trading days in TypeScript would be a second implementation of a "
+            "quantity this side knows exactly, and wrong by the number of public holidays "
+            "— the failure spec 038 found in the indicator layer, one layer down."
+        ),
+    )
+
+
 class AttentionRead(BaseModel):
     """One line of "需要你处理" — a fact, with a way out (the instrument page)."""
 
     kind: AttentionKind = AttentionKind.KILL_CRITERION_DUE
     item: DueCriterionRead
+    #: ⭐ Added in spec 040. Absent means "we could not read any bars for this instrument",
+    #: which is **not** the same as a metric that evaluated cleanly to `warming`.
+    metric: MetricStateRead | None = None
 
 
 class DueCount(BaseModel):
@@ -184,30 +231,76 @@ def today(connection: DatabaseConnection, market_data: MarketData) -> TodayRead:
 
     The comparison date is the server's local calendar date — which on this
     product *is* the reader's date, the server being the reader's own desktop.
+
+    ⭐ Since spec 040 a due criterion is also **evaluated**: the metric the reader typed is
+    resolved against real bars and compared to their own threshold. Before that this
+    function only ever asked 「到期了吗」, which is why the page had to say 「系统还没有指标
+    数据源」 — a sentence that became false when spec 034/037/038 landed.
     """
     now = datetime.now().astimezone()
     today_date = now.date()
     attention: list[AttentionRead] = []
+    # ⭐ One fetch per instrument, not per criterion. A decision with four kill criteria
+    # on the same stock must not pull the same 215 bars four times — the router caches,
+    # but 「it happens to be cached today」 is not a property the code can rely on, and
+    # §4.5 treats repeated egress as the thing that gets the IP banned.
+    bars_by_symbol: dict[Symbol, list[Quote]] = {}
+
+    def bars_for(symbol: Symbol) -> list[Quote] | None:
+        if symbol in bars_by_symbol:
+            return bars_by_symbol[symbol]
+        result = market_data.get_daily(symbol)
+        rows = sorted(result.value, key=lambda quote: quote.trade_date) if (
+            result.status is DataStatus.OK and result.value is not None
+        ) else None
+        # ⭐ Cached as ``None`` too. Re-fetching an instrument that just failed turns a
+        # transient outage into N requests, and §4.5 is explicit that a source which has
+        # already refused us should not be asked again in a loop.
+        bars_by_symbol[symbol] = rows  # type: ignore[assignment]
+        return rows
+
     for row in decision_repository.list_all(connection):
+        symbol = Symbol(market=row.market, code=row.code)
+        bars: list[Quote] | None = None
+        loaded = False
         for criterion in row.kill_criteria:
-            if criterion.due(as_of=today_date):
-                attention.append(
-                    AttentionRead(
-                        item=DueCriterionRead(
-                            decision_id=row.id,
-                            market=row.market,
-                            code=row.code,
-                            display=Symbol(market=row.market, code=row.code).full,
-                            action=row.action,
-                            criterion=KillCriterionRead(
-                                metric=criterion.metric,
-                                operator=criterion.operator,
-                                threshold=criterion.threshold,
-                                as_of=criterion.as_of,
-                            ),
-                        )
-                    )
+            if not criterion.due(as_of=today_date):
+                continue
+            # ⭐ Lazy: a decision with no due criterion never touches the network.
+            if not loaded:
+                bars = bars_for(symbol)
+                loaded = True
+            metric: MetricStateRead | None = None
+            if bars is not None:
+                evaluation = evaluate(criterion, bars, as_of=today_date)
+                metric = MetricStateRead(
+                    state=evaluation.verdict,
+                    label=evaluation.reading.label,
+                    value=evaluation.reading.value,
+                    as_of=evaluation.reading.as_of,
+                    # ⭐ No bars at all means there is nothing to count towards the
+                    # period, so the count would be a fabrication.
+                    period=evaluation.reading.period if evaluation.reading.as_of else None,
+                    bars_available=len(bars) if evaluation.reading.as_of else None,
                 )
+            attention.append(
+                AttentionRead(
+                    item=DueCriterionRead(
+                        decision_id=row.id,
+                        market=row.market,
+                        code=row.code,
+                        display=Symbol(market=row.market, code=row.code).full,
+                        action=row.action,
+                        criterion=KillCriterionRead(
+                            metric=criterion.metric,
+                            operator=criterion.operator,
+                            threshold=criterion.threshold,
+                            as_of=criterion.as_of,
+                        ),
+                    ),
+                    metric=metric,
+                )
+            )
     return TodayRead(
         generated_at=utc_millis(),
         attention=attention,

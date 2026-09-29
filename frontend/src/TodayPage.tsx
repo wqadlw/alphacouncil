@@ -42,6 +42,7 @@ import {
   formatPredicate,
 } from './format'
 import { POOL_HREF, instrumentHref, queueHref, type QueueName } from './routing'
+import { criterionVerdict } from './criterionVerdict'
 import QuoteCell from './QuoteCell'
 import { Badge, Rule } from './components/ui'
 import { DataTable, type Column } from './components/data/DataTable'
@@ -92,7 +93,7 @@ export default function TodayPage() {
       <Section
         title="需要你处理的"
         count={today.data?.attention.length ?? 0}
-        note="到期不等于触发：系统还没有指标数据源，能不能成立要你自己看一眼。"
+        note="观察期已到不代表判据成立；成立不成立、以及我们能不能算，看下面每一行自己怎么说。"
       >
         {/*
           Rule 8: an empty state is a statement of fact plus what it means, and
@@ -102,9 +103,13 @@ export default function TodayPage() {
           been deleted. The second half is the part worth writing down — without
           it an empty page reads as data loss.
 
-          `today.spec.ts` pins this sentence, and it is pinned for the right
-          reason: it is the one place the page states a fact about the reader's
-          own record rather than about the market.
+          ⭐ **The section note used to lie.** It read 「到期不等于触发：系统还没有指标
+          数据源」 — and that stopped being true when spec 034 gave the endpoint an HTTP
+          exit, spec 037 computed the indicators and spec 038 drew them. ⭐ A false
+          sentence about our own debt is worse than no sentence: it told the reader the
+          gap was a missing dependency rather than a missing function, and it was ours.
+          The replacement says the true thing — the date arriving is not the comparison,
+          and the row below is which one you are looking at.
         */}
         {today.data && today.data.attention.length === 0 ? (
           <p className="px-4 py-2 text-[13px] text-ink-soft">
@@ -198,38 +203,46 @@ function Section({
 /** One due criterion, as a row rather than a card. */
 function AttentionRow({ item }: { item: AttentionItem }) {
   const { decision_id: decisionId, display, action, criterion } = item.item
+  const sentence = criterionVerdict(item.metric)
   return (
     <a
       href={instrumentHref(item.item.market, item.item.code)}
       className="block border-b border-[color:var(--color-rule-soft)] border-l-2 border-l-transparent px-4 py-2 no-underline data-[motion=l1] hover:border-l-[color:var(--color-brass)] hover:bg-paper-soft"
       data-testid="attention-row"
+      data-crossed={sentence.crossed ? 'true' : 'false'}
+      data-adjudicable={sentence.adjudicable ? 'true' : 'false'}
     >
       <div className="flex items-baseline gap-2">
         <span className="num text-[12px] text-ink">{display}</span>
         <Badge tone="neutral">{ACTION_LABEL[action]}</Badge>
         <span className="text-[12px] text-ink-faint">· 决策 {formatMoment(decisionId)}</span>
       </div>
-      {/* ⭐ The sentence, verbatim: 「…你写的失效条件「…」观察期已到 —— 去核实数据。」
+      {/* ⭐ One sentence, five states, and the state is carried by the clause.
 
-          The first draft of this row split it — a criterion clause here and a
-          right-aligned 「去核实数据」 link there — which read tidier and broke two
-          things. `today.spec.ts` asserts both `观察期已到` and `去核实数据` on the
-          same sentence, and Playwright's strict mode rejects a `getByText` that
-          resolves to two elements, so the split made a passing assertion fail on
-          its own success.
+          Still one clause and still one element: the first draft split it into a
+          criterion fragment and a right-aligned link, which read tidier and broke two
+          things. `today.spec.ts` asserted both parts on the same sentence, and
+          Playwright's strict mode rejects a `getByText` resolving to two elements, so
+          the split made a passing assertion fail on its own success.
 
-          More to the point, the split lost the meaning. **「观察期已到 —— 去核实数据」**
-          is one clause: the observation window closed, and what that obliges you
-          to do is go and look. Set as two fragments on one line it reads as a
-          status plus a link, which is a weaker claim than the sentence makes, and
-          the weaker claim is the one that would let a reader think the criterion
-          had already been adjudicated. `已触发` must never appear (spec 005 FR-4) —
-          the system has no metric source and has decided nothing.
+          ⭐ But the reason for the split mattered more than the split. As fragments it
+          read as a status plus a link — a weaker claim than the sentence makes, and the
+          weaker claim is the one that would let a reader think the criterion had already
+          been adjudicated. ⭐ Since spec 040 it **has** been adjudicated, so the
+          assertion that forbade 「已触发」 went away with the fact that forbade it.
 
-          `formatPredicate` already renders the date, so nothing is prepended here;
-          writing `截至 {as_of}，{formatPredicate(...)}` printed the date twice. */}
-      <div className="mt-0.5 text-[13px] text-ink">
-        你写的失效条件「{formatPredicate(criterion)}」观察期已到 —— 去核实数据。
+          ⭐ The accent marks only `crossed`, and it is `--color-warn` — ⭐ **not
+          `--color-up`**, which the first draft used. That token means 「涨」 on every
+          chart in this product, and a crossed kill criterion is the opposite news. ⭐
+          Reusing it would make 「your own criterion failed」 render in the colour the
+          reader has been trained to read as 「up」, and the two would fight on the same
+          screen. The three 「we don't know」 states keep the neutral treatment, because a
+          louder rendering of 「we could not check」 would be the page presenting its own
+          gap as news about the reader's decision. */}
+      <div
+        className={`mt-0.5 text-[13px] ${sentence.crossed ? 'text-[color:var(--color-warn)]' : 'text-ink'}`}
+      >
+        你写的失效条件「{formatPredicate(criterion)}」{sentence.verdict}
       </div>
     </a>
   )

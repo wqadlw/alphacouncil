@@ -119,6 +119,17 @@ export function todayClosed(): Body {
           action: 'buy',
           criterion: { metric: 'revenue_yoy', operator: '<', threshold: 0.55, as_of: '2026-09-20' },
         },
+        // ⭐ `revenue_yoy` is a financial metric, and D4 is not built — so the honest
+        // answer is `undetermined`, and the page has to say so rather than let a
+        // criterion nobody evaluated look like one that held.
+        metric: {
+          state: 'undetermined',
+          label: 'revenue_yoy',
+          value: null,
+          as_of: null,
+          period: null,
+          bars_available: null,
+        },
       },
     ],
     due: due(),
@@ -126,6 +137,65 @@ export function todayClosed(): Body {
       verdict: 'non_trading_day',
       basis: 'weekend',
       last_trading_date: '2026-09-24',
+      checked_at: STAMP,
+    },
+  }
+}
+
+/**
+ * ⭐ One due criterion per evaluable state (spec 040).
+ *
+ * Four rows on purpose: the three 「we cannot tell you」 states must be **distinguishable
+ * on screen**, and a fixture carrying only one of them cannot prove that. A single
+ * "no data" sentence for all of them is the defect §4.6 names.
+ */
+export function todayEveryState(): Body {
+  const row = (
+    id: string,
+    metric: string,
+    state: string,
+    value: number | null,
+    as_of: string | null,
+    period: number | null = null,
+    bars: number | null = null,
+  ) => ({
+    kind: 'kill_criterion_due',
+    item: {
+      decision_id: id,
+      market: 'sh',
+      code: '600519',
+      display: '600519.SH',
+      action: 'buy' as const,
+      criterion: { metric, operator: '<' as const, threshold: 1200, as_of: '2026-09-20' },
+    },
+    metric: { state, label: metric, value, as_of, period, bars_available: bars },
+  })
+  return {
+    generated_at: STAMP,
+    attention: [
+      row('2026-09-20T01:00:00.000Z', 'ma20', 'crossed', 1185.3, '2026-09-29'),
+      row('2026-09-20T02:00:00.000Z', 'ma60', 'warming', null, '2026-09-29', 60, 12),
+      row('2026-09-20T03:00:00.000Z', 'revenue_yoy', 'undetermined', null, null),
+      {
+        kind: 'kill_criterion_due',
+        item: {
+          decision_id: '2026-09-20T04:00:00.000Z',
+          market: 'sh',
+          code: '600519',
+          display: '600519.SH',
+          action: 'buy' as const,
+          criterion: { metric: 'close', operator: '<' as const, threshold: 1200, as_of: '2026-09-20' },
+        },
+        // ⭐ `null` — the server could not read any bars at all. A different fault from
+        // `warming`, on a different side, and the page must not merge them.
+        metric: null,
+      },
+    ],
+    due: due(),
+    market_status: {
+      verdict: 'trading_day',
+      basis: 'probe',
+      last_trading_date: '2026-09-29',
       checked_at: STAMP,
     },
   }
