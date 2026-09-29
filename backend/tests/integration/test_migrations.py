@@ -170,6 +170,23 @@ def _add_an_instrument_and_a_reason(connection: sqlite3.Connection) -> None:
     )
 
 
+
+def _latest_version() -> int:
+    """The newest migration on disk.
+
+    ⭐ Three tests assert 「everything after where this database was sitting, got
+    applied」, and they were reading that off a **hardcoded tuple**. So every new
+    migration broke three tests in a way that looked like a migration bug and was a
+    test-data bug — and six migrations landed with them red, because the gate runs
+    ``tests/unit`` only.
+
+    The starting version stays hardcoded in those tests, because that is their premise.
+    The tail is the conclusion, and a conclusion derived from the world cannot drift.
+    """
+    return max(item.version for item in migrate.load_migrations())
+
+
+
 class TestFreshInstall:
     def test_a_new_database_reaches_the_newest_version(
         self, tmp_path: Path, connect: Connect
@@ -752,9 +769,10 @@ class TestTheRealSecondMigration:
 
         report = migrate.apply(connection, database_path=database)
 
-        assert report.applied == (2, 3, 4, 5, 6)
+        latest = _latest_version()
+        assert report.applied == tuple(range(2, latest + 1))
         assert report.from_version == 1
-        assert migrate.schema_version(connection) == 6
+        assert migrate.schema_version(connection) == latest
         row = connection.execute(
             "SELECT reason FROM watchlist_events WHERE code = ?", ("600519",)
         ).fetchone()
@@ -831,9 +849,10 @@ class TestTheRealThirdMigration:
 
         report = migrate.apply(connection, database_path=database)
 
-        assert report.applied == (3, 4, 5, 6)
+        latest = _latest_version()
+        assert report.applied == tuple(range(3, latest + 1))
         assert report.from_version == 2
-        assert migrate.schema_version(connection) == 6
+        assert migrate.schema_version(connection) == latest
         # Watchlist row preserved
         row = connection.execute(
             "SELECT reason FROM watchlist_events WHERE code = ?", ("600519",)
@@ -876,7 +895,7 @@ class TestTheRealFourthMigration:
             (NOW, NOW),
         )
 
-    def test_a_version_three_database_upgrades_to_version_four(
+    def test_a_version_three_database_upgrades_to_the_newest(
         self, tmp_path: Path, connect: Connect
     ) -> None:
         database = tmp_path / "alphacouncil.db"
@@ -886,9 +905,10 @@ class TestTheRealFourthMigration:
 
         report = migrate.apply(connection, database_path=database)
 
-        assert report.applied == (4, 5, 6)
+        latest = _latest_version()
+        assert report.applied == tuple(range(4, latest + 1))
         assert report.from_version == 3
-        assert migrate.schema_version(connection) == 6
+        assert migrate.schema_version(connection) == latest
         # The existing card survives the upgrade.
         row = connection.execute("SELECT status FROM cards WHERE id = 'card_1'").fetchone()
         assert row is not None and row[0] == "active"
@@ -944,3 +964,26 @@ class TestTheRealFourthMigration:
             with pytest.raises(sqlite3.IntegrityError, match="append-only"):
                 connection.execute(sql)
 
+
+class TestTheVersionNumberItself:
+    """⭐ The one assertion in this file that is *meant* to be edited by hand.
+
+    Every other expectation here is derived from the files on disk, which means a test
+    saying 「everything after where this database was sitting, got applied」 would also pass
+    when there are no migrations at all. This one pins the absolute number so that a
+    derivation going quietly wrong cannot hide behind itself.
+
+    ⭐ The failure message tells the next person what to do, because a bare
+    ``assert 10 == _latest_version()`` reads like a bug in the code under test.
+    """
+
+    def test_the_newest_migration_is_the_one_this_release_expects(self) -> None:
+        versions = sorted(item.version for item in migrate.load_migrations())
+        assert versions == list(range(1, len(versions) + 1)), (
+            f"migration versions are not contiguous from 1: {versions}"
+        )
+        assert versions[-1] == 10, (
+            f"the newest migration is {versions[-1]}, not 10. "
+            "If that is intended: bump this number, and check that the release notes "
+            "and .ai/status.md agree with it."
+        )

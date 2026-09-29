@@ -14,6 +14,13 @@ Two constitution rules are enforced here rather than remembered:
   must never be mistaken for a complete run. This is not theoretical: on
   2026-09-26 `pytest tests/unit -m unit` printed *"54 passed, 47 deselected"* and
   still looked green. Skipped gates therefore fail `check`.
+
+  ⭐ **Spec 035 added the other half of that rule.** T-19 is about gates that are
+  *declared but skipped*; this was the opposite — a whole test directory that was
+  **never declared at all**, so nothing reported it missing. Three migration tests
+  sat red through six migrations while `check` printed 10/10. ⭐ A gate that silently
+  skips part of what it covers fails the same way as one that promises more than it
+  does, because the gap is invisible in both cases.
 """
 
 from __future__ import annotations
@@ -65,6 +72,19 @@ GATES: dict[str, Gate] = {
         "test",
         "pytest tests/unit",
         (_PY, "-m", "pytest", "tests/unit", "-m", "unit", "-q"),
+    ),
+    # ⭐ **Spec 035.** `tests/integration` had never been in the gate — it migrates real
+    # databases, and three of its tests sat **red through six migrations** while the gate
+    # reported 10/10. A guardrail that silently skips part of what it covers fails the same
+    # way as one that promises more than it does: the gap is invisible either way.
+    #
+    # Separate from `test` on purpose, so a failure names which half failed. Merging them
+    # would also have hidden this: the reason nobody noticed for six migrations is that
+    # nobody ran them, and a merged step reads as 「the tests pass」.
+    "test-integration": Gate(
+        "test-integration",
+        "pytest tests/integration (real migrations, real databases)",
+        (_PY, "-m", "pytest", "tests/integration", "-q"),
     ),
     "test-cov": Gate(
         "test-cov",
@@ -142,6 +162,9 @@ CHECK: tuple[str, ...] = (
     "licenses",
     "check-static",
     "test",
+    # ⭐ Spec 035: the integration suite migrates real databases. It was never in
+    # either set, so three of its tests sat red through six migrations.
+    "test-integration",
     "frontend-typecheck",
     "frontend-lint",
     "frontend-test",
@@ -156,6 +179,10 @@ CHECK_LITE: tuple[str, ...] = (
     "typecheck",
     "licenses",
     "test",
+    # ⭐ 4.4s measured, against 3 minutes for the unit suite — and this is the daily
+    # driver, whose own comment says a gate that only runs in CI is a gate that runs
+    # after the commit that broke it.
+    "test-integration",
     "frontend-typecheck",
     "frontend-lint",
     "frontend-test",
