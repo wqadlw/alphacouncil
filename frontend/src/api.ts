@@ -774,3 +774,58 @@ export function convergeCard(cardId: string, reason: string): Promise<Card> {
     body: JSON.stringify({ reason }),
   })
 }
+
+export interface DailyBar {
+  symbol: { market: string; code: string }
+  trade_date: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+  /**
+   * Turnover in CNY, or `null` when the source does not publish it.
+   *
+   * ⭐ Never `0`. Verified live against Tencent on 2026-09-29: 214 bars, every one
+   * `null`. `close * volume` would be an estimate wearing the costume of a
+   * measurement, which is why the model leaves the field nullable.
+   */
+  amount: number | null
+}
+
+/**
+ * ⭐ Same envelope as `QuoteResult`, field for field.
+ *
+ * A second shape for the same four states would let the two disagree about what a fetch
+ * can be in, and the disagreement would show up as a branch that is unreachable in one
+ * component and reachable in the other.
+ */
+export interface DailyResult {
+  status: DataStatus
+  value: DailyBar[] | null
+  reason: string | null
+  detail: string | null
+  error_code: string | null
+  source: string | null
+  fetched_at: string | null
+  /** True when every live source failed and these are the last known good bars. */
+  stale: boolean
+}
+
+/**
+ * Daily bars for one instrument, oldest first.
+ *
+ * ⭐ The four states come back as they arrive. Mapping `no_data` onto an empty array here
+ * would move the distinction into the component, and the component is where it gets lost.
+ */
+export function getDaily(
+  market: string,
+  code: string,
+  query: { start?: string; end?: string } = {},
+): Promise<DailyResult> {
+  const search = new URLSearchParams()
+  if (query.start !== undefined) search.set('start', query.start)
+  if (query.end !== undefined) search.set('end', query.end)
+  const suffix = search.size > 0 ? `?${search.toString()}` : ''
+  return request<DailyResult>(`/api/v1/instruments/${market}/${code}/daily${suffix}`)
+}

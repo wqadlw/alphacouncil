@@ -247,9 +247,15 @@ v1.0 写于 2026-09-25，当时项目方向尚未收敛。v2.0 做了四处**结
 | **2026-09-28** | `lucide-react` | **仅此一个图标库**。`前端资源与打磨规格` §3.1 **早已选定 Lucide**（ISC，~1,600 图标），§5 规定"细描边、只用 `currentColor`、⛔ 禁止 emoji 作功能图标" —— 规范已定，只是从未实现 | spec 025 |
 | **2026-09-28** | `class-variance-authority` · `clsx` · `tailwind-merge` | **仅作为组件变体与类名合并的工具**。这三者**就是 shadcn/ui 的全部运行时**。`前端资源与打磨规格` §4.1 坚持 shadcn 的理由是"源码复制进仓库 + **没有运行时依赖**" —— 本条即按该理由落地：**手写组件，不引入 Radix** | spec 025 |
 | **2026-09-28** | `@milkdown/core` · `@milkdown/react` · `@milkdown/preset-commonmark` | **Markdown 编辑器**。`前端资源与打磨规格` §4.3 要求的"块级编辑"、§A1 要求的 `[[双向链接]]` 载体。`research/09` 把「Markdown 编辑器」列为 12 项缺口的**第 1 号**。**实测 7.22.2 `license: MIT`** | spec 026 |
+| **2026-09-29** | `lightweight-charts` | **仅此一个图表库，且仅用于 K 线**。⭐ 批准依据：主人指令「这个项目是怎么获取数据的、怎么展示数据的，**全部拿过来**」（TSP 的展示层用 `echarts` + `lightweight-charts`），以及其后的「继续」；时间 2026-09-29，在 §3.2 的四点申请记录摆在主人面前之后。选它而非 `echarts` 的理由：⭐ 本项目只需要**一件**蜡烛图，而 echarts 是全功能图表框架；`recharts` 本就未批准。实测 **Apache-2.0**（我第一次口述时说成了 MIT，那是不对的）。四点记录（含体积实测）见 `.ai/specs/034-kline/dependency-record.md` | spec 034 |
 
 **明确未批准、且不得擅自引入**：shadcn/ui 全量（Radix 一整套）· TanStack Query / Router ·
-Zustand · React Hook Form + Zod · Recharts · auto-animate / motion / GSAP · 图表库 · 自托管字体包。
+Zustand · React Hook Form + Zod · Recharts · auto-animate / motion / GSAP · ~~图表库~~ · 自托管字体包。
+
+> 「图表库」已于 2026-09-29 批准 **仅 `lightweight-charts` 且仅用于 K 线**（见上表）。
+> ⭐ **移出这一项不等于放开这一类** —— 新增第二个图表库仍要走 §3.2 的四点与人工确认。
+> ⚠️ 另注：本文档 §技术选型 的表格仍把 `Recharts（简单统计）` 列为可选之一，
+> 而它在本节是**明确未批准**的 —— 该矛盾先于本 spec 存在，**留给主人裁定，未擅自改动**。
 
 **机制**：`frontend/src/styleguide.test.ts` 的 **V-07** 直接读 `package.json`，
 出现上表以外的任何**直接**运行时依赖即测试失败 —— 批准清单是**可执行的**，不是一段散文。

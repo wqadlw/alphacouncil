@@ -242,9 +242,12 @@ describe('V-07 · the dependency budget', () => {
     // and this is the check that makes that ban mechanical instead of a matter
     // of remembering.
     //
-    // ⚠️ **This only sees the top-level `dependencies`.** Milkdown pulls 205
-    // transitive packages that this cannot see, and nothing here checks their
-    // licences — `backend/scripts/check_licenses.py` uses
+    // ⚠️ **This only sees the top-level `dependencies`.** Transitive packages are
+    // invisible here. ⭐ Their licences *are* checked, though — since spec 031 the npm
+    // tree is scanned by `backend/scripts/check_licenses.py`, which reads the installed
+    // `node_modules` rather than a declared list, and fails on copyleft that would ship.
+    // So the two checks are complementary: this one is 「did you approve the top-level
+    // package」, that one is 「does anything in the tree carry a licence we cannot ship」. — `backend/scripts/check_licenses.py` uses
     // `importlib.metadata`, so it sees **Python distributions only**. That gap
     // was survivable at four packages and is not at 209, so the npm tree is
     // scanned separately (see the spec 026 changelog); turning that scan into a
@@ -259,6 +262,14 @@ describe('V-07 · the dependency budget', () => {
       'class-variance-authority',
       'clsx',
       'tailwind-merge',
+      // Spec 034: candlesticks. ⭐ Approved by the owner's instruction to take over
+      // TSP's display layer wholesale ("怎么展示数据的，全部拿过来") plus "继续"
+      // on 2026-09-29, after the four §3.2 points were put in front of them.
+      // Licence Apache-2.0 (measured from package.json, not assumed — I first
+      // called it MIT and was wrong). v4.2.0; its 4.x typings were read, which is
+      // how the v3-style addCandlestickSeries was confirmed and the v5 addSeries
+      // (zero mentions) was avoided. Record: .ai/specs/034-kline/dependency-record.md
+      'lightweight-charts',
       // Spec 026: Markdown editor, approved by the owner 2026-09-28 and
       // licence-checked (MIT). Installed; **not yet wired into the vault page** —
       // the page currently uses a plain textarea, which is stated in its header.

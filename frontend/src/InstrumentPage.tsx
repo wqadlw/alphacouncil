@@ -3,9 +3,11 @@ import {
   ApiError,
   addToWatchlist,
   getInstrument,
+  getDaily,
   getQuote,
   removeFromWatchlist,
   reviseReason,
+  type DailyResult,
   type DataStatus,
   type InstrumentDetail,
   type QuoteResult,
@@ -21,9 +23,28 @@ import {
   formatVolume,
 } from './format'
 import CardSection from './CardSection'
+import { KlineChart } from './components/market/KlineChart'
 import DecisionSection from './DecisionSection'
 import { Button, Skeleton, Textarea } from './components/ui'
 import { useResource } from './useResource'
+
+/**
+ * The first-render placeholder, and the state it reports is the point.
+ *
+ * ⭐ It is `no_data`, not `ok` with an empty array, because 「数据源不报这个代码」 is the
+ * honest description of 「还没有取到」, while an `ok` with zero bars would render an empty
+ * chart — the fifth state this feature exists to avoid. It resolves on the first response.
+ */
+const emptyDaily: DailyResult = {
+  status: 'no_data',
+  value: null,
+  reason: null,
+  detail: null,
+  error_code: null,
+  source: null,
+  fetched_at: null,
+  stale: false,
+}
 
 const FOLLOW_LABEL: Record<string, string> = {
   followed: '关注中',
@@ -60,6 +81,23 @@ export default function InstrumentPage({ market, code }: Props) {
     useCallback(
       (cause: unknown) =>
         cause instanceof ApiError ? cause.message : '报价请求失败 —— 记录部分不受影响。',
+      [],
+    ),
+  )
+
+  /**
+   * ⭐ A third request, not part of the other two.
+   *
+   * The page already separates the record from the price so a source outage cannot blank
+   * what the reader came for. This is the slowest of the three and the least likely to
+   * change the answer, so it must not be able to delay or hide the others either.
+   */
+  const daily = useResource<DailyResult>(
+    useCallback(() => getDaily(market, code), [market, code]),
+    [market, code],
+    useCallback(
+      (cause: unknown) =>
+        cause instanceof ApiError ? cause.message : 'K 线请求失败 —— 记录与报价部分不受影响。',
       [],
     ),
   )
@@ -187,6 +225,25 @@ export default function InstrumentPage({ market, code }: Props) {
       {detail && (
         <>
           <QuoteStrip quote={quote} error={quoteError} onRefresh={price.reload} />
+
+          {/*
+            ⭐ The chart is the same claim the strip above makes, drawn — so it goes
+            directly beneath it. Read in order this is how a person actually reads:
+            what is it now, how did it get here, why did I care.
+          */}
+          <div className="px-4 py-3">
+            <KlineChart result={daily.data ?? emptyDaily} />
+            {daily.reload && (
+              <button
+                type="button"
+                data-testid="kline-retry"
+                className="text-[12px] text-ink-faint underline"
+                onClick={daily.reload}
+              >
+                重新读取
+              </button>
+            )}
+          </div>
 
           <Section
             title={followed ? '我为什么关注它' : '我当初为什么关注它'}

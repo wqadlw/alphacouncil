@@ -32,10 +32,11 @@ yet" is a valid page, not a missing one.
 from __future__ import annotations
 
 import sqlite3
+from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from alphacouncil.api.deps import DatabaseConnection, MarketData
@@ -48,7 +49,9 @@ from alphacouncil.domain.watchlist import WatchlistEventKind
 from alphacouncil.models.market import (
     AssetType,
     DataResult,
+    DataStatus,
     Market,
+    Quote,
     RealtimeQuote,
     Symbol,
 )
@@ -318,3 +321,80 @@ def quote(
     """
     symbol, _ = _resolve_path(connection, market, code)
     return market_data.get_realtime(symbol)
+
+#: Bars served when the caller states no window.
+#:
+#: ⭐ A history endpoint can be asked for an unbounded range by accident and a provider will
+#: try to satisfy it. The cap lives here, not in the source, so the contract is one line to
+#: read rather than a behaviour to discover.
+DEFAULT_DAILY_WINDOW_DAYS = 320
+
+#: The hard ceiling, whatever the caller asks for.
+MAX_DAILY_WINDOW_DAYS = 1500
+
+
+def _default_end() -> date:
+    """Today, in UTC.
+
+    ⭐ For A shares this is the previous day between 00:00 and 08:00 Beijing time. That is
+    benign for this endpoint: no bar for that session exists yet either, so the series is
+    not wrong — it is one session behind at an hour when there is nothing to show. A comment
+    that says why is cheaper than a market-calendar dependency, and easier to check.
+    """
+    return datetime.now(UTC).date()
+
+
+@router.get(
+    "/{market}/{code}/daily",
+    summary="Daily bars for one instrument, reporting all four data states",
+)
+def daily(
+    market: Market,
+    code: str,
+    connection: DatabaseConnection,
+    market_data: MarketData,
+    start: date | None = None,
+    end: date | None = None,
+) -> DataResult[list[Quote]]:
+    """Fetch daily bars through the router, oldest first.
+
+    The result is passed back **unmodified**, for the reasons ``/quote`` gives and does not
+    repeat: ``no_data`` and ``error`` are different sentences and only one is worth
+    retrying, and ``stale`` is how the client can say 「这个数是旧的」 instead of serving a
+    cached price as today's.
+
+    Args:
+        market: The venue from the path.
+        code: Six digits from the path.
+        start: First trading day wanted. Defaults to ``DEFAULT_DAILY_WINDOW_DAYS`` back.
+        end: Last trading day wanted. Defaults to today.
+    """
+    symbol, _ = _resolve_path(connection, market, code)
+
+    resolved_end = end if end is not None else _default_end()
+    resolved_start = (
+        start
+        if start is not None
+        else resolved_end - timedelta(days=DEFAULT_DAILY_WINDOW_DAYS)
+    )
+    if resolved_start > resolved_end:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"start={resolved_start.isoformat()} is after "
+                f"end={resolved_end.isoformat()}"
+            ),
+        )
+    if (resolved_end - resolved_start).days > MAX_DAILY_WINDOW_DAYS:
+        resolved_start = resolved_end - timedelta(days=MAX_DAILY_WINDOW_DAYS)
+
+    result = market_data.get_daily(symbol, start=resolved_start, end=resolved_end)
+    # ⭐ `status is OK`, not `error_code is None`. The validator guarantees ok carries a
+    # value, so this test cannot pass a `no_data` result off as an empty series — which is
+    # the one misreading that would render 「这只票没有历史」 when the truth is 「所有源都
+    # 拒绝了」.
+    if result.status is DataStatus.OK and result.value is not None:
+        # ⭐ Ascending is the contract, not a coincidence: the router merges sources and
+        # each returns its own order.
+        result.value.sort(key=lambda quote: quote.trade_date)
+    return result
