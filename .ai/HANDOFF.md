@@ -151,6 +151,18 @@
   ⚠️ 失败长得像网络错误（`Empty reply from server` / `Could not connect`），**不像配置错误**，
   所以容易误判成「已经推上去了」—— 一定用 `git rev-parse HEAD` 与 `origin/main` 对一下。
 
+- ⭐⭐ **第三种可能，而且它与代理无关（2026-09-30 · spec 043 推送时实测）**
+  症状是 `schannel: failed to receive handshake, SSL/TLS connection failed`：
+  * `Invoke-WebRequest https://api.github.com` **直连 200**，代理 7890/7891/7897/10809/1080
+    全部拒连 —— ⭐ 也就是说**这时代理确实不在**，但**网络本身通**
+  * ⭐ 而 `git push` 直连**仍然**握手失败 ⇒ 病因不在网络，在 **Git 用的 TLS 实现**
+    （Windows 默认 `schannel`）
+  * ⭐ **可用**：`git -c http.sslBackend=openssl push` —— 直连、不过代理、一次成功
+
+  ⭐ **为什么值得单独写一条**：上面那两种排查都只看「网络通不通」，
+  而这一种在网络**完全正常**时发生。⭐ 先跑 `Invoke-WebRequest` 确认网络，
+  如果它通而 `git` 不通，就不要再调代理了——去换 `sslBackend`。
+
 ## 五、跑起来与验收命令
 
 ```bash
