@@ -235,11 +235,15 @@ class TestRegistry:
 
 
 class TestS01NoRawHttp:
-    def test_importing_httpx_outside_providers_is_reported(self, tmp_path: Path) -> None:
+    """⭐ The predicate is **module paths**, not a directory (ADR-0031)."""
+
+    def test_importing_httpx_outside_an_http_aware_module_is_reported(self, tmp_path: Path) -> None:
         ctx = make_ctx(tmp_path, {"backend/src/alphacouncil/api/app.py": "import httpx\n"})
         assert codes(no_raw_http.run(ctx)) == ["CHECK_RAW_HTTP"]
 
-    def test_a_convenience_call_is_reported_even_inside_providers(self, tmp_path: Path) -> None:
+    def test_a_convenience_call_is_reported_even_in_an_http_aware_module(
+        self, tmp_path: Path
+    ) -> None:
         ctx = make_ctx(
             tmp_path,
             {
@@ -255,7 +259,7 @@ class TestS01NoRawHttp:
         ctx = make_ctx(
             tmp_path,
             {
-                "backend/src/alphacouncil/providers/sources.py": (
+                "backend/src/alphacouncil/core/http.py": (
                     "import httpx\n\n\ndef fetch(url: str) -> str:\n"
                     "    with httpx.Client(timeout=5) as client:\n"
                     "        return client.get(url).text\n"
@@ -264,21 +268,112 @@ class TestS01NoRawHttp:
         )
         assert codes(no_raw_http.run(ctx)) == ["CHECK_RAW_HTTP"]
 
-    def test_the_provider_entry_point_stays_silent(self, tmp_path: Path) -> None:
+    def test_the_construction_site_stays_silent(self, tmp_path: Path) -> None:
+        ctx = make_ctx(
+            tmp_path,
+            {
+                "backend/src/alphacouncil/core/http.py": (
+                    "import httpx\n\n\n"
+                    "def build_client() -> httpx.Client:\n"
+                    "    return httpx.Client(timeout=5)\n"
+                )
+            },
+        )
+        assert no_raw_http.run(ctx).issues == []
+
+    # -- the tightening: a module may *name* httpx but never *build* a client --------
+
+    def test_a_module_may_name_httpx_to_catch_its_exceptions(self, tmp_path: Path) -> None:
+        """⭐ ``providers/sources.py`` needs ``httpx.HTTPError`` and nothing more.
+
+        Rule 1 answers a different question from rule 3, so it gets its own list. Before
+        the rewrite the only way to express this was a directory allowlist, which is how
+        ``providers/`` acquired the power to construct clients anywhere.
+        """
         ctx = make_ctx(
             tmp_path,
             {
                 "backend/src/alphacouncil/providers/sources.py": (
                     "import httpx\n\n\n"
-                    "def _client() -> httpx.Client:\n"
-                    "    return httpx.Client(timeout=5)\n\n\n"
-                    "def fetch(url: str) -> str:\n"
-                    "    with _client() as client:\n"
+                    "def fetch(client: httpx.Client, url: str) -> str:\n"
+                    "    try:\n"
                     "        return client.get(url).text\n"
+                    "    except httpx.HTTPError:\n"
+                    "        return ''\n"
                 )
             },
         )
         assert no_raw_http.run(ctx).issues == []
+
+    def test_that_same_module_may_not_construct_a_client(self, tmp_path: Path) -> None:
+        """⭐ The whole point: the import permission does not carry a construction one."""
+        ctx = make_ctx(
+            tmp_path,
+            {
+                "backend/src/alphacouncil/providers/sources.py": (
+                    "import httpx\n\n\n"
+                    "def fetch(url: str) -> str:\n"
+                    "    return httpx.Client(timeout=5).get(url).text\n"
+                )
+            },
+        )
+        assert codes(no_raw_http.run(ctx)) == ["CHECK_RAW_HTTP"]
+
+    def test_a_factory_named_function_in_the_wrong_file_is_still_reported(
+        self, tmp_path: Path
+    ) -> None:
+        """⭐⭐ Written because a mutation survived, and this is the shape it missed.
+
+        The construction rule has **two** conditions — right file *and* right function
+        name. A fixture that only breaks one of them cannot tell them apart: with the
+        function called ``fetch``, both conditions are violated at once and the test goes
+        red whether or not the file check exists.
+
+        Deleting the file condition from the rule leaves this fixture green. ⭐ That is
+        the exact form of 「a rule that passes its own tests and catches nothing」, and the
+        only reason it was found is that the mutation was run at all.
+        """
+        ctx = make_ctx(
+            tmp_path,
+            {
+                # A permitted name, in a file that is not a construction site.
+                "backend/src/alphacouncil/providers/sources.py": (
+                    "import httpx\n\n\n"
+                    "def _client() -> httpx.Client:\n"
+                    "    return httpx.Client(timeout=5)\n"
+                )
+            },
+        )
+        assert codes(no_raw_http.run(ctx)) == ["CHECK_RAW_HTTP"]
+
+    def test_the_construction_site_is_a_single_named_file(self, tmp_path: Path) -> None:
+        """⭐ A test, not a comment: the count is what makes 「改紧」 checkable.
+
+        The rewrite tightened this from 「every .py under providers/」 to one file. Nothing
+        else records that, so nothing would notice it quietly widening again.
+        """
+        assert frozenset({Path("core/http.py")}) == no_raw_http.CONSTRUCTION_SITES
+
+    def test_every_http_aware_module_is_a_construction_site_or_explains_itself(
+        self, tmp_path: Path
+    ) -> None:
+        """⭐ A widened import allowlist must be justified by types, not by wanting HTTP."""
+        for path in no_raw_http.HTTP_AWARE_MODULES - no_raw_http.CONSTRUCTION_SITES:
+            assert path.parts[0] in {"providers"}, f"{path} may name httpx for no stated reason"
+
+    def test_a_new_file_beside_an_allowed_one_gets_nothing(self, tmp_path: Path) -> None:
+        """⭐ The directory that used to be allowed is no longer allowed."""
+        ctx = make_ctx(
+            tmp_path,
+            {
+                "backend/src/alphacouncil/providers/anything_new.py": (
+                    "import httpx\n\n\ndef f(url: str) -> str:\n"
+                    "    return httpx.Client(timeout=5).get(url).text\n"
+                )
+            },
+        )
+        # Two findings: the import, and the construction.
+        assert codes(no_raw_http.run(ctx)) == ["CHECK_RAW_HTTP", "CHECK_RAW_HTTP"]
 
 
 # ---------------------------------------------------------------------------

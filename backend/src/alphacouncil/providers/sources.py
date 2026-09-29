@@ -23,6 +23,7 @@ from typing import Any
 import httpx
 
 from alphacouncil.core.error_codes import ErrorCode
+from alphacouncil.core.http import build_client
 from alphacouncil.models.market import (
     AssetType,
     DataResult,
@@ -43,16 +44,22 @@ from alphacouncil.providers.base import (
     now,
 )
 
-_TIMEOUT = 10.0
-_DEFAULT_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; AlphaCouncil/0.2)"}
+#: ⭐ These sources refuse agents they do not recognise, so this string is deliberately
+#: **not** the product's name. It is the one place in the codebase that lies about who it
+#: is, and it is a named constant with a comment rather than a default buried in a factory.
+#: ADR-0031 records why the webhook channel is not allowed to reuse it.
+_MARKET_DATA_UA = "Mozilla/5.0 (compatible; AlphaCouncil/0.2)"
 
 
 def _client(headers: dict[str, str] | None = None) -> httpx.Client:
-    """Build a client with our standard timeout and headers."""
-    merged = dict(_DEFAULT_HEADERS)
-    if headers:
-        merged.update(headers)
-    return httpx.Client(timeout=_TIMEOUT, headers=merged, follow_redirects=True)
+    """Build a client for a market data source.
+
+    ⭐ This no longer constructs anything — ``core/http.py`` owns that (ADR-0031, S-01).
+    It stays as a named wrapper because the browser User-Agent belongs to **this** package
+    and not to the shared factory, and a function whose whole body is one call is still
+    the thing that says which policy a market data request gets.
+    """
+    return build_client(user_agent=_MARKET_DATA_UA, headers=headers)
 
 
 def _guard(response: httpx.Response) -> None:

@@ -41,7 +41,7 @@ Lint  →  Typecheck  →  ★ check-static  →  Test  →  Build
 
 | # | 脚本 | 禁止 | 守的规则 |
 |---|---|---|---|
-| **S-01** | `no-raw-http` | 业务代码里直接 `httpx.get` / `requests.get` / `urlopen` | 宪法 7.8（唯一入口）· 4.5 |
+| **S-01** | `no-raw-http` | 业务代码里直接 `httpx.get` / `requests.get` / `urlopen`；**任何文件里**自行 `httpx.Client(...)`（唯一构造点是 `core/http.py`，见 ADR-0031） | 宪法 7.8（唯一入口）· 4.5 |
 | **S-02** | `no-boolean-state` | 用布尔值跟踪状态（`is_reviewed` / `has_outcome` 等组合） | 宪法 7.7 · 红线 6 |
 | **S-03** | `no-prediction-field` | 出现"目标价 / 涨跌预测 / 买卖建议 / 看好 / 看空"类字段或接口 | 红线 1 · 2 |
 | **S-04** | `check-append-only-triggers` | 日志类表缺 `BEFORE UPDATE` / `BEFORE DELETE` 触发器 | 宪法 5.4 · 红线 4 |
@@ -137,9 +137,12 @@ python -m checks --root <path>      # 扫另一个仓库根（用于变异检查
 ### 5.3 豁免写法
 
 ```python
-import httpx  # noqa: S-01 -- this module *is* the entry point
+import httpx  # noqa: S-01 -- the module already wraps a client it was handed
 ```
 
+* ⭐ **先考虑这行根本不需要存在**：S-01 的两个白名单（`CONSTRUCTION_SITES` /
+  `HTTP_AWARE_MODULES`）是**具名文件**，加一个文件比加一条豁免更容易被审阅 ——
+  豁免是有时效的静默，名单是一次性的显式。
 * **行级**：写在有代码的那一行行尾 → 只豁免该行。
 * **文件级**：**单独占一行**、且在前 12 行内 → 豁免整个文件。
 * **理由必填**：`# noqa: S-01` 不带 `-- 理由` **仍然生效**（否则代码既坏了又没法豁免），**但会额外报一条 `CHECK_EXEMPTION_UNREASONED` 错误**。
