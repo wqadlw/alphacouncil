@@ -14,10 +14,17 @@ from alphacouncil.providers.base import (
     ProviderCapabilities,
     ProviderEmptyError,
     ProviderError,
+    ProviderIpBlockedError,
     ProviderProtocolError,
+    ProviderRateLimitedError,
     ProviderUnreachableError,
 )
 from alphacouncil.providers.cache import Cache, MemoryCache, SqliteCache
+from alphacouncil.providers.financial import (
+    BaostockFinancial,
+    FinancialDataProvider,
+    FinancialPeriod,
+)
 from alphacouncil.providers.router import MarketDataRouter
 from alphacouncil.providers.sources import (
     EastmoneyProvider,
@@ -26,10 +33,13 @@ from alphacouncil.providers.sources import (
 )
 
 __all__ = [
+    "BaostockFinancial",
     "BatchSemantics",
     "Cache",
     "Dataset",
     "EastmoneyProvider",
+    "FinancialDataProvider",
+    "FinancialPeriod",
     "MarketDataProvider",
     "MarketDataRouter",
     "MemoryCache",
@@ -37,7 +47,9 @@ __all__ = [
     "ProviderCapabilities",
     "ProviderEmptyError",
     "ProviderError",
+    "ProviderIpBlockedError",
     "ProviderProtocolError",
+    "ProviderRateLimitedError",
     "ProviderUnreachableError",
     "SinaProvider",
     "SqliteCache",

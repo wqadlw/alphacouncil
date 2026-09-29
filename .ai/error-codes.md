@@ -56,17 +56,41 @@
 
 | code | severity | 含义 | `fix` |
 |---|---|---|---|
-| `DATA_SOURCE_RATE_LIMITED` | warning | 限流（返回空） | "已自动降速/换源；无需操作" |
-| `DATA_SOURCE_IP_BLOCKED` | **error** | ⚠️ **封 IP**（`RemoteDisconnected`） | "请等待约 20 小时或更换网络；**不要重试**" |
+| `DATA_SOURCE_RATE_LIMITED` | warning | 限流（HTTP 429 / 源的配额码） | "已自动降速/换源；无需操作" |
+| `DATA_SOURCE_IP_BLOCKED` | **error** | ⚠️ **封 IP** —— 源**明说**这个地址被拉黑 | "请等待约 20 小时或更换网络；**不要重试**" |
 | `DATA_SOURCE_FORBIDDEN` | error | 403（风控信号） | "**不重试**。该源暂不可用" |
 | `DATA_SOURCE_CIRCUIT_OPEN` | warning | 该源已熔断 | "已跳过该源，使用备胎" |
 | `DATA_SOURCE_UNAVAILABLE` | error | 全部源不可用 | "请检查网络连接" |
-| `DATA_SOURCE_UNREACHABLE` | error | 传输层故障（超时 / DNS / 连接被中断 / 5xx） | "已尝试换源；若全部失败请检查网络" |
+| `DATA_SOURCE_UNREACHABLE` | error | 传输层故障（超时 / DNS / 连接被重置 / 5xx） | "已尝试换源；若全部失败请检查网络" |
 | `DATA_SOURCE_NOT_SUPPORTED` | info | 该源**不声明**支持这个数据集或交易所（**未发请求**） | "已自动换源；这是能力路由，不是故障" |
 | `DATA_SOURCE_TICKER_AMBIGUOUS` | error | 代码歧义（`000001`） | "请选择市场：沪市 / 深市" |
 | `DATA_SOURCE_TICKER_INVALID` | error | 无法解析 | "请检查代码格式（如 `600519` / `sh600519`）" |
 
 > ⚠️ **限流与封 IP 必须分成两个 code** —— **恢复策略不同**（降速 vs 等 20 小时），程序与用户都需要区分。
+
+> ✅ **spec 043 已把这一条落到行为上，而不只是枚举上。**
+>
+> | code | 谁产生它 | 冷却 |
+> |---|---|---|
+> | `RATE_LIMITED` | HTTP **429** | 30 s |
+> | `FORBIDDEN` | HTTP **403** | 300 s |
+> | `IP_BLOCKED` | 源**自己**说地址被封（BaoStock `error_code 10001011`） | 20 h |
+>
+> 枚举上的拆分若不改变**行为**就只是一次改名，所以 `providers/router.py` 的 `_COOLDOWN_BY_CODE`
+> 是这张表的实现，`tests/unit/test_recovery_policy.py` 断言的是**时长**。
+
+> ⚠️⭐ **`RemoteDisconnected` 不再被写成封 IP 的触发条件（spec 043 改）。**
+>
+> 本文件此前把 `DATA_SOURCE_IP_BLOCKED` 的含义写作「封 IP（`RemoteDisconnected`）」，
+> **而没有任何代码这样做过** —— 那次改动**没有**实现它，理由如下：
+>
+> `RemoteDisconnected` 绝大多数情况是**空闲 keep-alive 连接被对端回收**，不是封禁。
+> ⭐ 把它当成 20 小时的封禁，意味着一次网络抖动就能让一个健康的源**整天不可用**。
+> ⭐ 而 HTTP 状态码本身**区分不了**「你的地址被封」与「这个 URL 不可访问」——
+> 所以 `ProviderIpBlockedError` **只**在源自己点名时抛出（BaoStock 的 `10001011`）。
+>
+> `RemoteDisconnected` 仍然是 `DATA_SOURCE_UNREACHABLE`（传输层故障），
+> 这个判断是对的：它就是一次传输故障，而它自己会恢复。
 > ⚠️ **`DATA_SOURCE_NOT_SUPPORTED` 不是故障** —— 能力路由在**发请求之前**就判定该源不适用（如未声明 `markets` 里的交易所）。
 > 把它算成 error 会让"我们没问过它"看起来像"它坏了"。
 

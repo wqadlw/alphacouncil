@@ -40,6 +40,7 @@ from alphacouncil.providers.base import (
     ProviderEmptyError,
     ProviderError,
     ProviderProtocolError,
+    ProviderRateLimitedError,
     ProviderUnreachableError,
     now,
 )
@@ -65,11 +66,25 @@ def _client(headers: dict[str, str] | None = None) -> httpx.Client:
 def _guard(response: httpx.Response) -> None:
     """Map HTTP outcomes onto provider errors.
 
-    403 is deliberately *not* retried anywhere upstream: a source that already
-    refused us should not be asked again in a loop.
+    Neither 403 nor 429 is retried anywhere upstream: a source that already
+    refused us, or told us to slow down, should not be asked again in a loop.
+
+    ⭐ **403 and 429 are different codes**, because ``.ai/error-codes.md`` says so and
+    because they have opposite recoveries — 403 means 「we will not serve you」, 429 means
+    「serve us later and slower」. ⭐ They were one branch here until spec 043, and that one
+    branch is why ``DATA_SOURCE_RATE_LIMITED`` was a code nothing in the project produced.
+
+    ⭐ **No HTTP status is treated as a ban.** ``error-codes.md`` used to claim
+    ``RemoteDisconnected`` meant 「封 IP」 with a 20-hour wait; that mapping is deliberately
+    **not** implemented, because a ``RemoteDisconnected`` is almost always a stale
+    keep-alive socket and treating it as a 20-hour ban would take a healthy source out
+    for a day. ⭐ ``providers/financial.py`` raises
+    :class:`ProviderIpBlockedError` because BaoStock *names* the ban in its own code.
     """
-    if response.status_code in {403, 429}:
-        raise ProviderBlockedError(f"HTTP {response.status_code}")
+    if response.status_code == 429:
+        raise ProviderRateLimitedError("HTTP 429")
+    if response.status_code == 403:
+        raise ProviderBlockedError("HTTP 403")
     if response.status_code >= 400:
         raise ProviderUnreachableError(f"HTTP {response.status_code}")
 
@@ -83,22 +98,25 @@ def _failure(exc: Exception, *, source: str, stamp: datetime) -> DataResult[Any]
     """Map a provider exception onto the honest data state.
 
     One mapping shared by every provider, so the four-state contract cannot
-    drift between sources: an empty answer is ``no_data``, a refusal is
-    ``blocked``, a malformed answer is ``unavailable``, and a transport fault is
-    an ``error``. Collapsing any two of those is how a bug becomes a wrong
-    number instead of a visible absence.
+    drift between sources: an empty answer is ``no_data``, a malformed answer is
+    ``unavailable``, and everything else is an ``error``. Collapsing any two of
+    those is how a bug becomes a wrong number instead of a visible absence.
+
+    ⭐ **Which** code an ``error`` carries is read off the exception class
+    (``exc.code``), not re-derived here. That used to be spelled out per branch,
+    which meant a new :class:`ProviderError` subclass was live from the moment it
+    was written and silently reported as ``DATA_SOURCE_UNREACHABLE`` until
+    somebody remembered to edit this function — ⭐ and ``DATA_SOURCE_RATE_LIMITED``
+    and ``DATA_SOURCE_IP_BLOCKED`` were both declared, both documented, and both
+    produced by **nothing** (spec 043). The class already carries its own code;
+    this function no longer keeps a second opinion about it.
     """
     if isinstance(exc, ProviderEmptyError):
         return DataResult.no_data(str(exc), source=source, fetched_at=stamp)
-    if isinstance(exc, ProviderBlockedError):
-        return DataResult.error(
-            ErrorCode.DATA_SOURCE_FORBIDDEN,
-            source=source,
-            fetched_at=stamp,
-            detail=str(exc),
-        )
     if isinstance(exc, ProviderProtocolError):
         return DataResult.unavailable(str(exc), source=source, fetched_at=stamp)
+    if isinstance(exc, ProviderError):
+        return DataResult.error(exc.code, source=source, fetched_at=stamp, detail=str(exc))
     return DataResult.error(
         ErrorCode.DATA_SOURCE_UNREACHABLE,
         source=source,

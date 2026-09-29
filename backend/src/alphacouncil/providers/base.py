@@ -92,13 +92,59 @@ class ProviderUnreachableError(ProviderError):
 
 
 class ProviderBlockedError(ProviderError):
-    """The provider refused us (403 / rate limit).
+    """The provider refused us on purpose (HTTP 403).
 
     The router treats this as non-retryable: hammering a source that already
     said no is how an IP gets banned.
+
+    ⭐ **403 only.** This used to cover 「403 / rate limit」 as well, and
+    ``.ai/error-codes.md`` had already ruled that out:
+
+        > ⚠️ **限流与封 IP 必须分成两个 code** -- **恢复策略不同**(降速 vs 等 20 小时)
+
+    ⭐ The sentence above sat next to code that did the opposite, and the two
+    subclasses below are what finally makes it true (spec 043). They are
+    **siblings rather than subclasses of this one**, so that no ``isinstance``
+    chain can reach the wrong code by ordering luck.
     """
 
     code = ErrorCode.DATA_SOURCE_FORBIDDEN
+
+
+class ProviderRateLimitedError(ProviderError):
+    """The source asked us to slow down (HTTP 429, or a source's own quota code).
+
+    ⭐ **A distinct code because a distinct recovery.** A 403 means 「this source will not
+    serve us」 and a ban is the right answer; a 429 means 「come back slower」 and being
+    banned is the wrong one. Collapsing them reports a throttle as a refusal, so the router
+    cools the source down for a refusal's duration and the operator is told the source is
+    gone when it is only busy.
+
+    ⭐ **Not** ``no_data``. An empty answer is a fact about the instrument; a throttle is a
+    fact about *us*, and §4.6 keeps the two apart — a rate-limited symbol must never be
+    reported as 「this instrument has no data」.
+    """
+
+    code = ErrorCode.DATA_SOURCE_RATE_LIMITED
+
+
+class ProviderIpBlockedError(ProviderError):
+    """**This address** has been banned by the source — not the request.
+
+    ⭐ The distinction from :class:`ProviderBlockedError` is the whole point of this class.
+    A refused request is answered by changing nothing and waiting a little; a banned
+    address is answered by changing network or waiting hours, and every retry from it is
+    evidence against us. ``.ai/error-codes.md`` puts the recovery at 「等待约 20 小时或更换
+    网络; **不要重试**」.
+
+    ⭐ **Only raise this on a signal that actually names the ban.** Baostock states it
+    outright (``error_code 10001011``, 「IP 已加入黑名单」). ⭐ Nothing raises it for an HTTP
+    status, because no HTTP status distinguishes 「your address is banned」 from 「this URL is
+    forbidden」 — see ``spec 043`` for the ``RemoteDisconnected`` claim that
+    ``.ai/error-codes.md`` used to make and that was **not** implemented, on purpose.
+    """
+
+    code = ErrorCode.DATA_SOURCE_IP_BLOCKED
 
 
 class ProviderProtocolError(ProviderError):

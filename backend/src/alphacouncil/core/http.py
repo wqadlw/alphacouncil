@@ -47,10 +47,18 @@ wrong header in production.
 
 ## What is not here, on purpose
 
-* **No cache, no circuit breaker, no jitter, no serialisation.** Those are the market-data
-  path's, and :mod:`alphacouncil.providers.router` already has them. Re-implementing them
-  here would give the two paths a second definition each — the defect in
-  ``regressions/0010``, one layer over.
+* **No cache, no circuit breaker.** Those two *are* the market-data path's and
+  :mod:`alphacouncil.providers.router` really does have them. Re-implementing them here
+  would give the two paths a second definition each — the defect in ``regressions/0010``,
+  one layer over.
+* ⭐⚠️ **And no serialisation, minimum interval or jitter — because the market-data path
+  does not have them either.** This sentence used to point at the router for all five,
+  which was wrong: a search of ``providers/`` for ``sleep`` / ``interval`` / ``jitter``
+  found nothing outside ``providers/financial.py``, added by spec 043. ⭐ Constitution §7.8
+  requires all seven at the market-data entry point and three are absent. The gap is
+  recorded as ``findings/`` rather than closed here, because putting a sleep on a hot path
+  is a behaviour change that wants its own spec — ⭐ but a docstring that points a reader at
+  code that does not exist is a defect on its own, and it is now corrected here.
 * **No retry policy.** ⭐ Retrying is a product decision (a lesson card must not be mailed
   twice — see ``notify/email.py``'s note on ``quit``), so it belongs to the caller.
 """

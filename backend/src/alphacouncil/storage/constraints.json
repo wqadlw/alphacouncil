@@ -29,7 +29,8 @@
     "             或「给了就不能是空白」（`x IS NULL OR length(trim(x)) > 0`）",
     "  required = 必填且非空白：`length(trim(x)) > 0`，**没有 NULL 分支**，",
     "             因为字段本身 NOT NULL，空白是唯一的非法值",
-    "10 · lessons：lessons / lesson_schedule / lesson_reviews / lesson_promotions。**lesson_reviews 有 12 条而不是 13 条** —— 我先写了「只有真复习才可能带耗时」，然后发现已入队无耗时 + 已推迟无耗时两条已经覆盖全部三种 outcome，第三条永远不会独立违反。⭐ 永远不可能被违反的约束是噪音：它读起来像防护，实际是维护成本加上一条没人能测的声明。见 2026-09-28 的 spec 030 变更日志。"
+    "10 · lessons：lessons / lesson_schedule / lesson_reviews / lesson_promotions。**lesson_reviews 有 12 条而不是 13 条** —— 我先写了「只有真复习才可能带耗时」，然后发现已入队无耗时 + 已推迟无耗时两条已经覆盖全部三种 outcome，第三条永远不会独立违反。⭐ 永远不可能被违反的约束是噪音：它读起来像防护，实际是维护成本加上一条没人能测的声明。见 2026-09-28 的 spec 030 变更日志。",
+    "financial_reports · PIT 财务数据（spec 043 · D4）。append_only=true 是 **红线 17 的直接后果**而非「因为它是日志表」：一次 UPDATE 是一次静默的重写历史，而本表的全部价值在于「当时看到的就是当时的」。"
   ],
   "categories": [
     "comparison",
@@ -43,40 +44,6 @@
     "referential"
   ],
   "tables": {
-    "instruments": {
-      "append_only": false,
-      "constraints": {
-        "instruments_market_check": "enum",
-        "instruments_code_check": "identity",
-        "instruments_asset_type_check": "enum",
-        "instruments_name_check": "identity",
-        "instruments_name_provenance_check": "conditional_required",
-        "instruments_created_at_check": "identity"
-      }
-    },
-    "watchlist_events": {
-      "append_only": true,
-      "constraints": {
-        "watchlist_events_kind_check": "enum",
-        "watchlist_events_reason_required_check": "conditional_required",
-        "watchlist_events_reason_not_blank_check": "identity",
-        "watchlist_events_reason_length_check": "length",
-        "watchlist_events_supersedes_check": "conditional_required",
-        "watchlist_events_occurred_at_check": "identity"
-      }
-    },
-    "decisions": {
-      "append_only": true,
-      "constraints": {
-        "decisions_id_check": "identity",
-        "decisions_action_check": "enum",
-        "decisions_rationale_required_check": "required",
-        "decisions_counter_evidence_required_check": "required",
-        "decisions_rationale_length_check": "length",
-        "decisions_counter_evidence_length_check": "length",
-        "decisions_kill_criteria_json_check": "json"
-      }
-    },
     "audit_log": {
       "append_only": true,
       "constraints": {
@@ -87,13 +54,53 @@
         "audit_log_detail_length_check": "length"
       }
     },
-    "market_cache": {
+    "card_events": {
+      "append_only": true,
+      "constraints": {
+        "card_events_id_check": "identity",
+        "card_events_card_required_check": "required",
+        "card_events_type_check": "enum",
+        "card_events_reason_not_blank_check": "identity",
+        "card_events_reason_length_check": "length",
+        "card_events_converge_reason_check": "conditional_required",
+        "card_events_created_at_check": "identity"
+      }
+    },
+    "card_reviews": {
+      "append_only": true,
+      "constraints": {
+        "card_reviews_id_check": "identity",
+        "card_reviews_card_required_check": "required",
+        "card_reviews_outcome_check": "enum",
+        "card_reviews_rating_shape_check": "enum",
+        "card_reviews_reviewed_needs_rating_check": "conditional_required",
+        "card_reviews_deferred_has_no_rating_check": "conditional_required",
+        "card_reviews_deferred_has_no_duration_check": "conditional_required",
+        "card_reviews_duration_positive_check": "conditional_required",
+        "card_reviews_reviewed_at_check": "identity",
+        "card_reviews_from_state_check": "enum",
+        "card_reviews_to_state_check": "enum"
+      }
+    },
+    "card_schedule": {
       "append_only": false,
       "constraints": {
-        "market_cache_key_required_check": "required",
-        "market_cache_dataset_check": "enum",
-        "market_cache_payload_required_check": "required",
-        "market_cache_payload_json_check": "json"
+        "card_schedule_card_required_check": "required",
+        "card_schedule_fsrs_id_check": "comparison",
+        "card_schedule_state_check": "enum",
+        "card_schedule_state_json_valid_check": "json",
+        "card_schedule_due_at_check": "required",
+        "card_schedule_enrolled_at_check": "identity",
+        "card_schedule_updated_at_check": "identity",
+        "card_schedule_updated_not_before_enrolled_check": "comparison"
+      }
+    },
+    "card_symbols": {
+      "append_only": false,
+      "constraints": {
+        "card_symbols_market_check": "enum",
+        "card_symbols_code_check": "identity",
+        "card_symbols_created_at_check": "identity"
       }
     },
     "cards": {
@@ -115,55 +122,6 @@
         "cards_created_at_check": "identity"
       }
     },
-    "card_symbols": {
-      "append_only": false,
-      "constraints": {
-        "card_symbols_market_check": "enum",
-        "card_symbols_code_check": "identity",
-        "card_symbols_created_at_check": "identity"
-      }
-    },
-    "card_events": {
-      "append_only": true,
-      "constraints": {
-        "card_events_id_check": "identity",
-        "card_events_card_required_check": "required",
-        "card_events_type_check": "enum",
-        "card_events_reason_not_blank_check": "identity",
-        "card_events_reason_length_check": "length",
-        "card_events_converge_reason_check": "conditional_required",
-        "card_events_created_at_check": "identity"
-      }
-    },
-    "card_schedule": {
-      "append_only": false,
-      "constraints": {
-        "card_schedule_card_required_check": "required",
-        "card_schedule_fsrs_id_check": "comparison",
-        "card_schedule_state_check": "enum",
-        "card_schedule_state_json_valid_check": "json",
-        "card_schedule_due_at_check": "required",
-        "card_schedule_enrolled_at_check": "identity",
-        "card_schedule_updated_at_check": "identity",
-        "card_schedule_updated_not_before_enrolled_check": "comparison"
-      }
-    },
-    "card_reviews": {
-      "append_only": true,
-      "constraints": {
-        "card_reviews_id_check": "identity",
-        "card_reviews_card_required_check": "required",
-        "card_reviews_outcome_check": "enum",
-        "card_reviews_rating_shape_check": "enum",
-        "card_reviews_reviewed_needs_rating_check": "conditional_required",
-        "card_reviews_deferred_has_no_rating_check": "conditional_required",
-        "card_reviews_deferred_has_no_duration_check": "conditional_required",
-        "card_reviews_duration_positive_check": "conditional_required",
-        "card_reviews_reviewed_at_check": "identity",
-        "card_reviews_from_state_check": "enum",
-        "card_reviews_to_state_check": "enum"
-      }
-    },
     "decision_review_state": {
       "append_only": false,
       "constraints": {
@@ -174,117 +132,48 @@
         "decision_review_state_not_reviewed_early_check": "comparison"
       }
     },
-    "reviews": {
+    "decisions": {
       "append_only": true,
       "constraints": {
-        "reviews_id_check": "identity",
-        "reviews_decision_required_check": "required",
-        "reviews_process_score_check": "comparison",
-        "reviews_outcome_shape_check": "conditional_required",
-        "reviews_not_scored_early_check": "comparison",
-        "reviews_outcome_needs_reviewed_at_check": "conditional_required",
-        "reviews_due_snapshot_required_check": "required",
-        "reviews_note_shape_check": "conditional_required",
-        "reviews_note_length_check": "length",
-        "reviews_reviewed_at_check": "identity",
-        "reviews_created_at_check": "identity"
+        "decisions_id_check": "identity",
+        "decisions_action_check": "enum",
+        "decisions_rationale_required_check": "required",
+        "decisions_counter_evidence_required_check": "required",
+        "decisions_rationale_length_check": "length",
+        "decisions_counter_evidence_length_check": "length",
+        "decisions_kill_criteria_json_check": "json"
       }
     },
-    "notes": {
-      "append_only": false,
-      "constraints": {
-        "notes_id_check": "identity",
-        "notes_title_required_check": "required",
-        "notes_title_length_check": "length",
-        "notes_body_not_blank_check": "required",
-        "notes_as_of_check": "identity",
-        "notes_created_at_check": "identity",
-        "notes_updated_at_check": "identity",
-        "notes_updated_not_before_created_check": "comparison"
-      }
-    },
-    "note_note_symbols": {
-      "append_only": false,
-      "constraints": {
-        "note_note_symbols_market_check": "enum",
-        "note_note_symbols_code_check": "identity",
-        "note_note_symbols_created_at_check": "identity"
-      }
-    },
-    "note_tags": {
-      "append_only": false,
-      "constraints": {
-        "note_tags_tag_required_check": "required",
-        "note_tags_tag_length_check": "length",
-        "note_tags_no_comma_check": "forbidden_value",
-        "note_tags_trimmed_check": "identity"
-      }
-    },
-    "note_links": {
-      "append_only": false,
-      "constraints": {
-        "note_links_to_kind_check": "enum",
-        "note_links_to_id_required_check": "required",
-        "note_links_created_at_check": "identity",
-        "note_links_no_self_check": "referential"
-      }
-    },
-    "notes_fts": {
-      "append_only": false,
-      "constraints": {}
-    },
-    "note_schedule": {
-      "append_only": false,
-      "constraints": {
-        "note_schedule_note_required_check": "required",
-        "note_schedule_fsrs_id_check": "comparison",
-        "note_schedule_state_check": "enum",
-        "note_schedule_state_json_valid_check": "json",
-        "note_schedule_due_at_check": "required",
-        "note_schedule_enrolled_at_check": "identity",
-        "note_schedule_updated_at_check": "identity",
-        "note_schedule_updated_not_before_enrolled_check": "comparison"
-      }
-    },
-    "note_reviews": {
+    "financial_reports": {
       "append_only": true,
       "constraints": {
-        "note_reviews_id_check": "identity",
-        "note_reviews_note_required_check": "required",
-        "note_reviews_outcome_check": "enum",
-        "note_reviews_rating_shape_check": "enum",
-        "note_reviews_reviewed_needs_rating_check": "conditional_required",
-        "note_reviews_deferred_has_no_rating_check": "conditional_required",
-        "note_reviews_deferred_has_no_duration_check": "conditional_required",
-        "note_reviews_reset_has_no_rating_check": "conditional_required",
-        "note_reviews_reset_has_no_duration_check": "conditional_required",
-        "note_reviews_duration_positive_check": "conditional_required",
-        "note_reviews_reviewed_at_check": "identity",
-        "note_reviews_from_state_check": "enum",
-        "note_reviews_to_state_check": "enum"
+        "financial_reports_symbol_check": "enum",
+        "financial_reports_code_check": "required",
+        "financial_reports_period_end_check": "identity",
+        "financial_reports_announced_at_check": "identity",
+        "financial_reports_announced_after_period_check": "comparison",
+        "financial_reports_fetched_at_check": "identity",
+        "financial_reports_fetched_after_announced_check": "comparison",
+        "financial_reports_shares_positive_check": "comparison"
       }
     },
-    "lessons": {
-      "append_only": true,
-      "constraints": {
-        "lessons_id_check": "identity",
-        "lessons_review_required_check": "required",
-        "lessons_content_required_check": "required",
-        "lessons_content_length_check": "length",
-        "lessons_created_at_check": "identity"
-      }
-    },
-    "lesson_schedule": {
+    "instruments": {
       "append_only": false,
       "constraints": {
-        "lesson_schedule_lesson_required_check": "required",
-        "lesson_schedule_fsrs_id_check": "comparison",
-        "lesson_schedule_state_check": "enum",
-        "lesson_schedule_state_json_valid_check": "json",
-        "lesson_schedule_due_at_check": "required",
-        "lesson_schedule_enrolled_at_check": "identity",
-        "lesson_schedule_updated_at_check": "identity",
-        "lesson_schedule_updated_not_before_enrolled_check": "comparison"
+        "instruments_market_check": "enum",
+        "instruments_code_check": "identity",
+        "instruments_asset_type_check": "enum",
+        "instruments_name_check": "identity",
+        "instruments_name_provenance_check": "conditional_required",
+        "instruments_created_at_check": "identity"
+      }
+    },
+    "lesson_promotions": {
+      "append_only": true,
+      "constraints": {
+        "lesson_promotions_lesson_id_check": "identity",
+        "lesson_promotions_card_id_check": "identity",
+        "lesson_promotions_promoted_at_check": "identity"
       }
     },
     "lesson_reviews": {
@@ -305,12 +194,137 @@
         "lesson_reviews_to_state_check": "enum"
       }
     },
-    "lesson_promotions": {
+    "lesson_schedule": {
+      "append_only": false,
+      "constraints": {
+        "lesson_schedule_lesson_required_check": "required",
+        "lesson_schedule_fsrs_id_check": "comparison",
+        "lesson_schedule_state_check": "enum",
+        "lesson_schedule_state_json_valid_check": "json",
+        "lesson_schedule_due_at_check": "required",
+        "lesson_schedule_enrolled_at_check": "identity",
+        "lesson_schedule_updated_at_check": "identity",
+        "lesson_schedule_updated_not_before_enrolled_check": "comparison"
+      }
+    },
+    "lessons": {
       "append_only": true,
       "constraints": {
-        "lesson_promotions_lesson_id_check": "identity",
-        "lesson_promotions_card_id_check": "identity",
-        "lesson_promotions_promoted_at_check": "identity"
+        "lessons_id_check": "identity",
+        "lessons_review_required_check": "required",
+        "lessons_content_required_check": "required",
+        "lessons_content_length_check": "length",
+        "lessons_created_at_check": "identity"
+      }
+    },
+    "market_cache": {
+      "append_only": false,
+      "constraints": {
+        "market_cache_key_required_check": "required",
+        "market_cache_dataset_check": "enum",
+        "market_cache_payload_required_check": "required",
+        "market_cache_payload_json_check": "json"
+      }
+    },
+    "note_links": {
+      "append_only": false,
+      "constraints": {
+        "note_links_to_kind_check": "enum",
+        "note_links_to_id_required_check": "required",
+        "note_links_created_at_check": "identity",
+        "note_links_no_self_check": "referential"
+      }
+    },
+    "note_note_symbols": {
+      "append_only": false,
+      "constraints": {
+        "note_note_symbols_market_check": "enum",
+        "note_note_symbols_code_check": "identity",
+        "note_note_symbols_created_at_check": "identity"
+      }
+    },
+    "note_reviews": {
+      "append_only": true,
+      "constraints": {
+        "note_reviews_id_check": "identity",
+        "note_reviews_note_required_check": "required",
+        "note_reviews_outcome_check": "enum",
+        "note_reviews_rating_shape_check": "enum",
+        "note_reviews_reviewed_needs_rating_check": "conditional_required",
+        "note_reviews_deferred_has_no_rating_check": "conditional_required",
+        "note_reviews_deferred_has_no_duration_check": "conditional_required",
+        "note_reviews_reset_has_no_rating_check": "conditional_required",
+        "note_reviews_reset_has_no_duration_check": "conditional_required",
+        "note_reviews_duration_positive_check": "conditional_required",
+        "note_reviews_reviewed_at_check": "identity",
+        "note_reviews_from_state_check": "enum",
+        "note_reviews_to_state_check": "enum"
+      }
+    },
+    "note_schedule": {
+      "append_only": false,
+      "constraints": {
+        "note_schedule_note_required_check": "required",
+        "note_schedule_fsrs_id_check": "comparison",
+        "note_schedule_state_check": "enum",
+        "note_schedule_state_json_valid_check": "json",
+        "note_schedule_due_at_check": "required",
+        "note_schedule_enrolled_at_check": "identity",
+        "note_schedule_updated_at_check": "identity",
+        "note_schedule_updated_not_before_enrolled_check": "comparison"
+      }
+    },
+    "note_tags": {
+      "append_only": false,
+      "constraints": {
+        "note_tags_tag_required_check": "required",
+        "note_tags_tag_length_check": "length",
+        "note_tags_no_comma_check": "forbidden_value",
+        "note_tags_trimmed_check": "identity"
+      }
+    },
+    "notes": {
+      "append_only": false,
+      "constraints": {
+        "notes_id_check": "identity",
+        "notes_title_required_check": "required",
+        "notes_title_length_check": "length",
+        "notes_body_not_blank_check": "required",
+        "notes_as_of_check": "identity",
+        "notes_created_at_check": "identity",
+        "notes_updated_at_check": "identity",
+        "notes_updated_not_before_created_check": "comparison"
+      }
+    },
+    "notes_fts": {
+      "append_only": false,
+      "constraints": {}
+    },
+    "reviews": {
+      "append_only": true,
+      "constraints": {
+        "reviews_id_check": "identity",
+        "reviews_decision_required_check": "required",
+        "reviews_process_score_check": "comparison",
+        "reviews_outcome_shape_check": "conditional_required",
+        "reviews_not_scored_early_check": "comparison",
+        "reviews_outcome_needs_reviewed_at_check": "conditional_required",
+        "reviews_due_snapshot_required_check": "required",
+        "reviews_note_shape_check": "conditional_required",
+        "reviews_note_length_check": "length",
+        "reviews_reviewed_at_check": "identity",
+        "reviews_created_at_check": "identity"
+      }
+    },
+    "watchlist_events": {
+      "append_only": true,
+      "constraints": {
+        "watchlist_events_kind_check": "enum",
+        "watchlist_events_reason_required_check": "conditional_required",
+        "watchlist_events_reason_not_blank_check": "identity",
+        "watchlist_events_reason_length_check": "length",
+        "watchlist_events_supersedes_check": "conditional_required",
+        "watchlist_events_occurred_at_check": "identity"
       }
     }
   }

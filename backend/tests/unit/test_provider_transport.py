@@ -62,12 +62,40 @@ class TestFailureClassification:
         assert result.error_code is ErrorCode.DATA_SOURCE_FORBIDDEN
 
     @respx.mock
-    def test_a_429_is_also_blocked(self) -> None:
+    def test_a_429_is_rate_limited_and_not_a_refusal(self) -> None:
+        """⭐ 429 and 403 are different codes, and this test used to say they were not.
+
+        It asserted ``DATA_SOURCE_FORBIDDEN`` for a 429, which is precisely what
+        ``.ai/error-codes.md`` forbids:
+
+            > ⚠️ **限流与封 IP 必须分成两个 code** -- **恢复策略不同**（降速 vs 等 20 小时）
+
+        ⭐ The test was not wrong about the *state* -- both are ``error`` and both must not
+        be retried -- it was wrong about the *code*, and the code is what the router's
+        recovery keys on. Spec 043 split them; the assertion follows.
+        """
         respx.get(TENCENT_URL).mock(return_value=httpx.Response(429))
 
         result = TencentProvider().get_realtime(_moutai())
 
-        assert result.error_code is ErrorCode.DATA_SOURCE_FORBIDDEN
+        assert result.status is DataStatus.ERROR
+        assert result.error_code is ErrorCode.DATA_SOURCE_RATE_LIMITED
+
+    @respx.mock
+    def test_a_429_is_not_no_data(self) -> None:
+        """⭐ A throttle is a fact about **us**, so it can never read as 「this symbol has
+        no data」.
+
+        §4.6 keeps the four states apart, and this is the case where the easy mistake is to
+        answer a 429 with an empty result -- which is indistinguishable, downstream, from a
+        genuine absence.
+        """
+        respx.get(TENCENT_URL).mock(return_value=httpx.Response(429))
+
+        result = TencentProvider().get_realtime(_moutai())
+
+        assert result.status is not DataStatus.NO_DATA
+        assert result.status is not DataStatus.OK
 
     @respx.mock
     def test_a_server_error_is_unreachable_not_blocked(self) -> None:

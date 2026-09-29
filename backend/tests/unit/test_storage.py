@@ -97,7 +97,12 @@ CATEGORY_MARKERS: dict[str, tuple[tuple[str, ...], ...]] = {
     # `BETWEEN` joined it with 0006 (`reviews.process_score BETWEEN 1 AND 5`): a
     # range between two constants is the same kind of statement as an ordering
     # between two columns — neither says what the value *is*, only where it sits.
-    "comparison": ((">=",), (" > ",), ("BETWEEN",)),
+    # ⭐ `<=` arrived with spec 043 (`financial_reports.float_shares <= total_shares`,
+    # modulo both-null): the same statement as `>=`, only pointing the other way, so
+    # listing one and not the other made the vocabulary describe *ascending* orderings
+    # rather than orderings. ⭐ A marker list that encodes a direction is a list that
+    # will need a second entry the first time somebody writes `a <= b`.
+    "comparison": ((">=",), ("<=",), (" > ",), ("BETWEEN",)),
     # A value that must not contain something. Added 2026-09-28 with the notes
     # tables (spec 026): `note_tags_no_comma_check` is `instr(tag, ',') = 0`, and
     # it is there to make a **shape** unwritable — a comma-joined tag column is
@@ -569,7 +574,7 @@ class TestTheLedgerMatchesTheSchema:
         # original seven. Filing them under a near-miss would have made the
         # ledger wrong rather than merely incomplete, which is the worse failure
         # precisely because it is invisible.
-        assert len(bodies) == 156, f"expected 156 named constraints, found {len(bodies)}"
+        assert len(bodies) == 164, f"expected 164 named constraints, found {len(bodies)}"
 
     def test_every_constraint_uses_a_declared_category(self) -> None:
         for table, constraints in _ledger_constraints().items():

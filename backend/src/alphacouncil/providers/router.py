@@ -51,8 +51,34 @@ log = structlog.get_logger(__name__)
 
 T = TypeVar("T")
 
-# A source that refuses us (403/429) is left alone for a long while.
+#: ⭐ **How long to leave a source alone, per reason.** The reason is the key and not an
+#: afterthought: `.ai/error-codes.md` requires 「限流与封 IP 必须分成两个 code」 because
+#: 「**恢复策略不同**(降速 vs 等 20 小时)」. ⭐ One shared cooldown for all three of them is
+#: how a code split gets written in the enum and never actually taken advantage of -- the
+#: split is only real if the *behaviour* differs too, and this table is where it does.
+#:
+#: * ``FORBIDDEN`` -- 5 min, unchanged since spec 042. A 403 is usually the source's own
+#:   risk control and clears by itself.
+#: * ``RATE_LIMITED`` -- 30 s. Long enough to stop hammering, short enough to be back in
+#:   the failover rotation before a user notices.
+#: * ``IP_BLOCKED`` -- 20 h. ⭐ The number `error-codes.md` gives: 「请等待约 20 小时」.
+#:
+#: ⚠️ **The ``RATE_LIMITED`` entry is a cooldown, not the 「降速」 the doc asks for.** Cooling
+#: a source down keeps it out of requests; it does not slow the ones already in flight, and
+#: nothing here remembers the throttle to widen a later interval. ⭐ That is a real gap and
+#: it is listed in `findings/` -- but note it needs the market-data path to *have* an
+#: interval at all, which §7.8 requires and which does not exist yet (see the
+#: `core/http.py` docstring).
 _BLOCKED_COOLDOWN_S = 300.0
+_RATE_LIMITED_COOLDOWN_S = 30.0
+_IP_BLOCKED_COOLDOWN_S = 20 * 3600.0
+
+_COOLDOWN_BY_CODE: dict[ErrorCode, float] = {
+    ErrorCode.DATA_SOURCE_FORBIDDEN: _BLOCKED_COOLDOWN_S,
+    ErrorCode.DATA_SOURCE_RATE_LIMITED: _RATE_LIMITED_COOLDOWN_S,
+    ErrorCode.DATA_SOURCE_IP_BLOCKED: _IP_BLOCKED_COOLDOWN_S,
+}
+
 # Transport failures are cheap to hit and cheap to recover from, so the fuse is
 # shorter — but it still exists, so a dead source stops costing us latency.
 _FAILURE_THRESHOLD = 3
@@ -368,13 +394,15 @@ class MarketDataRouter:
             health.cooling_until = 0.0
             return
 
-        if result.error_code is ErrorCode.DATA_SOURCE_FORBIDDEN:
+        cooldown = _COOLDOWN_BY_CODE.get(result.error_code)  # type: ignore[arg-type]
+        if cooldown is not None:
             health.failures += 1
-            health.cooling_until = self._clock() + _BLOCKED_COOLDOWN_S
+            health.cooling_until = self._clock() + cooldown
             log.warning(
                 "router.provider_blocked",
                 provider=name,
-                cooldown_s=_BLOCKED_COOLDOWN_S,
+                code=result.error_code,
+                cooldown_s=cooldown,
             )
             return
 

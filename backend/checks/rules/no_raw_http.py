@@ -111,11 +111,33 @@ NETWORK_MODULES: frozenset[str] = frozenset(
         "urllib.request",
         "urllib.error",
         "xmlrpc.client",
+        # ⭐ **`baostock` is here for a different reason than the rest of this list.**
+        # It is not a transport; it is a **library that opens one**, over a private
+        # socket on port 10030 (spec 043, measured in research.md §4). ⭐ Naming it is
+        # the only way this rule can see that socket at all: the `socket.socket(...)`
+        # call happens **inside the package**, and the rule only reads this repository's
+        # own files.
+        "baostock",
         # ⭐ **`urllib.parse` is deliberately absent.** It parses strings and opens
         # nothing. Naming it here would make the rule cry wolf on real provenance code,
         # and a rule that cries wolf is a rule somebody turns off.
     }
 )
+
+#: ⚠️⭐ **This list is maintained by hand, and that is a hole that grows.**
+#:
+#: The rule reads *this repository's* files. A third-party package that opens a socket
+#: on our behalf is therefore **invisible to it** — ``baostock`` is in
+#: ``NETWORK_MODULES`` because spec 043 named it, and ⭐ nothing would have noticed if
+#: it had not been.
+#:
+#: ⭐ So this is stated rather than designed away: **a guard that claims to be complete
+#: and is not is more dangerous than one that says where it ends**, because the first
+#: gets trusted for something it does not cover. Every new dependency that opens a
+#: transport has to be added by hand; ``test_the_two_network_lists_agree`` is what stops
+#: an entry being added to one and forgotten in the other, ⭐ and it cannot stop one
+#: being missed from both. That is the honest scope of this rule.
+NETWORK_MODULES_ARE_MAINTAINED_BY_HAND = True
 
 #: Module-level convenience helpers that skip connection reuse entirely.
 CONVENIENCE_CALLS = frozenset(
@@ -194,6 +216,14 @@ CONSTRUCTION_SITES: frozenset[Path] = frozenset(
     {
         Path("core/http.py"),  # the one place an HTTP client is constructed
         Path("notify/email.py"),  # the one place an SMTP session is opened
+        # ⭐ `providers/financial.py` (spec 043) is here for a reason the other two are
+        # not: it never calls a transport API, it **imports a library that opens one**.
+        # `bs.login()` is what opens the socket, and that happens inside BaoStock. Naming
+        # the module here is the *only* way the rule can see it at all -- ⭐ and it is a
+        # declaration, not a derivation: nothing verified that this file is the sole
+        # importer of `baostock`, which is the gap `NETWORK_MODULES_ARE_MAINTAINED_BY_HAND`
+        # admits to.
+        Path("providers/financial.py"),
     }
 )
 

@@ -982,8 +982,8 @@ class TestTheVersionNumberItself:
         assert versions == list(range(1, len(versions) + 1)), (
             f"migration versions are not contiguous from 1: {versions}"
         )
-        assert versions[-1] == 10, (
-            f"the newest migration is {versions[-1]}, not 10. "
+        assert versions[-1] == 11, (
+            f"the newest migration is {versions[-1]}, not 11. "
             "If that is intended: bump this number, and check that the release notes "
             "and .ai/status.md agree with it."
         )

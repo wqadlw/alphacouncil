@@ -181,6 +181,13 @@ ignore = [
 # being checkable against the constitution by eye. The only CJK in the file is that
 # quotation and the 「唯一入口」 table, so the exemption buys nothing else.
 "src/alphacouncil/core/http.py" = ["RUF001", "RUF002"]
+# ⭐ `providers/financial.py` (spec 043) deliberately has **no** exemption here, even though
+# it is written in mixed CJK/English. The first draft asked for one, on the grounds that
+# `ProviderCapabilities.notes` is 「§4.5 的降级说明，会上屏」. ⭐ **That was false** —
+# `CapabilitiesRead` carries `CapabilityCell`/`CapabilitySource`, neither of which has a
+# `notes` field, so nothing renders it today. A guard switched off on the strength of a claim
+# about a feature that does not exist yet is the wrong trade; the file uses ASCII punctuation
+# in `notes` instead, and the Chinese stays where it is quoting the constitution.
 # The notes layer (spec 026) for the same reason as `today.py`, one step up the
 # stack: `domain/note.py` **quotes two specifications verbatim** — the provenance
 # rule from `基础功能打磨与AI桥接` §2.1 (「不是笔记。笔记可以没有来源；卡片必须有」) and
@@ -239,6 +246,14 @@ files = ["src", "tests", "checks"]
 
 [[tool.mypy.overrides]]
 module = ["respx.*"]
+ignore_missing_imports = true
+# `baostock` ships no stubs and no `py.typed` (spec 043). ⭐ Narrow on purpose: the flag is
+# for the **import** only, so every use of the module stays `Any` and mypy still refuses to
+# let one reach a return annotation — ⭐ which is the reason `providers/financial.py` wraps
+# the library in typed dataclasses and a checked `_rows()`. A blanket waiver on the module
+# would have hidden that boundary instead of describing it.
+[[tool.mypy.overrides]]
+module = ["baostock.*"]
 ignore_missing_imports = true
 
 [tool.pydantic-mypy]

@@ -121,6 +121,17 @@ APPEND_ONLY_TABLES = frozenset(
         # cross-checked against each other. A convention with no trigger is a
         # comment; a convention with a trigger plus this cross-check is enforced.
         "lessons",
+        # financial_reports (spec 043, D4): the first table here that is **neither a
+        # ledger nor anything the user wrote**. Its rows are rows a source published,
+        # and the reason they cannot be rewritten is different from all the others:
+        # an `UPDATE` on this table is not 「editing the past」, it is **making the past
+        # say something we never saw** — and nothing about it looks like tampering. A
+        # restatement arrives from the source with a **later `announced_at`** and is
+        # inserted as a new row, which is why `announced_at` is part of the primary
+        # key. ⭐ That is why 「append-only」 is the whole feature here: a table whose
+        # primary key carries the announcement date cannot express an overwrite at all,
+        # and the triggers make the same promise the key does.
+        "financial_reports",
         # lesson_promotions (spec 030): **not** a review, and a different reason.
         # The other nine tables are histories of things that *happened to* the
         # reader. This one is a promise they made: 「这条教训我已经签成卡片了」. A
