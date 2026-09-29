@@ -41,12 +41,6 @@ from alphacouncil.core.time import utc_millis
 from alphacouncil.domain.card import ClaimType
 from alphacouncil.domain.lesson import (
     MAX_CONTENT_CHARS,
-    LessonAlreadyPromotedError,
-    LessonContentBlankError,
-    LessonNotFoundError,
-    LessonPromotionSourceError,
-    LessonReviewMissingError,
-    LessonTooLongError,
 )
 from alphacouncil.domain.scheduling import ReviewRating, ScheduleState
 from alphacouncil.storage.db import transaction
@@ -174,19 +168,17 @@ def record_lesson(
     client cannot create a lesson that is not on the queue, because there is no
     code path that does one without the other.
     """
-    try:
-        with transaction(connection):
-            row, schedule = repository.record_from_review(
-                connection, decision_id, payload.content, now=_now()
-            )
-    except LessonReviewMissingError as cause:
-        raise HTTPException(
-            status_code=http_status.HTTP_409_CONFLICT, detail=str(cause)
-        ) from cause
-    except (LessonContentBlankError, LessonTooLongError) as cause:
-        raise HTTPException(
-            status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(cause)
-        ) from cause
+    # ⭐ **No try/except here.** `LessonError` is registered in `api/errors.py`, so
+    # the domain failure is turned into the coded envelope — with the right status and
+    # the message the reader needs — by the one place that does that mapping. The
+    # hand-rolled `HTTPException(detail=...)` this replaced was the **404 shape**, and
+    # the client does not recognise it, so the reader got a generic rejection line
+    # instead of the `LESSON_PROMOTION_SOURCE_REQUIRED` text — which is the one
+    # sentence that makes declining feel safe.
+    with transaction(connection):
+        row, schedule = repository.record_from_review(
+            connection, decision_id, payload.content, now=_now()
+        )
     return LessonRecordedRead(
         lesson=LessonRead(
             lesson_id=row.lesson_id,
@@ -270,6 +262,10 @@ def promote_lesson(
     try:
         claim_type = ClaimType(payload.claim_type)
     except ValueError as cause:
+        # ⭐ The one failure here that is **not** a domain error, so it keeps a
+        # hand-rolled status — and says why. A pydantic `Literal` would move it to a
+        # 422, which the client decodes with `describeValidation`; that is a larger
+        # change than a lesson's promotion needs, so it is recorded rather than made.
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -278,28 +274,15 @@ def promote_lesson(
             ),
         ) from cause
 
-    try:
-        with transaction(connection):
-            promotion = repository.promote_lesson(
-                connection,
-                lesson_id,
-                payload.source_url,
-                payload.source_title,
-                now=_now(),
-                claim_type=claim_type,
-            )
-    except LessonPromotionSourceError as cause:
-        raise HTTPException(
-            status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(cause)
-        ) from cause
-    except LessonAlreadyPromotedError as cause:
-        raise HTTPException(
-            status_code=http_status.HTTP_409_CONFLICT, detail=str(cause)
-        ) from cause
-    except LessonNotFoundError as cause:
-        raise HTTPException(
-            status_code=http_status.HTTP_404_NOT_FOUND, detail=str(cause)
-        ) from cause
+    with transaction(connection):
+        promotion = repository.promote_lesson(
+            connection,
+            lesson_id,
+            payload.source_url,
+            payload.source_title,
+            now=_now(),
+            claim_type=claim_type,
+        )
     return LessonPromotedRead(
         lesson_id=promotion.lesson_id,
         card_id=promotion.card_id,
@@ -325,19 +308,14 @@ def review_lesson(
 
     ``duration_ms`` is stored and never compared (red line 11).
     """
-    try:
-        with transaction(connection):
-            row = repository.record_review(
-                connection,
-                lesson_id,
-                payload.rating,
-                now=_now(),
-                duration_ms=payload.duration_ms,
-            )
-    except LessonNotFoundError as cause:
-        raise HTTPException(
-            status_code=http_status.HTTP_404_NOT_FOUND, detail=str(cause)
-        ) from cause
+    with transaction(connection):
+        row = repository.record_review(
+            connection,
+            lesson_id,
+            payload.rating,
+            now=_now(),
+            duration_ms=payload.duration_ms,
+        )
     return {
         "lesson_id": row.lesson_id,
         "outcome": row.outcome.value,

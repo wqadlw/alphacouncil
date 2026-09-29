@@ -345,3 +345,145 @@ test.describe('记一条教训（spec 030）', () => {
     expect(enqueueCalls, '不应该存在「入队」这一步 —— 它没有端点').toBe(0)
   })
 })
+
+test.describe('教训的浏览与转卡（spec 030）', () => {
+  test.beforeEach(async ({ page }) => {
+    await routeLessons(page, LESSONS)
+    await page.route('**/api/v1/lessons', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            lesson_id: LESSONS[0].lesson_id,
+            review_id: 'review_1700000000000',
+            content: LESSONS[0].content,
+            created_at: '2026-09-28T00:00:00.000Z',
+          },
+        ]),
+      })
+    })
+  })
+
+  test('⭐ 教训视图里不出现笔记的空状态', async ({ page }) => {
+    /**
+     * ⭐ The bug this was written for. The notes list was gated on
+     * `view !== 'cards'`, so adding the 教训 view brought it along — and a reader with
+     * no notes was told to 「点下面的『记一条』」 about a button that is not on this
+     * page. **A control referred to and not reachable**, which is the shape the owner
+     * complained about to begin with.
+     *
+     * The fix enumerates the views the block *belongs to* rather than the one it is
+     * not, because a gate written as an exclusion fails silently every time a view is
+     * added.
+     */
+    await page.goto('/#/vault')
+    await page.getByTestId('vault-view-lessons').click()
+
+    await expect(page.getByTestId('lesson-row')).toHaveCount(1)
+    await expect(page.getByTestId('vault-empty')).toHaveCount(0)
+    await expect(page.getByTestId('note-title')).toHaveCount(0)
+  })
+
+  test('⭐ 出处没填齐时，署名按钮是禁用的', async ({ page }) => {
+    /**
+     * Asserted by the button's **state**, not by an error message — a disabled
+     * submit with two empty fields is the accurate rendering of 「there is nothing to
+     * sign yet」, and a message would be explaining something the reader can see.
+     */
+    await page.goto('/#/vault')
+    await page.getByTestId('vault-view-lessons').click()
+    await page.getByTestId('lesson-promote-open').click()
+
+    await expect(page.getByTestId('lesson-promote-submit')).toBeDisabled()
+    await page.getByTestId('lesson-source-url').fill('https://research.example.com/a')
+    await expect(page.getByTestId('lesson-promote-submit')).toBeDisabled()
+    await page.getByTestId('lesson-source-title').fill('\u767d\u9152\u6279\u4ef7\u8ddf\u8e2a')
+    await expect(page.getByTestId('lesson-promote-submit')).toBeEnabled()
+  })
+
+  test('⭐ 署名之后按钮消失，只剩一句「已经是卡片了」', async ({ page }) => {
+    /**
+     * ⭐ `toHaveCount(0)` is the point. `lesson_promotions.lesson_id` is the table's
+     * primary key, so a second promotion is impossible **in the database** — and a
+     * control for it could only ever produce a failure. The reasoning has to reach the
+     * screen, and this is the assertion for it.
+     */
+    const bodies: string[] = []
+    await page.route('**/api/v1/lessons/*/promote', async (route) => {
+      bodies.push(route.request().postData() ?? '')
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          lesson_id: LESSONS[0].lesson_id,
+          card_id: 'card_1700000000042',
+          promoted_at: '2026-09-28T00:00:00.000Z',
+        }),
+      })
+    })
+
+    await page.goto('/#/vault')
+    await page.getByTestId('vault-view-lessons').click()
+    await page.getByTestId('lesson-promote-open').click()
+    await page.getByTestId('lesson-source-url').fill('https://research.example.com/a')
+    await page.getByTestId('lesson-source-title').fill('\u767d\u9152\u6279\u4ef7\u8ddf\u8e2a')
+    await page.getByTestId('lesson-promote-submit').click()
+
+    await expect(page.getByTestId('lesson-promoted')).toContainText('已经是卡片了')
+    await expect(page.getByTestId('lesson-promoted')).toContainText('card_1700000000042')
+    await expect(page.getByTestId('lesson-promote-open')).toHaveCount(0)
+    // One request, carrying both source fields — the client cannot promote without
+    // them, so the wire shape is asserted too.
+    expect(bodies).toHaveLength(1)
+    expect(JSON.parse(bodies[0])).toMatchObject({
+      source_url: 'https://research.example.com/a',
+    })
+  })
+
+  test('⭐ 拒绝转卡时，错误文案说的是「不会丢」', async ({ page }) => {
+    /**
+     * ⭐ The server's 400 text is shown **verbatim**. Rewriting it here would throw
+     * away the one sentence that makes declining feel safe — 「拿得出出处就说明这条
+     * 已经是一条教训了 — 它已经记下来了，不会丢」.
+     */
+    /**
+     * ⭐ The **coded envelope**, not `{detail: ...}`.
+     *
+     * The first version answered with the 404 shape and the client rendered a generic
+     * rejection line, so the sentence that makes declining feel safe never reached the
+     * reader. The route had the same bug — `HTTPException(detail=...)` for a 400 — and
+     * both are fixed. ⭐ The fixture was the last thing still describing the old
+     * contract, which is regression 0009's shape one level out: **a fixture asserting
+     * a body the server cannot produce**.
+     */
+    await page.route('**/api/v1/lessons/*/promote', async (route) => {
+      await route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          severity: 'error',
+          code: 'LESSON_PROMOTION_SOURCE_REQUIRED',
+          message:
+            '\u62ff\u4e0d\u51fa\u51fa\u5904\u5c31\u8bf4\u660e\u8fd9\u6761\u8fd8\u53ea\u662f\u4e00\u6761\u6559\u8bad \u2014\u2014 '
+            + '\u5b83\u5df2\u7ecf\u8bb0\u4e0b\u6765\u4e86\uff0c\u4e0d\u4f1a\u4e22\u3002',
+          target: null,
+          fix: null,
+        }),
+      })
+    })
+
+    await page.goto('/#/vault')
+    await page.getByTestId('vault-view-lessons').click()
+    await page.getByTestId('lesson-promote-open').click()
+    await page.getByTestId('lesson-source-url').fill('https://research.example.com/a')
+    await page.getByTestId('lesson-source-title').fill('x')
+    await page.getByTestId('lesson-promote-submit').click()
+
+    const message = page.getByTestId('lesson-promote-error')
+    await expect(message).toBeVisible()
+    await expect(message).toContainText('\u4e0d\u4f1a\u4e22')
+    // And the lesson is still there — declining costs nothing.
+    await expect(page.getByTestId('lesson-row')).toHaveCount(1)
+  })
+});

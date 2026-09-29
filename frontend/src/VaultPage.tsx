@@ -69,6 +69,7 @@ import {
   readNoteSchedule,
   removeNoteTag,
 } from './notes'
+import LessonList from './components/knowledge/LessonList'
 import LessonRecallView from './components/knowledge/LessonRecallView'
 import RecallView from './components/knowledge/RecallView'
 import { displayCode, formatMoment } from './format'
@@ -78,12 +79,20 @@ import { DataTable, type Column } from './components/data/DataTable'
 import { useResource } from './useResource'
 
 /** The three things a note may be, in the order a reader looks for them. */
-type View = 'notes' | 'cards' | 'all' | 'recall'
+type View = 'notes' | 'cards' | 'lessons' | 'all' | 'recall'
 
 const VIEWS: { key: View; label: string }[] = [
   { key: 'all', label: '全部' },
   { key: 'notes', label: '笔记' },
   { key: 'cards', label: '卡片' },
+  // ⭐ 教训 (spec 030): a **browsable** list, not a queue. Promotion is not tied to
+  // being due — a lesson written last month and never asked about is the one most
+  // likely to be ready to sign, because the reader has had time to sit with it. So it
+  // cannot live in the recall view, which shows what *came back*.
+  //
+  // Placed **before** 该复习, and that order is a claim: the recall view is the one
+  // you are interrupted by rather than the one you go to read.
+  { key: 'lessons', label: '教训' },
   // ⭐ A filter, not a route. The queue is notes; the vault is where notes live.
   // A separate `#/recall` would split one subject across two URLs and two nav
   // entries, and the nav is deliberately count-free and short.
@@ -277,7 +286,20 @@ export default function VaultPage() {
         <p className="px-4 py-3 text-[13px] text-ink-faint">读取中…</p>
       ) : (
         <>
-          {view !== 'cards' ? (
+          {/*
+            ⭐ **The set of views this block belongs to**, not 「not cards».
+
+            The condition used to be `view !== 'cards'`, so when the 教训 view was
+            added the notes list came with it — onto a page about lessons, telling
+            the reader to 「点下面的『记一条』」 about a button that is not there. ⭐ That
+            is the shape the owner complained about to begin with: a control referred
+            to and not reachable, and here it points *down* at something absent.
+
+            ⭐ **Enumerating membership rather than exclusion** is the point: a gate
+            written as 「not the one other view」 fails every time a view is added, and
+            it fails silently — the page renders.
+          */}
+          {view === 'all' || view === 'notes' ? (
             <NoteList
               notes={notes.data ?? []}
               selected={selected}
@@ -293,6 +315,14 @@ export default function VaultPage() {
             cleanly "notes".
           */}
           {view === 'cards' ? <CardList /> : null}
+          {/*
+            ⭐ The 教训 list is **not** part of 全部. In 全部 the two kinds that read as
+            knowledge sit together — notes beside cards — and a lesson is neither: it
+            is something that came out of a mistake, and the reader came here to read
+            what they wrote down, not to grade themselves. It has its own view, and
+            promoting happens there.
+          */}
+          {view === 'lessons' ? <LessonList /> : null}
         </>
       )}
 
@@ -302,7 +332,7 @@ export default function VaultPage() {
       ) : null}
 
       {/* ── 3. 记一条 ──────────────────────────────────────────────────── */}
-      {view === 'recall' ? null : (
+      {view === 'recall' || view === 'lessons' ? null : (
         <div className="px-4 py-3">
           <NoteComposer
             open={formOpen}

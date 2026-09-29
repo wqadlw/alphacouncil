@@ -23,6 +23,7 @@ from alphacouncil.core.error_codes import ErrorCode
 from alphacouncil.domain.card import CardError
 from alphacouncil.domain.decision import DecisionError
 from alphacouncil.domain.instrument import InstrumentError
+from alphacouncil.domain.lesson import LessonError
 from alphacouncil.domain.note import NoteError
 from alphacouncil.domain.note_recall import NoteRecallError
 from alphacouncil.domain.review import ReviewError
@@ -36,6 +37,34 @@ from alphacouncil.domain.watchlist import WatchlistError
 #: assumed. A state conflict is a 409, and "the thing you asked about is not
 #: there" is a 404 — statuses the frontend can act on without reading prose.
 _STATUS_BY_CODE: dict[str, int] = {
+    # Spec 030, J5. The fifth time this map has needed a new row (K3, J3, notes,
+    # recall, and now lessons) — and the fifth time the omission showed up as a flat
+    # 400 with no `code`, so a client could not tell 「已经转过卡了」 from
+    # 「出处不是 http」. ⭐ `errors.py` says of the last one: "worth remembering as a
+    # step, not rediscovering as a bug". I rediscovered it as a bug, and the browser
+    # is what showed it: the refusal rendered as the generic 「请求被拒绝」 instead of
+    #
+    # ⭐ **Reworded rather than exempted.** The fullwidth parentheses inside that
+    # quoted string are what `RUF003` objects to, and the project's standard for a
+    # per-file exemption is that paraphrasing would lose the constraint being
+    # cited — the parentheses were never the constraint. ⭐ 「这里其他备注都这么写」 is a
+    # reason to add one, not a reason to stop asking whether the quotation needs
+    # the punctuation.
+    #
+    # ⭐ The refusal sentence is referred to by its **error code** from here on
+    # rather than quoted: `RUF003` flags a fullwidth comma even inside corner
+    # brackets, and the existing comments in this file pass only because none of
+    # their quotations happens to contain one. ⭐ A quotation whose punctuation has to
+    # be reworked to satisfy a linter is a quotation that will be reworked again,
+    # and the code says the same thing without the punctuation.
+    # `LESSON_PROMOTION_SOURCE_REQUIRED` — the one sentence that makes declining
+    # feel safe.
+    #
+    # 409 rather than 400 for the two conflicts: the request is well-formed and the
+    # *state* disagrees — the review is not written, or this lesson is already signed.
+    ErrorCode.LESSON_NOT_FOUND.value: 404,
+    ErrorCode.LESSON_REVIEW_MISSING.value: 409,
+    ErrorCode.LESSON_ALREADY_PROMOTED.value: 409,
     ErrorCode.WATCHLIST_NOT_FOLLOWED.value: 404,
     ErrorCode.WATCHLIST_ALREADY_REMOVED.value: 409,
     ErrorCode.INSTRUMENT_ASSET_TYPE_CONFLICT.value: 409,
@@ -143,4 +172,10 @@ CODED_ERRORS: tuple[type[Exception], ...] = (
     # outcome before it was due" (409) would both look like a malformed request,
     # and the UI could not tell the user which mistake they made.
     ReviewError,
+    # J5 (spec 030). ⭐ The **fifth** time this tuple has needed a new base, and the
+    # comment above has said twice that it is worth remembering as a step rather than
+    # rediscovering as a bug. Adding a domain error class therefore has **three**
+    # places to touch, not two: the enum, the doc table, and this tuple — and the
+    # third is the one that is easy to miss because nothing fails when it is.
+    LessonError,
 )
