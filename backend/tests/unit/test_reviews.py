@@ -520,3 +520,122 @@ def _insert_raw_outcome(value: str) -> None:
         )
     finally:
         conn.close()
+
+
+class TestTheReviewedList:
+    """
+    ⭐ Every test here exists because a mutation survived.
+
+    ``/recent`` reported ``is_due`` the way the due endpoint does —
+    ``as_of >= due_at`` — which is right *there*, because that list has already
+    filtered on ``reviewed_at IS NULL``. Reused here it handed the page ``True`` for a
+    decision that had already been graded, and the page offered five score buttons
+    directly above a line saying the score can never change.
+
+    ⭐ **The E2E suite could not catch that.** Its fixture hardcoded
+    ``is_due: false``, so the browser was asserting 「the fixture said false → no
+    buttons」, not 「the server says false for a graded decision」. A fixture that
+    replaces the computation under test is the same defect as regression 0009 with the
+    sign flipped: there it asserted a state the server could not produce; here it
+    **stood in for** the server.
+    """
+
+    def _graded_decision(self, connection: sqlite3.Connection) -> str:
+        connection.execute(
+            "INSERT INTO instruments (market, code, name, name_source, name_fetched_at, "
+            "asset_type, created_at) VALUES ('sh', '600519', 'x', 'sina', ?, 'stock', ?)",
+            ("2026-03-12T09:30:00.000Z", "2026-03-12T09:30:00.000Z"),
+        )
+        connection.execute(
+            "INSERT INTO decisions (id, market, code, action, rationale, counter_evidence, "
+            "kill_criteria, thesis_id) VALUES (?, 'sh', '600519', 'buy', 'r', 'c', '[]', NULL)",
+            (DECISION,),
+        )
+        with db.transaction(connection):
+            repo.schedule(connection, DECISION, due_at=NOW, now=NOW)
+        # ⭐ **A complete review, not a half-review.** The first version passed
+        # `outcome=None` and then asserted the decision had left the due queue — and
+        # it had not. `reviews.record` stamps the state's `reviewed_at` **only when an
+        # outcome is recorded**, because a process score on its own is a half-review
+        # and must not make the decision look reviewed. So the design was right, the
+        # test's premise was wrong, and three guesses went into finding that out.
+        #
+        # ⭐ Worth recording what I nearly did with that: file 「regression 0007's fix
+        # is inert」 into the ledger, on the strength of a test I had not checked. The
+        # record for 0007 exists and would have been contradicted two days later.
+        # **Before recording that a fix is inert, read the fix** — a claim about the
+        # absence of an effect is the cheapest thing in a codebase to explain wrongly.
+        with db.transaction(connection):
+            repo.record(
+                connection,
+                DECISION,
+                Review(
+                    decision_id=DECISION,
+                    process_score=2,
+                    outcome=Outcome.BAD,
+                    reviewed_at=NOW,
+                    due_at=NOW,
+                    note="\u6279\u4ef7\u5df2\u7ecf\u56de\u843d\u4e86\uff0c\u6211\u6ca1\u770b\u6e20\u9053\u5e93\u5b58",
+                ),
+                now=NOW,
+            )
+        return DECISION
+
+    def test_a_graded_decision_leaves_the_due_queue(self, connection: sqlite3.Connection) -> None:
+        """The premise of the whole thing: it is **not** in the due list."""
+        self._graded_decision(connection)
+        assert repo.due_reviews(connection, as_of=NOW + timedelta(days=3650)) == ()
+
+    def test_a_graded_decision_is_in_the_reviewed_list(
+        self, connection: sqlite3.Connection
+    ) -> None:
+        """
+        ⭐ **The helper call is the point of this test**, and its absence is why the
+        first run said ``assert 0 == 1`` on an empty tuple. Each test gets a **fresh
+        database** from the function-scoped ``tmp_path`` fixture, so nothing carries
+        over \u2014 and the test was relying on the *previous* test having run.
+
+        That is the shape this project has been bitten by repeatedly: a test that
+        depends on another's state passes or fails **depending on ordering**, and the
+        default order happens to be the one where it passes. ⭐ Running the single
+        test is what exposed it \u2014 which is the cheapest available check that a test
+        stands on its own.
+        """
+        self._graded_decision(connection)
+        assert len(repo.recent_reviews(connection)) == 1
+
+    def test_recent_is_newest_first_and_never_duplicates_a_row(
+        self, connection: sqlite3.Connection
+    ) -> None:
+        """
+        ⭐ Ordered by the ledger's **latest** ``reviewed_at``, not the state row's copy.
+
+        The state row is stamped when a review is written; the ledger holds one row
+        per review. Sorting by the state row would order a decision reviewed twice by
+        its **first** review — the same class of bug as ``due_reviews``' missing
+        filter (regression 0007): a plausible number that is quietly the wrong one.
+        """
+        self._graded_decision(connection)
+        # A second review, later. ⭐ `later` is declared here rather than as a
+        # module constant because this file has no notion of a second moment —
+        # and a shared `later` would invite the next test to depend on it.
+        later = datetime(2026, 10, 20, 1, 0, 0, tzinfo=UTC)
+        with db.transaction(connection):
+            connection.execute(
+                "INSERT INTO reviews (id, decision_id, process_score, outcome, reviewed_at, "
+                "due_at_snapshot, note, created_at) "
+                "VALUES ('review_1700000000001', ?, 4, NULL, ?, ?, NULL, ?)",
+                (
+                    DECISION,
+                    utc_millis(later),
+                    utc_millis(NOW),
+                    utc_millis(later),
+                ),
+            )
+        rows = repo.recent_reviews(connection)
+        assert [row.decision_id for row in rows] == [DECISION]
+        assert len(rows) == 1, "one decision must not appear twice"
+
+    def test_recent_is_bounded(self, connection: sqlite3.Connection) -> None:
+        """A place to go and read, not a history to scroll."""
+        assert len(repo.recent_reviews(connection, limit=5)) <= 5

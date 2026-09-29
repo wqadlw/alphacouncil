@@ -441,6 +441,63 @@ decision: str,
                     (lesson.lesson_id, utc_millis(NOW), utc_millis(NOW), utc_millis(NOW)),
                 )
 
+    def test_a_deferral_cannot_carry_a_rating(
+        self, connection: sqlite3.Connection, decision: str
+    ) -> None:
+        """
+        ⭐ **This test exists because a mutation survived.**
+
+        Widening ``lesson_reviews_deferred_has_no_rating_check`` to a tautology left
+        all 32 tests green, because nothing asserted it. Acceptance item 4 covers
+        ``enrolled``; ``deferred`` was copied from ``note_reviews`` and never given
+        its own test.
+
+        ⭐ **A constraint copied from a sibling table is a constraint nobody is
+        holding** — the copy is not the coverage. And the mutation is how you find
+        out, which is the whole reason the check runs.
+
+        A deferral means 「not now, I have not thought it through」, and a grade means
+        「here is how well I recalled it」. There is no recall in a deferral, so a row
+        carrying both is asserting something about the reader that did not happen.
+        """
+        _write_review(connection, decision)
+        lesson, _ = _record(connection, decision)
+        with pytest.raises(sqlite3.IntegrityError, match="CHECK"):  # noqa: SIM117
+            with _in_tx(connection):
+                connection.execute(
+                    "INSERT INTO lesson_reviews (id, lesson_id, outcome, rating, reviewed_at, "
+                    "duration_ms, from_due_at, to_due_at, from_state, to_state) "
+                    "VALUES ('lesson_review_1700000000998', ?, 'deferred', 'good', ?, NULL, "
+                    "?, ?, 'learning', 'learning')",
+                    (
+                        lesson.lesson_id,
+                        utc_millis(NOW),
+                        utc_millis(NOW),
+                        utc_millis(NOW),
+                    ),
+                )
+
+    def test_a_deferral_cannot_carry_a_duration(
+        self, connection: sqlite3.Connection, decision: str
+    ) -> None:
+        """The same shape, one column over — and it was equally untested."""
+        _write_review(connection, decision)
+        lesson, _ = _record(connection, decision)
+        with pytest.raises(sqlite3.IntegrityError, match="CHECK"):  # noqa: SIM117
+            with _in_tx(connection):
+                connection.execute(
+                    "INSERT INTO lesson_reviews (id, lesson_id, outcome, rating, reviewed_at, "
+                    "duration_ms, from_due_at, to_due_at, from_state, to_state) "
+                    "VALUES ('lesson_review_1700000000997', ?, 'deferred', NULL, ?, 4200, "
+                    "?, ?, 'learning', 'learning')",
+                    (
+                        lesson.lesson_id,
+                        utc_millis(NOW),
+                        utc_millis(NOW),
+                        utc_millis(NOW),
+                    ),
+                )
+
     def test_notes_still_have_their_reset(self, connection: sqlite3.Connection) -> None:
         """⭐ The contrast, so the absence above is a distinction and not a gap.
 

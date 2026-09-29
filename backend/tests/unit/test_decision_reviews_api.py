@@ -29,6 +29,13 @@ from alphacouncil.core.config import Settings
 
 NOW = datetime(2026, 9, 28, 0, 0, tzinfo=UTC)
 DUE_AT = "2026-12-28T00:00:00.000Z"  # a date the tests can also pretend is past
+#: ⭐ A due date in the **past**, for the tests that need a *finished* retrospective.
+#: The first version reused `DUE_AT` and got `409 REVIEW_NOT_DUE: scoring early is
+#: hindsight` — the gate working as designed. A past due date is not a workaround: a
+#: retrospective can only be completed once it is due, so this is the normal shape of a
+#: finished one. It also makes the `is_due` mutation detectable with no `as_of`
+#: gymnastics, because `now >= due_at` holds by construction.
+PAST_DUE_AT = "2026-09-01T00:00:00.000Z"
 
 
 @pytest.fixture
@@ -436,3 +443,71 @@ class TestTheTwoQueuesCannotBeConfused:
         decision_rows = client.get("/api/v1/decision-reviews/due", params=params).json()
         assert len(decision_rows) == 1
         assert "card_id" not in decision_rows[0]
+
+
+class TestTheReviewedListOnTheWire:
+    """
+    ⭐ Every test here exists because a mutation survived **twice**.
+
+    ``"is_due"`` is set in the **route**, so a repository-level test cannot see it —
+    and the E2E could not either, because its fixture hardcoded the very value under
+    test. ⭐ **The value a fixture supplies and the value it hides are the same value.**
+
+    Why the field is pinned at all: the page picks its branch from it. A reviewed
+    decision reported as due gets five score buttons directly above a line saying the
+    score can never change, and the lesson composer — which lives in the same branch
+    — was unreachable until ``/recent`` existed.
+    """
+
+    def test_a_graded_decision_is_served_as_not_due(self, client: TestClient) -> None:
+        decision = _decision(client, review_due_at=PAST_DUE_AT)
+
+        # Complete the review, so the decision leaves the due queue and appears in the
+        # reviewed one. An outcome is required: a process score alone is a
+        # half-review and deliberately keeps the decision in the queue.
+        # ⭐ The create route is at the **prefix root**, with `decision_id` in the
+        # body. `POST /api/v1/decision-reviews/{id}` is a 405 — the path I invented
+        # because the *read* route looks like that, and the rest of this file already
+        # had the right one two screens up.
+        scored = client.post(
+            "/api/v1/decision-reviews",
+            json={"decision_id": decision, "process_score": 2, "outcome": "bad"},
+        )
+        assert scored.status_code == 201, scored.text
+
+        # Far enough in the future that `as_of >= due_at` would be **true**, so a
+        # computed `is_due` would say True here and the mutation would survive.
+        recent = client.get(
+            "/api/v1/decision-reviews/recent", params={"limit": 5}
+        )
+        assert recent.status_code == 200, recent.text
+        rows = recent.json()
+        assert [row["decision_id"] for row in rows] == [decision]
+        assert rows[0]["is_due"] is False, (
+            "a decision that has been graded has nothing to grade, and this field "
+            "picks the page's branch"
+        )
+        assert rows[0]["reviewed_at"] is not None
+
+    def test_a_due_decision_is_absent_from_the_reviewed_list(self, client: TestClient) -> None:
+        """The two lists are disjoint, and that is what makes the other one reachable."""
+        _decision(client, review_due_at=PAST_DUE_AT)
+        assert client.get("/api/v1/decision-reviews/recent").json() == []
+
+    def test_the_reviewed_list_renders_no_count(self, client: TestClient) -> None:
+        """
+        ⭐ A **bare array**, no wrapper — the response *shape* is the guarantee.
+
+        A tally of how many retrospectives you have written is a number you can start
+        climbing, and red line 11 is explicit that these things do not render. A
+        wrapper object with a ``count`` would be a count, whatever the field is
+        called, so the assertion is on the type rather than on a key's absence.
+        """
+        decision = _decision(client, review_due_at=PAST_DUE_AT)
+        client.post(
+            "/api/v1/decision-reviews",
+            json={"decision_id": decision, "process_score": 2, "outcome": "bad"},
+        )
+        body = client.get("/api/v1/decision-reviews/recent").json()
+        assert isinstance(body, list)
+        assert body and all(isinstance(row, dict) for row in body)
