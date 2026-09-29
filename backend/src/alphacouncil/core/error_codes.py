@@ -203,6 +203,12 @@ class ErrorCode(StrEnum):
     CHECK_BARE_EXCEPT = "CHECK_BARE_EXCEPT"
     CHECK_DOC_DRIFT = "CHECK_DOC_DRIFT"
     CHECK_TOOL_ENCODING_UNGUARDED = "CHECK_TOOL_ENCODING_UNGUARDED"
+    # S-14 (spec 032). Two codes, not one: 「未跟踪」 and 「被忽略」 are different
+    # defects with different fixes, and merging them into one code would make the
+    # fix string lie about which one it is. The ignored case is the one that matters
+    # more \u2014 `git status` does not show ignored files.
+    CHECK_UNTRACKED_SOURCE = "CHECK_UNTRACKED_SOURCE"
+    CHECK_IGNORED_SOURCE = "CHECK_IGNORED_SOURCE"
 
     # -- CHECK_* : emitted by the check runner itself -----------------------
     # Not tied to any single rule, so they cannot be attributed to one row.

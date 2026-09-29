@@ -19,7 +19,31 @@ __all__ = [
     "format_target",
 ]
 
-_SKIP_DIRS = frozenset({"__pycache__", ".venv", ".mypy_cache", ".ruff_cache", "node_modules"})
+#: Directories that are not the repository's source. Shared with S-14
+#: (``checks.rules.git_tracked``) — ⭐ one list, because "not source" is one concept and two
+#: copies is how a warning starts arriving for a reason nobody wrote down.
+#:
+#: The cache entries are here for a reason that was learned the hard way (spec 032): a tool
+#: cache lives *inside* the tree being walked, and several of them ship a ``README.md``.
+#: Without these, S-14 reported ``backend/.pytest_cache/README.md`` as a source file git is
+#: ignoring — a verdict about the file that was right, and a guess about the cause that
+#: was not.
+SKIP_DIRS = frozenset(
+    {
+        "__pycache__",
+        ".venv",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".pytest_cache",
+        ".tox",
+        ".nox",
+        ".cache",
+        "htmlcov",
+        "node_modules",
+        "dist",
+        "build",
+    }
+)
 
 
 @dataclass(slots=True)
@@ -93,7 +117,7 @@ class ScanContext:
             found.extend(
                 path
                 for path in sorted(directory.rglob("*.py"))
-                if not _SKIP_DIRS.intersection(path.parts)
+                if not SKIP_DIRS.intersection(path.parts)
             )
         return found
 
@@ -104,7 +128,7 @@ class ScanContext:
         return [
             path
             for path in sorted(root.rglob(f"*{suffix}"))
-            if not _SKIP_DIRS.intersection(path.parts)
+            if not SKIP_DIRS.intersection(path.parts)
         ]
 
     def doc(self, rel_path: str) -> str | None:

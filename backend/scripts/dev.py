@@ -83,7 +83,7 @@ GATES: dict[str, Gate] = {
     ),
     "check-static": Gate(
         "check-static",
-        "static checks S-01..S-13 (.ai/checks/static/)",
+        "static checks S-01..S-14 (.ai/checks/static/)",
         # `--strict` because `python -m checks` alone follows the documented
         # contract: exit 0 means "it ran", even when it found problems. A gate
         # needs the other signal, so it is asked for explicitly.

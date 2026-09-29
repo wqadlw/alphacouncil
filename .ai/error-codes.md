@@ -254,6 +254,8 @@ class DataFetchError(RuntimeError): ...
 | `CHECK_DOC_DRIFT` | error / warning | S-12 | `.ai/checks/static/README.md` 的规则清单与代码不一致 |
 | `CHECK_TOOL_ENCODING_UNGUARDED` | error | S-13 | 开发者工具会往控制台打印，却没先 `use_utf8()` —— 中文 Windows（GBK）上**打印即崩** |
 | `CHECK_TOOL_ENCODING_UNGUARDED` | error | S-13 | 开发者工具打印人类可读输出却没调 `use_utf8()`（回归 0004；cp936 控制台上会中途崩溃并把绿灯报成退出码 1） |
+| `CHECK_UNTRACKED_SOURCE` | error | S-14 | 源文件在磁盘上但 git 没有它 —— 本地一切正常，**每一次克隆都缺这个文件** |
+| `CHECK_IGNORED_SOURCE` | warning | S-14 | 源文件被 `.gitignore` 藏起来了 —— ⚠️ `git status` **不显示被忽略的文件**，所以这一类缺陷恰好是那个命令看不见的 |
 | `CHECK_EXEMPTION_UNREASONED` | error | —（运行器） | `# noqa: S-xx` 没写理由 —— **豁免必须有理由** |
 | `CHECK_RUNNER_ERROR` | error | —（运行器） | 规则脚本自身崩溃 —— **崩溃与通过无法区分，必须报** |
 

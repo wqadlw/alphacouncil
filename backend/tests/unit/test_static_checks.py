@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +36,7 @@ from checks.rules import (
     check_append_only_triggers,
     check_doc_sync,
     check_error_codes,
+    git_tracked,
     home_no_return_rate,
     immature_outcome_blank,
     no_bare_except,
@@ -200,8 +202,13 @@ class TestContainsToken:
 class TestRegistry:
     """The registry is the contract between the document and the code."""
 
-    def test_thirteen_rules_in_order(self) -> None:
-        assert [rule.meta.check_id for rule in RULES] == [f"S-{n:02d}" for n in range(1, 14)]
+    def test_fourteen_rules_in_order(self) -> None:
+        """The id list is a statement about how many rules there are.
+
+        It breaks when a rule is added, which is the point: ⭐ a renamed count that kept
+        its old number would be a test describing something other than what it checks.
+        """
+        assert [rule.meta.check_id for rule in RULES] == [f"S-{n:02d}" for n in range(1, 15)]
 
     @pytest.mark.parametrize("check_id", sorted(MODULE_BY_ID))
     def test_each_rule_resolves_to_the_module_that_declares_it(self, check_id: str) -> None:
@@ -1092,7 +1099,10 @@ class TestRunner:
         assert main(["--root", str(tmp_path), "--json"]) == 0
         captured = capsys.readouterr()
         document = json.loads(captured.out)
-        assert document["summary"]["rules_selected"] == 13
+        # ⭐ Derived from the registry rather than written out, so adding a rule does not
+        # require finding this number to change it too — and, more importantly, so the
+        # number here cannot quietly disagree with the one the runner actually reports.
+        assert document["summary"]["rules_selected"] == len(RULES)
         assert document["summary"]["rules_skipped"] >= 1
         assert "AlphaCouncil" not in captured.out
 
@@ -1108,3 +1118,175 @@ class TestRunner:
         broken = _BrokenRule(_META_01, explode)
         monkeypatch.setattr("checks.__main__.RULES", (broken,))
         assert main(["--root", str(tmp_path), "--only", "S-01"]) == 1
+
+# ---------------------------------------------------------------------------
+# S-14 git-tracked
+# ---------------------------------------------------------------------------
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(  # noqa: S603
+        ["git", *args],  # noqa: S607
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        timeout=60,
+    )
+
+
+def git_repo(tmp_path: Path, files: dict[str, str], gitignore: str | None = None) -> Path:
+    """A real git repository, because the rule's whole subject is git."""
+    for relative, content in files.items():
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    if gitignore is not None:
+        (tmp_path / ".gitignore").write_text(gitignore, encoding="utf-8")
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.email", "test@example.com")
+    _git(tmp_path, "config", "user.name", "test")
+    return tmp_path
+
+
+class TestS14GitTracked:
+    """A source file git does not have works here and nowhere else.
+
+    Nothing about this defect is a failure: every test passes, every import
+    resolves, every other gate is green — **on the machine that has the file**.
+    That is why the rule exists and why a test cannot catch it.
+    """
+
+    def test_an_untracked_source_file_is_reported(self, tmp_path: Path) -> None:
+        repo = git_repo(
+            tmp_path,
+            {"backend/src/alphacouncil/thing.py": "VALUE = 1\n"},
+        )
+        # ⭐ The tracked file is added **first**. Without this the fixture's own file is
+        # untracked too, and the assertion gets two findings — correct about the rule,
+        # wrong about which defect was being tested.
+        _git(repo, "add", "-A")
+        (repo / "backend" / "src" / "alphacouncil" / "late.py").write_text(
+            "LATE = 1\n", encoding="utf-8"
+        )
+        ctx = make_ctx(repo, {})
+        result = git_tracked.run(ctx)
+        assert codes(result) == ["CHECK_UNTRACKED_SOURCE"]
+        assert "late.py" in result.issues[0].message
+        assert result.issues[0].fix == "git add backend/src/alphacouncil/late.py"
+
+    def test_a_tracked_source_file_stays_silent(self, tmp_path: Path) -> None:
+        repo = git_repo(
+            tmp_path,
+            {"backend/src/alphacouncil/thing.py": "VALUE = 1\n"},
+        )
+        _git(repo, "add", "-A")
+        ctx = make_ctx(repo, {})
+        assert git_tracked.run(ctx).issues == []
+
+    def test_an_ignored_source_file_is_reported_as_a_warning(self, tmp_path: Path) -> None:
+        """⭐ The defect `git status` cannot show.
+
+        `.gitignore` holding `data/` with **no leading slash** matches at every
+        depth, so it covers `backend/src/.../data/` — spec 025 §7.1's recorded
+        hazard. The file is untracked *and* ignored, and `git status` does not
+        list ignored files, so this is the instance most likely to survive.
+
+        A warning rather than an error, because `.venv` and `node_modules` are
+        also correctly ignored: ⭐ a guardrail that cries wolf gets switched off.
+        What keeps the warning quiet is the walk's scope, not the severity.
+        """
+        repo = git_repo(
+            tmp_path,
+            {"backend/src/alphacouncil/data/thing.py": "VALUE = 1\n"},
+            gitignore="data/\n",
+        )
+        _git(repo, "add", "-A")
+        ctx = make_ctx(repo, {})
+        result = git_tracked.run(ctx)
+        assert codes(result) == ["CHECK_IGNORED_SOURCE"]
+        assert result.issues[0].severity is Severity.WARNING
+
+    def test_ignored_build_directories_do_not_warn(self, tmp_path: Path) -> None:
+        """⭐ The reason the walk has a skip list at all.
+
+        `backend/.pytest_cache/README.md` is a real file, ends in a source
+        extension, and is correctly ignored — so without `SKIP_DIRS` this rule
+        warned about it the first time it ran against the real repository, which
+        is how the spec's own claim that a warning 「can only mean an ignore rule
+        is covering source」 turned out to be false.
+
+        ⭐ **The `.gitignore` is the load-bearing part.** The first version of this
+        fixture ran ``git add -A``, which made every one of these files *tracked* —
+        so the rule stayed silent because the file was tracked and the skip list
+        was never consulted. The test asserted a true statement about the wrong
+        thing, and mutation 3 (removing `.pytest_cache` from `SKIP_DIRS`) survived
+        because of it.
+        """
+        repo = git_repo(
+            tmp_path,
+            {
+                "backend/src/alphacouncil/thing.py": "VALUE = 1\n",
+                "backend/.pytest_cache/README.md": "# cache\n",
+                "backend/.venv/lib/thing.py": "V = 1\n",
+                "frontend/node_modules/pkg/index.js": "//\n",
+            },
+            gitignore=".pytest_cache/\n.venv/\nnode_modules/\n",
+        )
+        _git(repo, "add", "backend/src/alphacouncil/thing.py")
+        ctx = make_ctx(repo, {})
+        assert git_tracked.run(ctx).issues == []
+
+    def test_source_outside_the_shipped_package_is_still_covered(self, tmp_path: Path) -> None:
+        """⭐ 「The trees this rule is about」 needs a file outside the obvious one.
+
+        Every other fixture puts its source under `backend/src/alphacouncil/`, and
+        that directory **is** `ctx.product`. So a rule that stopped looking at
+        `backend/checks/` and `frontend/e2e/` entirely would still pass all of
+        them — which is exactly what mutation 6 did, and it survived.
+        """
+        repo = git_repo(
+            tmp_path,
+            {
+                "backend/checks/rules/late_rule.py": "META = None\n",
+                "frontend/e2e/late.spec.ts": "export default {}\n",
+            },
+        )
+        ctx = make_ctx(repo, {})
+        result = git_tracked.run(ctx)
+        assert codes(result) == ["CHECK_UNTRACKED_SOURCE", "CHECK_UNTRACKED_SOURCE"]
+        reported = {issue.message.split(" exists")[0] for issue in result.issues}
+        assert reported == {"backend/checks/rules/late_rule.py", "frontend/e2e/late.spec.ts"}
+
+    def test_a_non_repository_is_skipped_not_passed(self, tmp_path: Path) -> None:
+        """⭐ 「Skipped is not passed」 — a tarball has no `.git`.
+
+        Reporting zero issues there would be a lie that looks exactly like a
+        clean run, which is what `CheckResult.skipped` exists to prevent.
+        """
+        ctx = make_ctx(tmp_path, {"backend/src/alphacouncil/thing.py": "VALUE = 1\n"})
+        result = git_tracked.run(ctx)
+        assert result.issues == []
+        assert result.skipped is not None
+        assert "not a git repository" in result.skipped
+
+    def test_git_failing_inside_a_repository_is_skipped_with_a_reason(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """⭐ The other skip branch, which mutation 5 found untested.
+
+        ``_git`` returning ``None`` is what git does when it cannot run — a
+        sandbox without it, a permissions problem, a repository that is being
+        rewritten. The rule must say so rather than fall through to three empty
+        listings and report every source file as untracked, ⭐ which is the
+        spectacular failure mode: a clean checkout and a broken git become the
+        same 200 errors.
+        """
+        repo = git_repo(
+            tmp_path,
+            {"backend/src/alphacouncil/thing.py": "VALUE = 1\n"},
+        )
+        monkeypatch.setattr(git_tracked, "_git", lambda *_args, **_kwargs: None)
+        ctx = make_ctx(repo, {})
+        result = git_tracked.run(ctx)
+        assert result.issues == []
+        assert result.skipped == "git produced no usable listing here"

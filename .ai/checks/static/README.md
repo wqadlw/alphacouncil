@@ -65,6 +65,7 @@ Lint  →  Typecheck  →  ★ check-static  →  Test  →  Build
 |---|---|---|
 | **S-10** | `no-print` | 禁止 `print()`（宪法 7.4） |
 | **S-11** | `no-bare-except` | 禁止裸 `except:` / `except Exception: pass`（宪法 7.3） |
+| **S-14** | `git-tracked` | 源文件在磁盘上却不在 git 里（未跟踪报 error；**被 `.gitignore` 藏起来报 warning** —— `git status` 看不见后者） |
 | **S-12** | `check-doc-sync` | 关键文档里的代码块与实现**不脱同步**（借"测试直接从文档抽取代码执行"的思路） |
 
 > ⚠️ **S-13 放在 P0 而不是 P2**：它守的不是风格，是**门禁本身能不能说话**。
@@ -89,7 +90,7 @@ Lint  →  Typecheck  →  ★ check-static  →  Test  →  Build
 
 | 项 | 状态 |
 |---|---|
-| 脚本清单 | ✅ 已定义（12 条） |
+| 脚本清单 | ✅ 已定义（14 条） |
 | 脚本实现 | ✅ **已实现** —— `backend/checks/rules/`，`checks/` 共 2,729 行 / 22 文件（最大 265 行） |
 | 脚本测试 | ✅ **已实现** —— `backend/tests/unit/test_static_checks.py`，99 项（每条规则一个"必须报错"+一个"必须静默"） |
 | 接入 `check-static` | ✅ **已接入** —— `python -m checks --strict`（由 `scripts/dev.py` 调用） |

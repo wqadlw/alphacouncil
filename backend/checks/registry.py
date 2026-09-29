@@ -20,6 +20,7 @@ from checks.rules import (
     check_append_only_triggers,
     check_doc_sync,
     check_error_codes,
+    git_tracked,
     home_no_return_rate,
     immature_outcome_blank,
     no_bare_except,
@@ -47,7 +48,7 @@ class Rule:
     run: Callable[[ScanContext], CheckResult]
 
 
-#: Thirteen rules, matching `.ai/checks/static/README.md` §3.
+#: Fourteen rules, matching `.ai/checks/static/README.md` §3.
 RULES: tuple[Rule, ...] = (
     Rule(no_raw_http.META, no_raw_http.run),
     Rule(no_boolean_state.META, no_boolean_state.run),
@@ -62,6 +63,9 @@ RULES: tuple[Rule, ...] = (
     Rule(no_bare_except.META, no_bare_except.run),
     Rule(check_doc_sync.META, check_doc_sync.run),
     Rule(tool_encoding.META, tool_encoding.run),
+    # S-14 (spec 032). Last because it is the only rule that reads git rather
+    # than the working tree, and it should not mask a syntax error.
+    Rule(git_tracked.META, git_tracked.run),
 )
 
 #: Rule id -> the module that must implement it.
