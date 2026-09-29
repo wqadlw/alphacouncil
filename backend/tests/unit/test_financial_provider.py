@@ -441,11 +441,25 @@ class TestBothDatesSurvive:
         assert periods[0].announced_at == date(2025, 4, 3)
 
     def test_the_two_dates_are_independent(self, _no_socket: FakeBaostock) -> None:
-        """⭐ Two months apart, measured (spec 043 research §4).
+        """⭐ Two months apart, and **not a constant** (live, 2026-09-30):
+
+        ==========  ==============  =====
+        period_end  announced_at   lag
+        ==========  ==============  =====
+        2026-03-31  2026-04-25     25 d
+        2026-06-30  2026-08-15     46 d
+        2024-12-31  2025-04-03     93 d
+        ==========  ==============  =====
 
         ⭐ The gap is the point. One date column would have to be *one* of these, and
         either choice breaks a reader: the report date exposes a number nobody had yet,
         the announcement date hides which period the number is about.
+
+        ⭐⭐ **The live run also killed the 「滞后约 2 个月」 claim.** That sentence was
+        written from the 2024 annual report (93 days) and generalised to every period;
+        quarters arrive in **25 days**. ⭐ A lag figure written as a constant is a claim
+        about arithmetic dressed as a measurement, and the number people reason from is
+        exactly the one that needs the range.
         """
         _no_socket.table[(2024, 4)] = FakeResult([_row()])
 
@@ -705,12 +719,26 @@ class TestWhatTheProviderClaims:
 
         ⭐ The honest text for a single-source dataset is that **there is no primary**; a
         note that claimed a comparison would be inventing one.
+
+        ⭐⭐ **The lag is asserted as a range, and the range is measured.** The note used to
+        say 「滞后约 2 个月」, written from one annual report (93 days) and generalised.
+        ⭐ The live run on 2026-09-30 showed quarters arriving in 25 and 46 days, so a
+        single figure is a **wrong** figure for three of the four period lengths. ⭐ This
+        asserts the *endpoints* because a number somebody reasoned from should not be
+        able to drift into a constant without turning this red.
         """
         notes = _provider().capabilities.notes
 
         assert notes is not None
         assert "没有主源" in notes
-        assert "2 个月" in notes
+        assert "25 天" in notes
+        assert "93 天" in notes
+        # ⭐ The **property**, not the substring. The first version asserted
+        # ``"2 个月" not in notes`` and it failed -- because the notes legitimately
+        # *quote* the wrong figure in order to reject it. ⭐ A guard written as a banned
+        # substring forbids the sentence that explains the ban, which is the sentence
+        # most worth having.
+        assert "不是常数" in notes
 
     def test_the_market_comes_from_the_prefix_not_the_digits(self) -> None:
         """⭐ Red line 16: never infer a venue from the number.

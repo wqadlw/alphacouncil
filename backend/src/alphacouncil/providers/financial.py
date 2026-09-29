@@ -370,8 +370,9 @@ class BaostockFinancial:
             batch_semantics=BatchSemantics.INDEPENDENT,
             supports_batch=False,
             notes=(
-                "D4 的唯一财务源, 没有主源可降级. 财务数据滞后约 2 个月"
-                "(实测与官方文档一致). valuation 字段 peTTM/pbMRQ 虽逐日 PIT,"
+                "D4 的唯一财务源, 没有主源可降级. 公告滞后**不是常数**: 实测 2026Q1 为 25 天"
+                "/ 2026Q2 为 46 天 / 2024 年报为 93 天(2026-09-30 实测), 所以"
+                "'约 2 个月' 是一个错的说法. valuation 字段 peTTM/pbMRQ 虽逐日 PIT,"
                 "但属行情口径, 本 provider 不读 -- 归入哪个 Dataset 是另一个决定"
             ),
         )
