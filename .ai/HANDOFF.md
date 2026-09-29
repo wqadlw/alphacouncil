@@ -135,6 +135,22 @@
 - `getByText` 在 Playwright 里是**严格模式**：一个句子渲染两遍会让**两个**测试同时红
   （spec 025 §6 踩过：外壳标题和页面内容各写了一遍同一个句子）。
 
+- ⭐ **推送前先测网络，两种配置都被观测过（2026-09-29）**：仓库级代理指向 Clash
+  `http://127.0.0.1:7897`。本项目里**两种都发生过** —— 早些时候 Clash 没在跑、直连可行，
+  而同一天晚些时候**直连 `github.com:443` 连不通（每次 21 秒超时）而 Clash 在监听**，
+  带 `-c http.proxy=http://127.0.0.1:7897 -c https.proxy=...` 推成功。
+  ⭐ **不要照抄任何一种**，先测：
+
+  ```powershell
+  Test-NetConnection github.com -Port 443 -WarningAction SilentlyContinue
+  Get-NetTCPConnection -State Listen -LocalPort 7897 -ErrorAction SilentlyContinue
+  ```
+
+  直连通 → `git -c http.proxy= -c https.proxy= push origin main`；
+  代理在 → `git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 push origin main`。
+  ⚠️ 失败长得像网络错误（`Empty reply from server` / `Could not connect`），**不像配置错误**，
+  所以容易误判成「已经推上去了」—— 一定用 `git rev-parse HEAD` 与 `origin/main` 对一下。
+
 ## 五、跑起来与验收命令
 
 ```bash
