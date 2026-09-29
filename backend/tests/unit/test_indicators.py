@@ -292,6 +292,13 @@ class TestMaturityIsTheConstitution:
             (lambda values: ema(values, 20), 19),
             (lambda values: rma(values, 20), 19),
             (lambda values: macd(values).dif, 25),
+            # ⭐ `dea` was **missing from this list** while `macd`'s docstring claimed a
+            # `signal - 1` extra warm-up. Nothing failed, because nothing asserted it: the
+            # docstring and the code disagreed and 34 tests were happy either way. It
+            # surfaced in `spec 038` by counting non-nulls in a live response. The lesson
+            # is not "add a row" — it is that a docstring claiming a number is a claim
+            # somebody has to check, and the cheapest way to check it is to assert it.
+            (lambda values: macd(values).dea, 25 + 8),
             (lambda values: rsi(values, 14).rsi, 14),
             (lambda values: bollinger(values, period=20).middle, 19),
             (lambda values: annualised_volatility(values, period=20), 20),

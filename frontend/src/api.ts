@@ -794,6 +794,33 @@ export interface DailyBar {
 }
 
 /**
+ * One indicator series, aligned index-for-index with `DailySeries.bars`.
+ *
+ * ⭐ `null` in `values` is not a gap to be smoothed over — it means 「this bar is inside
+ * the warm-up window, the value does not exist yet」. The server sends the same length as
+ * `bars` so the client never has to work out which bar a value belongs to.
+ */
+export interface IndicatorSeries {
+  /** Stable id, e.g. `ma20`. Safe to switch on. */
+  name: string
+  /** Human label, e.g. `MA20`. */
+  label: string
+  /** One entry per bar, oldest first. Never shorter than `bars`, never longer. */
+  values: (number | null)[]
+}
+
+/** Bars and their indicators, as one value. */
+export interface DailySeries {
+  bars: DailyBar[]
+  /**
+   * ⭐ May be **empty**: a window shorter than every indicator's period yields no series
+   * at all. That is a fact about the data, not a failure, and the chart has to say so
+   * rather than draw an empty legend entry.
+   */
+  indicators: IndicatorSeries[]
+}
+
+/**
  * ⭐ Same envelope as `QuoteResult`, field for field.
  *
  * A second shape for the same four states would let the two disagree about what a fetch
@@ -802,7 +829,12 @@ export interface DailyBar {
  */
 export interface DailyResult {
   status: DataStatus
-  value: DailyBar[] | null
+  /**
+   * `null` for every state but `ok`. ⭐ Not `[]` — an empty array here would be a fifth
+   * state the envelope does not have, and it would read as 「this instrument has no
+   * history」 when the truth might be 「every source refused」.
+   */
+  value: DailySeries | null
   reason: string | null
   detail: string | null
   error_code: string | null

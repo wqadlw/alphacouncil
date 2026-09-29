@@ -112,3 +112,24 @@ README §五 此前写着「变异检查：❌ **未做过任何一次**」。20
 | 0008 | **假设主键叫 `id`** | spec 030 | 一个回合里在四层各犯一次，其中一条躲在「表还不存在」的守卫后面躲过了两个 spec | 已修 · 根因已定位 | [`0008`](0008-assuming-the-primary-key-is-id.md) |
 
 | 0009 | **fixture 描述了产品到不了的状态** | spec 030 | 到期队列里放了一条已复盘的决策，于是 lesson composer 不可达而套件全绿 | 已修 · fixture 已改为与查询一致 |
+
+### 第 8 轮（spec 038）：`indicatorOverlay.ts` 的 9 个变异
+
+| # | 变异 | 结果 |
+|---|---|---|
+| 1 | 对齐改成 `bars[index + 1]` | killed |
+| 2 | 对齐改成 `bars[index - 1]` | killed |
+| 3 | 柱状图对齐改成 `bars[index + 1]` | killed |
+| 4 | 预热段不丢弃 | killed |
+| 5 | 用真值判断，丢掉 `0` | killed |
+| 6 | 柱的 `0` 算成负 | killed |
+| 7 | 未知 id 静默放置（`if (false)`） | killed |
+| 8 | 窗格按位置选而不是按 `name` | killed |
+| 9 | 颜色没带到系列上 | killed |
+
+⭐ **锚点 `const bar = bars[index]` 出现 2 次**（`linePoints` 与 `histogramPoints` 各一），
+脚本报 SKIP 而不是假装杀掉 —— 扩到上下文后 9/9 全杀。
+
+---
+
+| 0010 | **同一个文件里有两个 EMA 定义，而文档描述的是第三个** | spec 038 | `ema` 用 SMA 播种、`macd` 手写的 DEA 用首值播种、docstring 说 33 而代码给 25；**34 条测试全绿** | 已修 · `dea` 改为调用 `ema`，进预热参数表 |

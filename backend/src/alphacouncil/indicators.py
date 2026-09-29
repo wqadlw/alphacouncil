@@ -170,9 +170,20 @@ def macd(
 ) -> MacdRead:
     """MACD over closing prices.
 
-    ⭐ The signal (DEA) is an EMA of DIF, so it inherits ``ema``'s recursive seeding — and
-    it is aligned back to the input, meaning its first ``signal - 1`` entries are ``None``
-    on top of whatever MACD's own warm-up already leaves empty.
+    ⭐ The signal (DEA) is ``ema`` applied to DIF, and it is written as a **call** rather
+    than a second, hand-rolled recursion. The first draft inlined the EMA update with its
+    own seed — the first available value, where ``ema`` seeds with a ``period``-bar SMA —
+    so the file held two definitions of the same estimator that disagreed on every bar
+    after the first, and the docstring described neither. ⭐ That is the 「一个教训只有一
+    个家」 rule breaking in the one place it is hardest to see: inside a single file, where
+    both definitions look local and reasonable.
+
+    The seed is not a detail. It is why DEA's first ``signal - 1`` mature entries were
+    ``None`` in the docstring and were **not** in the output; ``spec 038`` found the
+    mismatch by counting non-nulls in a live response, after 34 passing tests.
+
+    Aligned back to the input, so DEA's warm-up is the sum of both stages: ``slow - 1``
+    bars for DIF plus ``signal - 1`` more for the EMA over it.
     """
     fast_line = ema(closes, fast)
     slow_line = ema(closes, slow)
@@ -181,15 +192,16 @@ def macd(
         for f, s in zip(fast_line, slow_line, strict=True)
     ]
 
-    dea: list[Indicator] = []
-    previous: Indicator = None
-    alpha = 2.0 / (signal + 1.0)
-    for value in dif:
-        if value is None:
-            dea.append(None)
-            continue
-        previous = value if previous is None else alpha * value + (1.0 - alpha) * previous
-        dea.append(previous)
+    # ⭐ `ema` is same-length by construction, so `[None] * warmup + smoothed` is exactly
+    # as long as `dif` — the alignment ``spec 037`` requires, and the reason the histogram
+    # below can zip with ``strict=True`` without a defensive check.
+    mature = [value for value in dif if value is not None]
+    # ⭐ The pad is its own annotated name because `[None] * n` infers as `list[None]`, and
+    # `list` is invariant — so inlining it into the concatenation is a mypy error and the
+    # obvious `list(Indicator)` spelling is not available on a literal. Naming the pad
+    # states its type once instead of casting it twice.
+    pad: list[Indicator] = [None] * (len(dif) - len(mature))
+    dea: list[Indicator] = pad + ema(mature, signal)
 
     histogram: list[Indicator] = [
         (d - e) if d is not None and e is not None else None for d, e in zip(dif, dea, strict=True)

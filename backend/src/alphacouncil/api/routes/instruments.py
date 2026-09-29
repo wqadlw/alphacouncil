@@ -46,6 +46,7 @@ from alphacouncil.api.routes.decisions import DecisionRead
 from alphacouncil.api.routes.decisions import to_read as decision_to_read
 from alphacouncil.domain.instrument import TickerAmbiguousError, parse_ticker
 from alphacouncil.domain.watchlist import WatchlistEventKind
+from alphacouncil.indicators import ema, macd, sma
 from alphacouncil.models.market import (
     AssetType,
     DataResult,
@@ -344,6 +345,66 @@ def _default_end() -> date:
     return datetime.now(UTC).date()
 
 
+class IndicatorRead(BaseModel):
+    """One indicator series, aligned to ``bars`` and ``None`` where it does not exist yet.
+
+    ⭐ The alignment is the point. A separate, shorter list of only the mature values would
+    force the client to infer which bars they belong to, and **every** such inference is a
+    place to be off by one — which on a chart looks like a signal shifting in time.
+    """
+
+    name: str = Field(description="Stable id, e.g. `ma20`.")
+    label: str = Field(description="Human label, e.g. `MA20`.")
+    values: list[float | None] = Field(description="One entry per bar, oldest first.")
+
+
+class DailySeriesRead(BaseModel):
+    """Bars and the indicators derived from them, as one value."""
+
+    bars: list[Quote]
+    indicators: list[IndicatorRead] = Field(
+        default_factory=list,
+        description=(
+            "⭐ Empty when the window is shorter than every indicator's period — "
+            "which is a fact about the data, not a failure."
+        ),
+    )
+
+
+def _indicators(bars: list[Quote]) -> list[IndicatorRead]:
+    """Compute the panel's indicators from bars already in hand.
+
+    ⭐ Deliberately a **fixed small set** rather than everything ``indicators.py`` offers.
+    A panel that draws six lines teaches nothing and hides the three that matter; the rest
+    are one request away. Which ones earn their place is a product question, and
+    ``spec 037`` §7 already ruled out pattern judgements like 「均线多头」 as strategy
+    language.
+    """
+    closes = [bar.close for bar in bars]
+    if len(closes) < 2:
+        return []
+
+    macd_line = macd(closes)
+    moving = sma(closes, 20)
+    spread = ema(closes, 12)
+
+    def series(name: str, label: str, values: list[float | None]) -> IndicatorRead | None:
+        if all(value is None for value in values):
+            # ⭐ An all-empty series is not a series. Returning it would put a line on a
+            # chart that has nothing to draw, and a legend entry that cannot be hovered.
+            return None
+        return IndicatorRead(name=name, label=label, values=values)
+
+    candidates = [
+        series("ma20", "MA20", moving),
+        series("ema12", "EMA12", spread),
+        series("dif", "DIF", macd_line.dif),
+        series("dea", "DEA", macd_line.dea),
+        series("histogram", "MACD 柱", macd_line.histogram),
+    ]
+    return [item for item in candidates if item is not None]
+
+
 @router.get(
     "/{market}/{code}/daily",
     summary="Daily bars for one instrument, reporting all four data states",
@@ -355,7 +416,7 @@ def daily(
     market_data: MarketData,
     start: date | None = None,
     end: date | None = None,
-) -> DataResult[list[Quote]]:
+) -> DataResult[DailySeriesRead]:
     """Fetch daily bars through the router, oldest first.
 
     The result is passed back **unmodified**, for the reasons ``/quote`` gives and does not
@@ -393,8 +454,25 @@ def daily(
     # value, so this test cannot pass a `no_data` result off as an empty series — which is
     # the one misreading that would render 「这只票没有历史」 when the truth is 「所有源都
     # 拒绝了」.
+    series: DailySeriesRead | None = None
     if result.status is DataStatus.OK and result.value is not None:
+        bars = sorted(result.value, key=lambda quote: quote.trade_date)
         # ⭐ Ascending is the contract, not a coincidence: the router merges sources and
         # each returns its own order.
-        result.value.sort(key=lambda quote: quote.trade_date)
-    return result
+        series = DailySeriesRead(bars=bars, indicators=_indicators(bars))
+
+    # ⭐ **One return, both states.** Rebuilding rather than returning `result` unchanged is
+    # what keeps the *other* four fields — `stale`, `source`, `fetched_at`, `error_code` —
+    # exactly as the router produced them. Passing them through by hand is the price of
+    # changing the value's type, and skipping one of them is how a stale series would come
+    # back unlabelled.
+    return DataResult[DailySeriesRead](
+        status=result.status,
+        value=series,
+        reason=result.reason,
+        detail=result.detail,
+        error_code=result.error_code,
+        source=result.source,
+        fetched_at=result.fetched_at,
+        stale=result.stale,
+    )

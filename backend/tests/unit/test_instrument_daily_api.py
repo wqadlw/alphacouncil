@@ -13,7 +13,7 @@ restating it.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -103,7 +103,11 @@ class TestTheFourStatesSurvive:
         body = http.get(DAILY).json()
         assert body["status"] == "ok"
         assert body["stale"] is False
-        assert [row["close"] for row in body["value"]] == [1200.0, 1235.68]
+        bars = body["value"]["bars"]
+        assert [row["close"] for row in bars] == [1200.0, 1235.68]
+        # ⭐ Two bars cannot support a 20-day average, so the panel is empty \u2014
+        # and that is a fact about the window, not a failure.
+        assert body["value"]["indicators"] == []
 
     def test_no_data_is_not_an_empty_series(
         self, client: tuple[TestClient, RecordingStub]
@@ -208,7 +212,7 @@ class TestOrderingAndFields:
         stub.result = ok(
             [bar(date(2026, 9, 28)), bar(date(2026, 9, 25)), bar(date(2026, 9, 24))]
         )
-        dates = [row["trade_date"] for row in http.get(DAILY).json()["value"]]
+        dates = [row["trade_date"] for row in http.get(DAILY).json()["value"]["bars"]]
         assert dates == ["2026-09-24", "2026-09-25", "2026-09-28"]
 
     def test_a_bar_without_turnover_reports_none_not_zero(
@@ -222,7 +226,7 @@ class TestOrderingAndFields:
         """
         http, stub = client
         stub.result = ok([bar(date(2026, 9, 25), amount=None)])
-        assert http.get(DAILY).json()["value"][0]["amount"] is None
+        assert http.get(DAILY).json()["value"]["bars"][0]["amount"] is None
 
 
 class TestPathValidation:
@@ -233,3 +237,85 @@ class TestPathValidation:
         response = http.get("/api/v1/instruments/sh/99/daily")
         assert response.status_code == 400
         assert stub.asked == [], "the router must not be asked about an invalid symbol"
+
+
+class TestIndicatorsRideAlongWithTheBars:
+    """⭐ The indicators travel inside the value, aligned bar-for-bar.
+
+    Three things are load-bearing here, and none of them is 「the numbers look right」:
+
+    * **alignment** \u2014 every series has one entry per bar, ``None`` where it does not
+      exist yet. ⭐ A shorter list would force the client to infer which bars it covers,
+      and every such inference is an off-by-one that looks like a signal moving in time.
+    * **caliber lives server-side** \u2014 ⭐ the client receives numbers and never computes
+      an indicator, because two implementations of one definition is how a panel ends up
+      disagreeing with itself.
+    * **the window can be too short**, and then the panel is empty rather than a line that
+      has nothing to draw.
+    """
+
+    @staticmethod
+    def _series(count: int) -> list[Quote]:
+        return [
+            bar(date(2026, 1, 1) + timedelta(days=index), close=100.0 + index)
+            for index in range(count)
+        ]
+
+    def test_a_long_window_carries_aligned_indicators(
+        self, client: tuple[TestClient, RecordingStub]
+    ) -> None:
+        http, stub = client
+        stub.result = ok(self._series(80))
+        payload = http.get(DAILY).json()["value"]
+        names = {item["name"] for item in payload["indicators"]}
+        assert {"ma20", "ema12", "dif", "dea", "histogram"} <= names
+        for item in payload["indicators"]:
+            assert len(item["values"]) == 80, (
+                f"{item['name']} has {len(item['values'])} values for 80 bars"
+            )
+            assert item["label"], "a series without a label cannot be legended"
+
+    def test_the_warmup_is_null_and_not_zero(
+        self, client: tuple[TestClient, RecordingStub]
+    ) -> None:
+        """⭐ 红线 6 reaching the wire.
+
+        A ``0`` in a warm-up is a number a chart will draw, and a drawn zero on an
+        indicator line reads as 「the average collapsed」 \u2014 so the wire must carry null.
+        """
+        http, stub = client
+        stub.result = ok(self._series(80))
+        payload = http.get(DAILY).json()["value"]
+        ma20 = next(item for item in payload["indicators"] if item["name"] == "ma20")
+        assert ma20["values"][:19] == [None] * 19
+        assert ma20["values"][19] is not None
+
+    def test_a_short_window_yields_no_indicators_at_all(
+        self, client: tuple[TestClient, RecordingStub]
+    ) -> None:
+        http, stub = client
+        stub.result = ok(self._series(5))
+        payload = http.get(DAILY).json()["value"]
+        assert len(payload["bars"]) == 5
+        assert payload["indicators"] == []
+
+    def test_the_states_are_unaffected_by_the_shape_change(
+        self, client: tuple[TestClient, RecordingStub]
+    ) -> None:
+        """⭐ The four states are what the endpoint exists for, so changing the value's
+        type must not move one of them \u2014 not even ``stale``, which is the one most
+        easily dropped by a rebuild."""
+        http, stub = client
+        stub.result = ok(self._series(40), stale=True, source="stub")
+        body = http.get(DAILY).json()
+        assert body["status"] == "ok"
+        assert body["stale"] is True
+        assert body["source"] == "stub"
+        assert body["fetched_at"] is not None
+
+        stub.result = DataResult[list[Quote]](
+            status=DataStatus.NO_DATA, reason="这个代码不是数据源报价的东西"
+        )
+        body = http.get(DAILY).json()
+        assert body["status"] == "no_data"
+        assert body["value"] is None
