@@ -223,10 +223,12 @@ quotes · the command palette · 15 static checks · an 11-step gate.
   ⭐ **not** in the gate ⭐ — ⭐ a permanently red gate trains everyone to ignore the
   summary). Baseline in `.ai/eval/redlines.json`.
 
-**Known defect, found while writing this README, not fixed**: a note's
-**outgoing** link renders the raw id (`笔记 note_1789214400001`) while the
-**incoming** side renders a title ⭐⭐ — the two sides disagree. It is visible at
-the bottom of `docs/screenshots/note-detail.png`.
+**Fixed while writing this README** (the previous version of this file listed it
+as outstanding): a note's **outgoing** link used to render the raw id while the
+**incoming** side rendered a title. The cause was not a missing title but the
+title's presence depending on the target happening to be in the list on screen —
+typing in the search box turned a link the reader had written into an id. The link
+row now carries the target's own name.
 
 ## 8. Where the screenshot data came from
 
