@@ -76,11 +76,21 @@ export function formatAmount(cny: number): string {
   return `${cny.toFixed(0)} 元`
 }
 
-export const EVENT_LABEL: Record<string, string> = {
-  added: '加入关注',
-  reason_revised: '修改理由',
-  removed: '不再关注',
-}
+/**
+ * ⭐ `EVENT_LABEL` was deleted here in spec 045 stage C, and the reason is a drift
+ * rather than a move.
+ *
+ * This table said 「修改理由」 for `reason_revised`, and 「加入关注」/「离开关注」 for the
+ * other two. ⭐ The watchlist log now renders through `RecordTimeline`, and the wording
+ * that survived there is 「加入关注池」 / 「改口」 / 「离开关注池」 — because a log row reads
+ * as a sentence about **what you did**, and 「改口」 is what a reader calls that while
+ * 「修改理由」 is what a column heading would be called.
+ *
+ * ⭐ So this was one set of three events described by two tables that had already
+ * drifted apart. `components/data/timelineAdapters.tsx` is now the only one. ⭐ Had the
+ * migration been 「add the new table beside the old」, the drift would have continued
+ * and nothing would have said so.
+ */
 
 /** The five actions, in the words a reader would use for their own trade. */
 export const ACTION_LABEL: Record<string, string> = {

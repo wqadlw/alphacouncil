@@ -11,10 +11,8 @@ import {
   type DataStatus,
   type InstrumentDetail,
   type QuoteResult,
-  type WatchlistEvent,
 } from './api'
 import {
-  EVENT_LABEL,
   TONE_CLASS,
   formatAmount,
   formatChange,
@@ -23,6 +21,7 @@ import {
   formatVolume,
 } from './format'
 import CardSection from './CardSection'
+import { WatchlistTimeline } from './components/data/timelineAdapters'
 import { KlineChart } from './components/market/KlineChart'
 import DecisionSection from './DecisionSection'
 import { Button, Skeleton, Textarea } from './components/ui'
@@ -317,11 +316,20 @@ export default function InstrumentPage({ market, code }: Props) {
                   按写入顺序排列 —— 这是不可修改的记录，读下来是「加入 → 改口 → 离开 → 再来」的过程，
                   倒着排就只剩四条互不相干的行。
                 </p>
-                <ol className="mt-1.5">
-                  {detail.history.map((event) => (
-                    <TimelineRow key={event.event_id} event={event} />
-                  ))}
-                </ol>
+                {/* ⭐ `WatchlistTimeline` — this row used to be a local
+                    `TimelineRow` in this file. It was correct about its data and
+                    inconsistent about the product: it drew a 2px left rule and an
+                    event number while the card's lifecycle, on the same screen, was a
+                    bare `<ul>`. §8.2 names one `RecordTimeline`, so the fix was to
+                    give the existing rendering a home rather than to add a second
+                    component beside it. ⭐ The 「事件 #N」 and 「取代 #N」 stay, in the
+                    row's `aside` cluster: they are facts about where the record sits,
+                    not about what happened. */}
+                <WatchlistTimeline
+                  history={detail.history}
+                  market={detail.market}
+                  code={detail.code}
+                />
               </>
             )}
           </Section>
@@ -584,33 +592,6 @@ function Field({ label, value }: { label: string; value: string }) {
       <dt className="type-meta text-ink-faint">{label}</dt>
       <dd className="num type-prose">{value}</dd>
     </div>
-  )
-}
-
-function TimelineRow({ event }: { event: WatchlistEvent }) {
-  const isRemoval = event.kind === 'removed'
-  return (
-    <li
-      className={`mark border-b border-[color:var(--color-rule-soft)] py-1.5 ${
-        isRemoval
-          ? 'border-l-2 border-l-[color:var(--color-ink-faint)]'
-          : 'border-l-2 border-l-navy'
-      }`}
- >
-      <div className="flex flex-wrap items-baseline gap-x-3">
-        <span className="type-prose text-ink">{EVENT_LABEL[event.kind] ?? event.kind}</span>
-        <span className="num type-meta text-ink-faint">{formatMoment(event.occurred_at)}</span>
-        <span className="num type-meta text-ink-faint">事件 #{event.event_id}</span>
-        {event.supersedes_id !== null && (
-          <span className="num type-meta text-ink-faint">取代 #{event.supersedes_id}</span>
-        )}
-      </div>
-      {event.reason ? (
-        <p className="mt-0.5 type-prose text-ink">{event.reason}</p>
-      ) : (
-        <p className="mt-0.5 type-prose text-ink-faint">（离开时没有留下说明）</p>
-      )}
-    </li>
   )
 }
 

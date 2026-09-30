@@ -116,8 +116,37 @@ test.describe('标的页（I1）与红线 12/13', () => {
     await expect(
       page.getByRole('heading', { name: '已收敛的主张' }),
     ).toBeVisible()
+    // ⭐ **The reason is now on its own line, not prefixed.** Before stage C this
+    // row was one sentence in a `<ul>`: `已收敛：公司改直营，渠道先行关系失效`. It goes
+    // through `CardTimeline` → `RecordTimeline` now, which draws **what happened** and
+    // **the reader's words** as two separate elements, because a log row is a claim
+    // about a decision and the reason is the reader's sentence, not part of ours.
+    //
+    // ⭐ **The locator changed and this is a real behaviour change, not a test fix.**
+    // Both sentences must be on screen — asserting the reason alone would pass even if
+    // the row had lost its 「已收敛」 label, ⭐ and asserting the label alone would pass
+    // even if the reason had been dropped, ⭐ which is the one thing this test exists to
+    // protect. The old single `getByText` could not have told those apart either: it
+    // only ever matched because the two had been concatenated.
+    // ⭐ **The label is a `<span>` inside the timeline, so the locator is scoped by
+    // role rather than matched by text.** Two attempts failed here and both were the
+    // same mistake: `getByText('已收敛')` matches the section heading 「已收敛的主张」 as
+    // a substring, ⭐ and `getByText('已收敛', { exact: true })` **still** matches twice,
+    // because the card's own status badge also reads exactly 「已收敛」 — ⭐ and that one
+    // is `text-ink-faint`, a third thing that is not the log row at all.
+    //
+    // ⭐ So the assertion that survives is the one that names the **row**: the label is
+    // the first generic inside the converged card's list. ⭐ A text assertion that
+    // needs three `exact`/`.last()` adjustments to become unique is a text assertion
+    // that has stopped describing what it is checking, ⭐ and scoping by structure is
+    // the fix rather than a third spelling.
     await expect(
-      page.getByText('已收敛：公司改直营，渠道先行关系失效'),
+      page
+        .getByRole('heading', { name: '已收敛的主张' })
+        .locator('xpath=following::ul[1]//span[1]'),
+    ).toHaveText('已收敛')
+    await expect(
+      page.getByText('公司改直营，渠道先行关系失效', { exact: true }),
     ).toBeVisible()
   })
 })

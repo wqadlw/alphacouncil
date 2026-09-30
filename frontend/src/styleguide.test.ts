@@ -803,3 +803,116 @@ describe('V-12 · the type scale is the only place a font size is written', () =
     expect(caps, `.caps is defined in globals.css but used ${caps} time(s) in components`).toBeGreaterThanOrEqual(20)
   })
 })
+
+/**
+ * V-14 — an append-only log has one rendering (spec 045 stage C).
+ *
+ * Authority: `docs/FRONTEND_STYLE_GUIDE.md` §8.2 names `RecordTimeline` as the place
+ * an append-only event stream is drawn, and ⭐ the constitution's 「一个概念一个家」 is
+ * the rule this test exists to make mechanical.
+ *
+ * ⭐ **Why the rule had to become a test.** Before stage C this product drew the same
+ * idea two ways on purpose-free grounds: the watchlist log with a 2px left rule, an
+ * event number and a 「取代 #N」; the card's lifecycle as a bare `<ul>` in `type-meta`
+ * with none of those. ⭐ Both were correct about their data, and nothing was broken —
+ * which is why review did not catch it and why no status code ever will. ⭐ The class
+ * of defect is 「同一个概念两个家」, and it is invisible to every other test here.
+ *
+ * ⭐ **What is checked, and the two things that are deliberately not.** The rule is
+ * 「a page may not map a `.events` / `.history` array onto a list element itself」 —
+ * i.e. it catches the *shape* of the second home, not the presence of a second
+ * vocabulary. ⭐ It does not police which words a label uses: `改口` and 「修改理由」 are
+ * both defensible sentences about the same event, and a test that insisted on one
+ * spelling would be enforcing a taste. ⭐ Nor does it require `RecordTimeline` to be
+ * used at all — the two call sites are asserted by count below, so a future fourth log
+ * that has no common shape can opt out and say so, ⭐ but it cannot opt out silently.
+ */
+describe('V-14 — an append-only log has one rendering', () => {
+  // ⭐ Page files only. `RecordTimeline` itself and the adapters are the component, and
+  // a rule about pages cannot read the component it is protecting — F-139, third time.
+  const pages = FILES.filter(
+    (file) => !file.includes('/components/') && (file.endsWith('.tsx') || file.endsWith('.ts')),
+  )
+
+  it('has no page mapping an event array onto a list element', () => {
+    // ⭐ **`.map` and nothing else, and the first version of this regex was wrong
+    // twice.** It also matched `length > 0 &&`, so it reported
+    // `{card.events.length > 0 && <CardTimeline events={card.events} />}` — ⭐ the
+    // correct delegation, in the file that delegates. ⭐ That is `F-148` for the third
+    // time in three commits, and it is worth naming the shape: a rule written as
+    // 「do not touch this field」 catches the guard that makes the good case good.
+    // ⭐ **A rule about a shape must be written against the shape it forbids**, which
+    // here is 「mapping the array into JSX yourself」, not 「naming the array in a page».
+    //
+    // ⭐ `occurrences` already strips comments, so this cannot match the explanation
+    // above it. ⭐ The first version stripped comments a second time by hand and
+    // called a `read()` helper that does not exist in this file — ⭐ caught by the
+    // compiler, and the reason it is written down: do not re-implement what the helper
+    // does, and do not call a function you have not read.
+    const hits = occurrences(/\.(events|history)\s*\.\s*map\s*\(/, pages)
+    expect(
+      describeHits(hits),
+      `a page draws an event log itself instead of using RecordTimeline:\n${describeHits(hits)}`,
+    ).toBe('')
+  })
+
+  it('has both existing logs going through the one component', () => {
+    // ⭐ **A count, not a name.** The two logs in this product are a card's lifecycle
+    // and the watchlist's, and a test that named both files would pass unchanged after
+    // somebody deleted `CardTimeline` and inlined the list again. ⭐ Asserting the
+    // *number of adapters* is what fails when a home is abandoned, which is the
+    // failure this rule exists for.
+    //
+    // ⭐ **The path filter takes both separators.** `FILES` holds raw platform paths and
+    // only `RELATIVE()` normalises them, so the first version filtered on
+    // `'/components/data/'` and found **zero** files — ⭐ and then asserted `toBe(2)`
+    // against nothing and reported 「found 0」, ⭐ which reads as "somebody deleted both
+    // adapters" and was actually "the filter never matched a file". A filter that can
+    // match nothing is a test that reports a false cause.
+    const adapters = occurrences(
+      /export function (CardTimeline|WatchlistTimeline)\(/,
+      FILES.filter((file) => /components[\\/]data[\\/]/.test(file)),
+    )
+    expect(
+      adapters.length,
+      `expected 2 RecordTimeline adapters, found ${adapters.length}:\n${describeHits(adapters)}`,
+    ).toBe(2)
+  })
+
+  it('renders an absent detail rather than an empty second line', () => {
+    // ⭐ **This asserts wiring, not behaviour, and the difference is the point.**
+    //
+    // The first version asserted `toContain('absentDetail')` — ⭐ which is a check that
+    // the *word* appears in the file, and the word appears in the props interface, the
+    // destructuring, the JSDoc and the default. ⭐ A mutation that replaced the render
+    // site `{absentDetail}` with `{''}` left every one of those five mentions intact,
+    // so the test stayed green while the component rendered an empty second line — ⭐
+    // the exact defect this test was written to prevent. So the assertion is on the
+    // **render expression**, which is the thing that can actually be wrong.
+    //
+    // ⚠️ **And it still is not a behaviour test, because this repository cannot render
+    // a component in a test.** There is no `jsdom` and no `@testing-library/react` in
+    // `devDependencies` — ⭐ all ten test files are pure logic or source scans — and
+    // adding a DOM environment would be a dependency-budget decision (V-07) that this
+    // stage did not make. ⭐ So the honest scope of this test is 「the sentence is
+    // wired to the render site and the adapter supplies a real one」, and the honest
+    // consequence is written into the failure message: ⭐ an empty second line is not
+    // something this suite can see, only a reviewer reading the component can.
+    //
+    // ⭐ Built with `join`, not with `/` in a literal, for the reason the assertion
+    // count filter above needed both separators. ⭐ One normalisation mistake in this
+    // file would otherwise be made twice, in two different ways.
+    const component = readFileSync(
+      [SRC_DIR, 'components', 'data', 'RecordTimeline.tsx'].join('/'),
+      'utf8',
+    )
+    expect(
+      component,
+      'RecordTimeline has no absent-detail sentence; an empty second line is not an answer',
+    ).toContain('{absentDetail}</p>')
+    expect(
+      readFileSync([SRC_DIR, 'components', 'data', 'timelineAdapters.tsx'].join('/'), 'utf8'),
+      'an adapter passes an empty absence sentence, so the row renders nothing where it must state the absence',
+    ).toContain('absentDetail="（离开时没有留下说明）"')
+  })
+})

@@ -15,6 +15,7 @@
  */
 
 import { request } from './api'
+import type { Backlink } from './components/knowledge/BacklinkList'
 
 export type NoteLinkKind = 'note' | 'card' | 'decision' | 'instrument' | 'lesson'
 
@@ -76,6 +77,23 @@ export function listNotes(options: { tag?: string | null; q?: string } = {}): Pr
 
 export function getNote(id: string): Promise<Note> {
   return request<Note>(`/api/v1/notes/${id}`)
+}
+
+/**
+ * Which notes point **at** this one (spec 045 stage C).
+ *
+ * ⭐ **`encodeURIComponent`, unlike the other note calls in this file.** ⭐ They
+ * interpolate the id bare, and they were written before ids could be anything but a
+ * `note_<millis>` this file itself generates — so they are safe today and would not be
+ * if the id scheme ever changed. ⭐ This one is written correctly because the writer
+ * noticed while copying, and the two spellings in one file are the thing worth
+ * remembering: ⭐ a rule applied to the third instance instead of all of them is
+ * decoration, and the fifth instance will be written from whichever one is nearer.
+ */
+export function listNoteBacklinks(id: string): Promise<Backlink[]> {
+  return request<Backlink[]>(
+    `/api/v1/notes/${encodeURIComponent(id)}/backlinks`,
+  )
 }
 
 export function listNoteTags(): Promise<string[]> {

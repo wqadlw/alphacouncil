@@ -239,3 +239,152 @@ class TestEditingAndAbsence:
 
     def test_an_empty_vault_lists_nothing(self, client: TestClient) -> None:
         assert client.get("/api/v1/notes").json() == []
+
+
+class TestBacklinks:
+    """`GET /notes/{id}/backlinks` (spec 045 stage C).
+
+    ⭐ This route exists because `notes.backlinks_for` had been in the repository since
+    spec 026 **with a test and no caller** — the shape `status.md` carried as
+    「反链有函数无面板」. ⭐ So the first test here is not about backlinks at all; it is
+    that the route is reachable at all, because FastAPI matches in declaration order
+    and this repo has been bitten by that twice.
+    """
+
+    def test_the_route_is_not_captured_by_the_note_id_route(
+        self, client: TestClient
+    ) -> None:
+        """`/{note_id}` is a wildcard and `/backlinks` is declared after it.
+
+        ⭐ **This is the same assertion `notes.py` already carries for `/due`, and it is
+        written again rather than shared** because the failure is per-route: moving one
+        handler fixes one route and breaks nothing about the other, ⭐ and a helper that
+        "checked the ordering" would need to know the route table to do it.
+        """
+        created = _post_note(client)
+        response = client.get(f"/api/v1/notes/{created['id']}/backlinks")
+        assert response.status_code == 200, response.text
+
+    def test_a_note_with_nothing_pointing_at_it_lists_nothing(
+        self, client: TestClient
+    ) -> None:
+        """⭐ Empty is the honest answer and it is a **200 with `[]`**, not a 404. A
+        backlink list is asked about a note that very much exists."""
+        created = _post_note(client)
+        assert client.get(f"/api/v1/notes/{created['id']}/backlinks").json() == []
+
+    def test_a_note_pointing_at_another_appears_in_its_backlinks(
+        self, client: TestClient
+    ) -> None:
+        """The feature, and the direction that is easy to get backwards.
+
+        ⭐ **A links at B means B's list contains A** — not A's list containing B. The
+        repository function takes `(kind, target_id)` and filters on `to_id`, so writing
+        the endpoint against the wrong side produces a route that answers 200 with the
+        right shape and the wrong notes in it, ⭐ which is the kind of defect no status
+        code catches.
+        """
+        target = _post_note(client, title="目标笔记")
+        source = _post_note(client, title="引用它的那条")
+        linked = client.post(
+            f"/api/v1/notes/{source['id']}/links",
+            json={"to_kind": "note", "to_id": target["id"]},
+        )
+        assert linked.status_code == 200, linked.text
+
+        rows = client.get(f"/api/v1/notes/{target['id']}/backlinks").json()
+        assert [(row["from_note_id"], row["title"]) for row in rows] == [
+            (source["id"], "引用它的那条")
+        ]
+        # ⭐ And the reverse direction is empty. One assertion, because "the list is
+        # right" and "the other list is right" fail together when the filter is wrong.
+        assert client.get(f"/api/v1/notes/{source['id']}/backlinks").json() == []
+
+    def test_the_row_carries_the_id_so_the_list_is_clickable(
+        self, client: TestClient
+    ) -> None:
+        """⭐ A list of titles with no way to open them is a list of labels, and the
+        whole point of a backlink is to be followed."""
+        target = _post_note(client)
+        source = _post_note(client)
+        client.post(
+            f"/api/v1/notes/{source['id']}/links",
+            json={"to_kind": "note", "to_id": target["id"]},
+        )
+        row = client.get(f"/api/v1/notes/{target['id']}/backlinks").json()[0]
+        assert row["from_note_id"] == source["id"]
+
+    def test_the_row_does_not_carry_the_body(self, client: TestClient) -> None:
+        """⭐ The endpoint is not a way to fetch any note the caller can name.
+
+        `GET /notes/{id}` already serves a body to anyone with an id, so this is not a
+        new capability — but a backlink list is rendered in a side panel beside a
+        record, and shipping every linked note's full text there would make the panel
+        cost proportional to the vault rather than to the panel.
+        """
+        target = _post_note(client)
+        source = _post_note(client, body="一段只应该出现在 GET 单条里的正文")
+        client.post(
+            f"/api/v1/notes/{source['id']}/links",
+            json={"to_kind": "note", "to_id": target["id"]},
+        )
+        row = client.get(f"/api/v1/notes/{target['id']}/backlinks").json()[0]
+        assert set(row) == {"from_note_id", "title"}
+        assert "正文" not in row["title"]
+
+    def test_a_missing_note_is_a_404_and_not_a_400(self, client: TestClient) -> None:
+        """⭐ **The status code is the assertion, and it is not obvious.**
+
+        `NOTE_NOT_FOUND` is **not** in `errors.py`'s status table, so an uncaught
+        `NoteNotFoundError` falls through to the 400 default. ⭐ `GET /{note_id}` carries
+        an explicit `try/except` for exactly this, and this route has to as well — a
+        400 for a missing note is a wrong answer about a missing note, on the one route
+        where "missing" is a plausible thing for a client to ask.
+        """
+        response = client.get("/api/v1/notes/note_9999999999999/backlinks")
+        assert response.status_code == 404, response.text
+
+    def test_a_backlink_does_not_survive_its_note(self, client: TestClient) -> None:
+        """⭐ **This test replaced one that asserted something untrue, and the
+        replacement is the interesting part.**
+
+        The first version claimed "nothing cascades a deleted note's outgoing links, so
+        the handler skips ids that no longer resolve". ⭐ That was wrong on both halves,
+        and it was wrong because it was written from an assumption: the mutation check
+        showed that removing the handler's `if row is not None` left the suite green, ⭐
+        and the probe answered why — `note_links` **does** cascade, and `get_by_id`
+        **raises** rather than returning `None`, so the guard was unreachable.
+
+        ⭐ So the guard was deleted (see the handler) and this test now pins the
+        behaviour that is actually true: deleting the linking note deletes the link, and
+        the list is empty afterwards without any filtering. ⭐ The route therefore has
+        nothing to defend against, and saying so in a test is worth more than a guard
+        that looks like it is defending something.
+        """
+        from alphacouncil.core.config import get_settings
+        from alphacouncil.storage import db as sdb
+
+        target = _post_note(client)
+        source = _post_note(client)
+        client.post(
+            f"/api/v1/notes/{source['id']}/links",
+            json={"to_kind": "note", "to_id": target["id"]},
+        )
+        assert len(client.get(f"/api/v1/notes/{target['id']}/backlinks").json()) == 1
+
+        connection = sdb.connect(get_settings().database_path)
+        try:
+            with connection:
+                connection.execute("DELETE FROM notes WHERE id = ?", (source["id"],))
+            # ⭐ **The setup asserts itself.** The first version did not, which is why it
+            # stayed green after the behaviour it was testing was removed. ⭐ A test that
+            # cannot fail because its own preparation quietly did nothing is a test that
+            # asserts nothing, and it looks exactly like a test that passed.
+            remaining = connection.execute(
+                "SELECT COUNT(*) FROM note_links WHERE from_note_id = ?", (source["id"],)
+            ).fetchone()[0]
+        finally:
+            connection.close()
+        assert remaining == 0, "the link row outlived its note — the cascade is not there"
+
+        assert client.get(f"/api/v1/notes/{target['id']}/backlinks").json() == []

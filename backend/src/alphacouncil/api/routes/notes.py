@@ -314,6 +314,77 @@ def remove_tag(note_id: str, tag: str, connection: DatabaseConnection) -> NoteRe
         return _to_read(repository.get_by_id(connection, note_id))
 
 
+class BacklinkRead(BaseModel):
+    """One note that points at something, as the reader needs to see it.
+
+    ⭐ **`from_note_id` plus `title`, not the whole note.** A backlink list is read by
+    someone who has just followed a link and wants to know *where they arrived*, so the
+    two things they need are 「which note」 and 「what it is called」. The body is not
+    one of them, and ⭐ sending it would make this endpoint a way to fetch any note
+    the caller can name — which `GET /notes/{id}` already is, but with an id the caller
+    had to guess.
+
+    ⭐ The id travels because the row is a link: **a list of titles with no way to open
+    them is a list of labels**, and the whole point of a backlink is to be clickable.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    from_note_id: str
+    title: str
+
+
+@router.get(
+    "/{note_id}/backlinks",
+    summary="Notes that point at this note",
+    response_model=list[BacklinkRead],
+)
+def backlinks(note_id: str, connection: DatabaseConnection) -> list[BacklinkRead]:
+    """Which notes point **at** this one.
+
+    ⭐ **A backlink is only interesting the other way round, so this exists because
+    `note_links` can already store it and nothing could read it.** `notes.py`'s
+    `backlinks_for` has been in the repository since spec 026 with a test and no caller
+    — which is the shape `status.md` has been carrying as 「反链有函数无面板」 since the
+    day it was true.
+
+    ⚠️ **Two things about this handler that look like boilerplate and are not:**
+
+    1. ⭐ **`get_by_id` is called first and raises.** `NOTE_NOT_FOUND` is **not** in
+       `errors.py`'s status table, so an uncaught `NoteNotFoundError` would answer
+       **400, not 404** — a wrong status code for a missing note, on the one route where
+       "missing" is a plausible thing for a client to ask about. ⭐ `GET /{note_id}`
+       already has the explicit `try/except` for this reason; this route reuses the
+       same shape rather than trusting the fallback.
+    2. ⭐ **The rows are resolved in order and nothing is filtered, because there is
+       nothing to filter.** ⭐ The first version of this handler carried
+       `if row is not None` with a comment explaining that a backlink to a deleted note
+       is skipped — ⭐ **and the comment was wrong in two ways at once.** Measured
+       against a real database on 2026-09-30: `note_links.from_note_id` **cascades**, so
+       deleting the source note removes the link row before any query runs; and
+       `get_by_id` **raises** rather than returning `None` for a missing note, so the
+       guard could never have been reached even if the row had survived.
+
+       ⭐ So the filter was unreachable code that read as though it were protecting
+       something — the same shape as `EVENT_LABEL` in `format.ts`, deleted the same day
+       for the same reason. ⭐ A guard written from an assumption instead of a
+       measurement is worse than no guard: it survives review, it reads as diligence,
+       and the protection it appears to provide was never there.
+    """
+    try:
+        repository.get_by_id(connection, note_id)
+    except NoteNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return [
+        BacklinkRead(
+            from_note_id=from_id,
+            title=repository.get_by_id(connection, from_id).note.title,
+        )
+        for from_id in repository.backlinks_for(connection, LinkKind.NOTE, note_id)
+    ]
+
+
 @router.post("/{note_id}/links", summary="Point a note at a card, decision or note")
 def add_link(
     note_id: str, payload: NoteLinkInput, connection: DatabaseConnection

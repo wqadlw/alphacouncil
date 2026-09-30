@@ -9,6 +9,7 @@ import {
   type ClaimType,
 } from './api'
 import { formatMoment } from './format'
+import { CardTimeline } from './components/data/timelineAdapters'
 import { Button, Input, Textarea } from './components/ui'
 
 /**
@@ -383,21 +384,15 @@ function CardItem({
         <span className="num text-ink-faint"> · 采集于 {formatMoment(card.captured_at)}</span>
       </div>
 
-      {card.events.length > 0 && (
-        <ul className="mt-1 space-y-0.5 type-meta text-ink-faint">
-          {card.events.map((event) => (
-            <li key={event.id} className="num">
-              {event.event_type === 'verified' ? (
-                <>已对照出处 · {formatMoment(event.created_at)}</>
-              ) : (
-                <>
-                  已收敛：{event.reason} · {formatMoment(event.created_at)}
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* ⭐ `CardTimeline`, which is `RecordTimeline` plus this domain's vocabulary.
+          The previous version was a bare `<ul>` in `type-meta` with no rule, no
+          shape and a 「已收敛：」 prefix inside the sentence — ⭐ which read as a
+          different product from the watchlist log three components away, even though
+          both are append-only records of the reader's own decisions. ⭐ The API
+          contract is unchanged (`test_cards_api.py` pins it); only the rendering moved,
+          and `RecordTimeline`'s absence sentence means a `verified` row no longer
+          shows an empty second line. */}
+      {card.events.length > 0 && <CardTimeline events={card.events} />}
 
       {!converged && (
         <div className="mt-1.5 flex flex-wrap items-center gap-2">

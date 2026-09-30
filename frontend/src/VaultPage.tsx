@@ -62,6 +62,7 @@ import {
   addNoteTag,
   createNote,
   enrollNote,
+  listNoteBacklinks,
   listNoteTags,
   listNotes,
   type Note,
@@ -69,6 +70,7 @@ import {
   readNoteSchedule,
   removeNoteTag,
 } from './notes'
+import { BacklinkCount, BacklinkList } from './components/knowledge/BacklinkList'
 import LessonList from './components/knowledge/LessonList'
 import LessonRecallView from './components/knowledge/LessonRecallView'
 import RecallView from './components/knowledge/RecallView'
@@ -141,6 +143,34 @@ export default function VaultPage() {
     describe,
   )
   const tags = useResource<string[]>(listNoteTags, [], describeTags)
+
+  /**
+   * Select a note the reader did not click in the list.
+   *
+   * ⭐ **This exists because a backlink is an id and `selected` is a `Note`.** The
+   * lookup goes through the list already in hand rather than fetching, and ⭐ the two
+   * failures it could have are both handled by doing nothing visible: an id that is
+   * not in the current list (it is filtered out by the search box) and an id that is
+   * gone entirely. ⭐ Neither is worth an error message — the reader pressed a link to
+   * a note they were already looking at, and 「无法打开」 would be a false alarm.
+   *
+   * ⭐ **And the current search box stays as it is.** Clearing it would be a bigger
+   * behaviour change than this stage is for, and the note appears either way; the
+   * list below is not re-filtered, so the target can be selected while invisible in
+   * the list, ⭐ which is slightly odd and much better than refusing to open it.
+   *
+   * ⭐ **Declared after `notes` rather than beside the other callbacks**, because the
+   * first version sat above it and `useCallback`'s dependency array read `notes.data`
+   * before `notes` existed. ⭐ That is a runtime-shaped mistake caught by `tsc` — the
+   * kind that reads as a missing-import problem until you look at the line numbers.
+   */
+  const openNoteById = useCallback(
+    (noteId: string) => {
+      const found = (notes.data ?? []).find((candidate) => candidate.id === noteId)
+      if (found) setSelected(found)
+    },
+    [notes.data],
+  )
 
   /**
    * ⭐ Derived, **and latched**.
@@ -328,7 +358,11 @@ export default function VaultPage() {
 
       {/* ── 2. the note you opened ─────────────────────────────────────── */}
       {selected ? (
-        <NoteDetail note={selected} onChanged={notes.reload} />
+        <NoteDetail
+          note={selected}
+          onChanged={notes.reload}
+          onSelectNote={openNoteById}
+        />
       ) : null}
 
       {/* ── 3. 记一条 ──────────────────────────────────────────────────── */}
@@ -611,13 +645,40 @@ function CardList() {
 
 /* ── reading ────────────────────────────────────────────────────────────── */
 
-function NoteDetail({ note, onChanged }: { note: Note; onChanged: () => void }) {
+function NoteDetail({
+  note,
+  onChanged,
+  onSelectNote,
+}: {
+  note: Note
+  onChanged: () => void
+  onSelectNote: (noteId: string) => void
+}) {
   const [newTag, setNewTag] = useState('')
   const [error, setError] = useState<string | null>(null)
   // `null` = not asked yet, `false` = not on the queue, `true` = on it. Three
   // states because "we have not looked" and "it is not enrolled" call for
   // different copy, and collapsing them means showing a button that then fails.
   const [enrolled, setEnrolled] = useState<boolean | null>(null)
+
+  /**
+   * ⭐ **Backlinks, and a resource that is re-created per note.**
+   *
+   * `useResource` takes a fetcher and a dependency list; ⭐ passing `note.id` as the
+   * dependency is what makes it ask again when the reader opens a different note. ⭐
+   * The alternative — fetching all of them once — is not available because there is no
+   * such endpoint, and adding one to avoid a re-request would put every note's backlink
+   * list in the payload of a page that renders one note.
+   */
+  const backlinks = useResource(
+    useCallback(() => listNoteBacklinks(note.id), [note.id]),
+    [note.id],
+    useCallback(
+      (cause: unknown) =>
+        cause instanceof ApiError ? cause.message : '无法读取反链。',
+      [],
+    ),
+  )
 
   const refresh = useCallback(async () => {
     onChanged()
@@ -693,6 +754,42 @@ function NoteDetail({ note, onChanged }: { note: Note; onChanged: () => void }) 
         <pre className="whitespace-pre-wrap font-sans type-prose text-ink" data-testid="note-preview">
           {note.body}
         </pre>
+
+        {/* ── backlinks (§8.2 · 「知识库像知识库的地方」) ─────────────────────
+            ⭐ **Placed after the body and before the tags.** The body is what the
+            reader opened this note for; the tags are chrome they came to edit. ⭐ The
+            backlinks answer a question neither of those answers — 「我说过它吗」 — and
+            they are the one part of this panel that is about **other records**, so
+            they sit after everything about *this* note.
+
+            ⭐ **No loading state, and that is deliberate rather than an omission.**
+            The first version of this block had three branches — error, loading, list —
+            ⭐ and named components (`ErrorNote`, `Skeleton`) **that do not exist in this
+            repository**; the house style is a bare `<p>` in the tone colour, as at
+            `vault-error` above. ⭐ Two reasons there is no spinner: a backlink list is
+            one request against a local database and the list is empty more often than
+            not, ⭐ so a placeholder that flashes for 30 ms is worse than nothing; and
+            rendering 「没有别的记录指向它」 before the request returns would be a **false
+            statement about a note**, which rule 8 is about in spirit if not in its
+            wording. ⭐ So the label row appears only once there is an answer. */}
+        {!backlinks.loading && !backlinks.error ? (
+          <div className="mt-3">
+            <div className="flex items-baseline gap-2">
+              <span className="type-meta caps text-ink-faint">被引用</span>
+              <BacklinkCount count={backlinks.data?.length ?? 0} />
+            </div>
+            <div className="mt-1">
+              <BacklinkList
+                backlinks={backlinks.data ?? []}
+                onSelect={onSelectNote}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {backlinks.error ? (
+          <p className="mt-3 type-prose text-ink-faint">{backlinks.error}</p>
+        ) : null}
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
           <span className="type-meta caps text-ink-faint">标签</span>
