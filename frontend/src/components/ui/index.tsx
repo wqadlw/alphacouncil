@@ -280,7 +280,7 @@ export function EmptyState({
 export function ErrorNote({ message, className }: { message: string; className?: string }) {
   return (
     <div
-      className={cn('mark border-l-2 border-l-[color:var(--color-up)] py-1', className)}
+      className={cn('border-l-2 border-l-[color:var(--color-up)] py-1', className)}
       data-testid="error-note"
  >
       <p className="type-prose text-[color:var(--color-up)]">{message}</p>

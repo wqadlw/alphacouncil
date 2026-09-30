@@ -286,13 +286,13 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
         </div>
 
         {error && (
-          <div className="mark mt-2 border-l-2 border-l-up py-1">
+          <div className="mt-2 border-l-2 border-l-up py-1">
             <p className="type-prose text-up">{error.message}</p>
             {error.fix && <p className="type-prose text-ink-soft">{error.fix}</p>}
           </div>
         )}
         {notice && (
-          <div className="mark mt-2 border-l-2 border-l-navy py-1">
+          <div className="mt-2 border-l-2 border-l-navy py-1">
             <p className="type-prose text-navy">{notice}</p>
           </div>
         )}
@@ -334,7 +334,7 @@ function CardItem({
       : CLAIM_TONE[card.claim_type]
 
   return (
-    <li className={`mark border-b border-[color:var(--color-rule-soft)] border-l-2 py-1.5 ${tone}`}>
+    <li className={`border-b border-[color:var(--color-rule-soft)] border-l-2 py-1.5 pl-3 ${tone}`}>
       <div className="flex flex-wrap items-baseline gap-x-3">
         <span className="type-prose text-ink">
           {converged ? '已收敛' : (CLAIM_LABEL[card.claim_type] ?? card.claim_type)}
@@ -416,7 +416,7 @@ function CardItem({
 
       {showForm && !converged && (
         <form
-          className="mark mt-1.5 border-l-2 border-l-rule py-1.5 pl-3"
+          className="mt-1.5 border-l-2 border-l-rule py-1.5 pl-3"
           onSubmit={submitConverge}
  >
           <label className="flex flex-col gap-1">

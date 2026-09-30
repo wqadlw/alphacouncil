@@ -856,12 +856,17 @@ describe('V-14 — an append-only log has one rendering', () => {
     ).toBe('')
   })
 
-  it('has both existing logs going through the one component', () => {
-    // ⭐ **A count, not a name.** The two logs in this product are a card's lifecycle
-    // and the watchlist's, and a test that named both files would pass unchanged after
-    // somebody deleted `CardTimeline` and inlined the list again. ⭐ Asserting the
-    // *number of adapters* is what fails when a home is abandoned, which is the
-    // failure this rule exists for.
+  it('has every log going through the one component', () => {
+    // **A count, not a name.** The logs in this product are a card's lifecycle, the
+    // watchlist's, and a note's review history. A test that named the files would pass
+    // unchanged after somebody deleted one adapter and inlined the list again, so the
+    // assertion is on the *number* — that is what fails when a home is abandoned.
+    //
+    // Three, and it was two when this was written. The review history arrived together
+    // with the note panel that can show it; had the adapter been added without that
+    // panel, this count would have been raised first and a dead adapter would have
+    // shipped. The number guards against a registry grown on faith, and it only works
+    // if it is raised when a caller appears, not when it is convenient.
     //
     // ⭐ **The path filter takes both separators.** `FILES` holds raw platform paths and
     // only `RELATIVE()` normalises them, so the first version filtered on
@@ -869,14 +874,72 @@ describe('V-14 — an append-only log has one rendering', () => {
     // against nothing and reported 「found 0」, ⭐ which reads as "somebody deleted both
     // adapters" and was actually "the filter never matched a file". A filter that can
     // match nothing is a test that reports a false cause.
-    const adapters = occurrences(
-      /export function (CardTimeline|WatchlistTimeline)\(/,
+        const adapters = occurrences(
+      /export function (CardTimeline|WatchlistTimeline|NoteReviewTimeline)\(/,
       FILES.filter((file) => /components[\\/]data[\\/]/.test(file)),
     )
     expect(
       adapters.length,
-      `expected 2 RecordTimeline adapters, found ${adapters.length}:\n${describeHits(adapters)}`,
-    ).toBe(2)
+      `expected 3 RecordTimeline adapters, found ${adapters.length}:\n${describeHits(adapters)}`,
+    ).toBe(3)
+  })
+
+  it('uses `.mark` only where no utility sets a border colour', () => {
+    // ⭐⭐ **This exists because a 2px left rule rendered in the wrong colour, and no
+    // class-name assertion could see it.**
+    //
+    // `.mark` is hand-written in `globals.css` — `border-left: 2px solid
+    // var(--color-rule)` as a **shorthand** — in a rule that sits outside every
+    // `@layer`, because it is written after the `@import`. ⭐ An unlayered rule beats
+    // the whole utilities layer, ⭐ so on `RecordTimeline`'s rows the utility classes
+    // `border-l-transparent` and `border-l-[color:var(--color-ink-faint)]` both lost,
+    // ⭐ and **every row of every log rendered with the same left rule** — ⭐ which
+    // silently deleted the only thing rule 7 asks colour to do in that component.
+    //
+    // ⭐ The fix was to stop using `.mark` there. ⭐ **This test is the other half of
+    // that fix**: it says the rule is only for elements whose border colour is *not*
+    // set by a utility, ⭐ so the next component to reach for it to get a 2px rule
+    // finds out here rather than by looking at a screenshot.
+    const uses = FILES.filter((f) => f.endsWith('.tsx'))
+    // ⭐ **Three quote characters, not two.** ⭐ The first two versions matched `['"]`
+    // ⭐ and both missed `` className={`mark …`} `` ⭐ — ⭐ a template literal, ⭐ which
+    // is what the tone-dependent rows use, ⭐ and which is exactly where a conditional
+    // border colour lives. ⭐ A scan that cannot see template literals ⭐ cannot see
+    // half the places a className is written, ⭐ and it is the same defect as
+    // `F-154`'s path separator: ⭐ a pattern that assumes a shape the codebase does
+    // not always have.
+    //
+    // ⭐ **And the mutation check is what found it** ⭐ — ⭐ the fix script reported
+    // 「36 classNames changed」 ⭐ and the rule then reported one more, ⭐ in a
+    // template literal ⭐ that the script's own pattern had skipped. ⭐ A fix tool and
+    // a gate that disagree is a *good* outcome ⭐ and the disagreement has to be
+    // resolved in the gate's favour ⭐ by widening what the fix tool sees.
+    const hits = uses
+      .map((file) => ({ file, text: stripComments(readFileSync(file, 'utf8'), false) }))
+      .flatMap(({ file, text }) =>
+        text
+          .split(/\r?\n/)
+          .map((line, index) => ({ file, line, index }))
+          .filter(({ line }) => /['"`][^'"`]*\bmark\b[^'"`]*['"`]/.test(line))
+          .map(({ file: f, line, index }) => ({ file: RELATIVE(f), line: index + 1, text: line.trim() })),
+      )
+    // ⭐ **Every occurrence is a hit, and the filter that said otherwise was the
+    // mistake.** ⭐ One version excluded lines containing `border-l-`, ⭐ on the
+    // theory that those were fine ⭐ — ⭐ and they are not: ⭐ `.mark`'s `border-left`
+    // **shorthand** is unlayered, ⭐ so it beats `border-l-[color:…]` in exactly those
+    // lines. ⭐ A probe found **thirty-six** live examples across twelve files ⭐ whose
+    // rows **all render with `--color-rule`**, ⭐ not the colour they ask for — ⭐ so
+    // the filter was protecting the bug. ⭐ The rule is therefore the simple one:
+    // **`.mark` and a `border-*` utility do not go on the same element.**
+    expect(
+      describeHits(hits),
+      [
+        '`.mark` sets `border-left: 2px solid var(--color-rule)` in globals.css,',
+        'in a rule outside every @layer, so a `border-l-*` utility on the same',
+        'element loses to it. Every hit below asks for a colour it will not get:',
+        describeHits(hits),
+      ].join('\n'),
+    ).toBe('')
   })
 
   it('renders an absent detail rather than an empty second line', () => {

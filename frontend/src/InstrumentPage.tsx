@@ -217,7 +217,7 @@ export default function InstrumentPage({ market, code }: Props) {
       </p>
 
       {loadError && (
-        <div className="mark border-l-2 border-l-[color:var(--color-up)] px-4 py-2">
+        <div className="border-l-2 border-l-[color:var(--color-up)] px-4 py-2">
           <p className="type-prose text-[color:var(--color-up)]">{loadError}</p>
           <p className="type-prose text-ink-soft">
             后端未启动时会出现这一行 —— 它不会静默显示成「空标的」。
@@ -284,7 +284,7 @@ export default function InstrumentPage({ market, code }: Props) {
                  ⭐ And the note has to describe it *without* writing the closing
                  delimiter, because writing it here ends this comment on that
                  character and turns the rest of the sentence into code. */
-              <blockquote className="mark border-l-2 border-l-[color:var(--color-brass)] py-1">
+              <blockquote className="border-l-2 border-l-[color:var(--color-brass)] py-1">
                 <p className="type-prose">{detail.follow.reason}</p>
               </blockquote>
             ) : (
@@ -374,13 +374,13 @@ export default function InstrumentPage({ market, code }: Props) {
             </form>
 
             {actionError && (
-              <div className="mark mt-2.5 border-l-2 border-l-[color:var(--color-up)] py-1">
+              <div className="mt-2.5 border-l-2 border-l-[color:var(--color-up)] py-1">
                 <p className="type-prose text-[color:var(--color-up)]">{actionError.message}</p>
                 {actionError.fix && <p className="type-prose text-ink-soft">{actionError.fix}</p>}
               </div>
             )}
             {notice && (
-              <div className="mark mt-2.5 border-l-2 border-l-navy py-1">
+              <div className="mt-2.5 border-l-2 border-l-navy py-1">
                 <p className="type-prose text-navy">{notice}</p>
               </div>
             )}
@@ -479,7 +479,7 @@ function QuoteStrip({
 
       <div className="px-4 pt-2">
         {error && (
-          <div className="mark border-l-2 border-l-[color:var(--color-up)] py-1">
+          <div className="border-l-2 border-l-[color:var(--color-up)] py-1">
             <p className="type-prose text-[color:var(--color-up)]">{error}</p>
           </div>
         )}
@@ -554,7 +554,7 @@ function QuoteBody({ quote }: { quote: QuoteResult }) {
         </p>
 
         {quote.stale && (
-          <div className="mark mt-2 border-l-2 border-l-[color:var(--color-warn)] py-1">
+          <div className="mt-2 border-l-2 border-l-[color:var(--color-warn)] py-1">
             <p className="type-prose text-[color:var(--color-warn)]">
               这个价格是旧的 —— 所有实时来源都没有应答，显示的是最后一次成功取到的值。
             </p>
@@ -565,7 +565,7 @@ function QuoteBody({ quote }: { quote: QuoteResult }) {
   }
 
   return (
-    <div className="mark mt-1 border-l-2 border-l-[color:var(--color-warn)] py-1">
+    <div className="mt-1 border-l-2 border-l-[color:var(--color-warn)] py-1">
       <p className="type-prose text-[color:var(--color-warn)]">{QUOTE_FAILURE[quote.status]}</p>
       {quote.reason && <p className="type-prose text-ink-soft">{quote.reason}</p>}
       {quote.error_code && (
@@ -622,20 +622,20 @@ function NotBuiltYet() {
           卡片能记能查（K1），决策能记（J1）—— 决策的<strong className="text-ink">对质</strong>还没有。
         </p>
         <ul className="mt-1.5 type-meta text-ink-faint">
-          <li className="mark border-l-2 border-l-[color:var(--color-rule)] py-1">
+          <li className="border-l-2 border-l-[color:var(--color-rule)] py-1">
             卡片复习与淘汰（K2）—— 卡片只有「记」没有「复习」；「哪张卡可以淘汰」还要靠人眼。
           </li>
-          <li className="mark border-l-2 border-l-[color:var(--color-rule)] py-1">
+          <li className="border-l-2 border-l-[color:var(--color-rule)] py-1">
             持仓（D2）—— 没有成本与数量，所以上面那个止损计算器要你自己填亏损比例，
             而不是从持仓里读。
           </li>
-          <li className="mark border-l-2 border-l-[color:var(--color-rule)] py-1">
+          <li className="border-l-2 border-l-[color:var(--color-rule)] py-1">
             对质与四象限（J3）—— 决策质量与结果是两件事，把它们分开打分的界面还没有。
           </li>
-          <li className="mark border-l-2 border-l-[color:var(--color-rule)] py-1">
+          <li className="border-l-2 border-l-[color:var(--color-rule)] py-1">
             重复检测（J4）—— 「这句话你说过 3 次」还没有实现，因为「怎样算同一句话」还没定义。
           </li>
-          <li className="mark border-l-2 border-l-[color:var(--color-rule)] py-1">
+          <li className="border-l-2 border-l-[color:var(--color-rule)] py-1">
             教训转卡（J5）—— 教训还不能变成复习卡片，所以「不再重犯」暂时还不是日程。
           </li>
         </ul>

@@ -131,7 +131,7 @@ export function NoteLinks({
             return (
               <li
                 key={`${link.to_kind}:${link.to_id}`}
-                className="mark flex items-baseline gap-2 border-b border-l-2 border-l-2 border-[color:var(--color-rule-soft)] border-l-navy py-1.5"
+                className="flex items-baseline gap-2 border-b border-l-2 border-l-2 border-[color:var(--color-rule-soft)] border-l-navy py-1.5"
               >
                 <span className="type-meta caps shrink-0 text-ink-faint">
                   {KIND_LABEL[link.to_kind]}
@@ -255,7 +255,7 @@ export function NoteLinks({
 
       {error ? (
         <p
-          className="mark mt-1.5 border-l-2 border-l-[color:var(--color-up)] py-1 type-prose text-[color:var(--color-up)]"
+          className="mt-1.5 border-l-2 border-l-[color:var(--color-up)] py-1 type-prose text-[color:var(--color-up)]"
           data-testid="note-link-error"
         >
           {error}

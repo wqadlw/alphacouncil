@@ -130,11 +130,22 @@ export function RecordTimeline({
             key={event.id}
             className={cn(
               // Rule 5 — a category is marked with a 2px left rule, never a pill.
-              // ⭐ And the unmarked variant is `border-transparent` rather than
-              // `border-l-0`: a row that grows a rule when its tone changes shifts
-              // every line of text on the page by two pixels, which is exactly the
-              // kind of jump §7 forbids.
-              'mark border-b border-[color:var(--color-rule-soft)] border-l-2 py-1.5',
+              //
+              // ⭐⭐ **`.mark` was removed from here, and it was breaking the colour.**
+              // `.mark` is a hand-written class in `globals.css` ⭐ — ⭐ `border-left:
+              // 2px solid var(--color-rule)` as a **shorthand**, ⭐ in a rule that sits
+              // outside every `@layer` ⭐ because it is after the `@import`. ⭐ An
+              // unlayered rule beats the whole utilities layer, ⭐ so `border-l-transparent`
+              // ⭐ and `border-l-[color:…]` both lost to it, ⭐ and **every row rendered
+              // with the same left rule** ⭐ — ⭐ which is the defect the E2E found when
+              // it asserted on computed styles instead of on class names.
+              //
+              // ⭐ **The class is still used elsewhere** ⭐ (the vault's error rows) ⭐
+              // and removing it *here* is not a fix to `.mark` ⭐ — ⭐ it is this
+              // component no longer depending on a rule it cannot override. ⭐ The
+              // shorthand is also unnecessary: ⭐ width, style and colour are all set
+              // below, ⭐ and a row whose tone changes then shifts by nothing.
+              'border-b border-[color:var(--color-rule-soft)] border-l-2 border-solid py-1.5 pl-3',
               emphasised ? 'border-l-[color:var(--color-ink-faint)]' : 'border-l-transparent',
             )}
           >

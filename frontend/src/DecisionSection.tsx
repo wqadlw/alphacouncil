@@ -90,7 +90,7 @@ export default function DecisionSection({ market, code, decisions, onRecorded }:
 
 function DecisionRow({ decision }: { decision: Decision }) {
   return (
-    <li className="mark border-b border-[color:var(--color-rule-soft)] border-l-2 border-l-navy py-1.5">
+    <li className="border-b border-[color:var(--color-rule-soft)] border-l-2 border-l-navy py-1.5">
       <div className="flex flex-wrap items-baseline gap-x-3">
         <span className="type-prose text-ink">
           {ACTION_LABEL[decision.action] ?? decision.action}
@@ -106,11 +106,11 @@ function DecisionRow({ decision }: { decision: Decision }) {
       </div>
 
       <div className="mt-1 grid gap-1 sm:grid-cols-2">
-        <div className="mark border-l-2 border-l-navy py-1">
+        <div className="border-l-2 border-l-navy py-1">
           <p className="type-meta caps text-ink-faint">为什么</p>
           <p className="type-prose text-ink">{decision.rationale}</p>
         </div>
-        <div className="mark border-l-2 border-l-brass py-1">
+        <div className="border-l-2 border-l-brass py-1">
           <p className="type-meta caps text-ink-faint">反面证据</p>
           <p className="type-prose text-ink-soft">{decision.counter_evidence}</p>
         </div>

@@ -280,7 +280,32 @@ test.describe('改一条（spec 045 · 笔记的基本能力）', () => {
   test('取消编辑不会动笔记', async ({ page }) => {
     await routeVault(page)
     await openNote(page, '批价是渠道库存的先行指标')
-    const before = await page.getByTestId('note-detail').innerText()
+
+    // ⭐⭐ **The comparison is over the note's own text, and it used to be over the
+    // whole panel — which is a different test and a worse one.**
+    //
+    // ⭐ The panel is not one thing: ⭐ it holds 「这条笔记是什么」 ⭐ (title, body,
+    // tags) ⭐ and 「关于这条笔记还知道些什么」 ⭐ (enrolment, the review history, the
+    // outgoing links, the backlinks). ⭐ The second half is **filled in by requests
+    // that were still in flight when this test took its snapshot** ⭐ — ⭐ the panel
+    // said 「在查它是不是在队列上…」 ⭐ and said 「它没有回到我面前」 ⭐ a moment before,
+    // ⭐ and then said both of them differently. ⭐ A byte-for-byte comparison over
+    // that region is a comparison of two moments in a race, ⭐ which is why it only
+    // happened to pass: ⭐ the two moments landed close together on a quiet machine.
+    //
+    // ⭐ Adding the review history made the race lose, ⭐ because there is now a
+    // second request whose answer appears *inside* the snapshot window. ⭐ ⭐ The
+    // test was not wrong about the product; ⭐ it was wrong about its scope, ⭐ and a
+    // correct feature is the thing that exposes it.
+    //
+    // ⭐ `readNote` is the scope the assertion meant all along: ⭐ 「取消」 ⭐ must leave
+    // **the note** ⭐ exactly as it was, ⭐ and the other four regions are answers to
+    // other questions ⭐ that this test never made.
+    const readNote = async (target: Page) => ({
+      title: await target.getByTestId('note-detail').locator('h2').innerText(),
+      body: await target.getByTestId('note-preview').innerText(),
+    })
+    const before = await readNote(page)
 
     await page.getByTestId('note-edit-open').click()
     await page.getByTestId('note-edit-title').fill('这个标题不该留下')
@@ -289,7 +314,301 @@ test.describe('改一条（spec 045 · 笔记的基本能力）', () => {
     await expect(page.getByTestId('note-editor')).toHaveCount(0)
     await expect(page.getByTestId('note-detail')).toContainText('批价是渠道库存的先行指标')
     await expect(page.getByTestId('note-detail')).not.toContainText('这个标题不该留下')
-    expect(await page.getByTestId('note-detail').innerText()).toBe(before)
+    expect(await readNote(page)).toEqual(before)
+
+    // ⭐ **And the panel is still there afterwards**, ⭐ because a test that stopped
+    // comparing it could also stop checking that cancelling did not unmount the
+    // note. ⭐ One assertion, ⭐ not the whole text.
+    await expect(page.getByTestId('note-preview')).toBeVisible()
+  })
+})
+
+test.describe('复习流水（spec 045 · 补上 spec 028 留下的问题）', () => {
+  test('「我复习过 5 次，为什么今天又来了」有一个答案', async ({ page }) => {
+    // ⭐⭐ **This is the test that closes a question spec 028 opened and left open.**
+    //
+    // spec 028 made 「改写笔记」 a `reset` rather than quietly moving the due date,
+    // and gave the reason as 「我复习过 5 次，为什么今天又来了」. ⭐ The mechanism was
+    // built — `note_reviews` is append-only, `reset` is one of its outcomes, ⭐ and
+    // `GET /notes/{id}/reviews` has returned the whole history since. ⭐ Nothing ever
+    // *displayed* it, ⭐ so the answer existed and there was no place to read it: ⭐ a
+    // note you edited would reappear on schedule ⭐ and you would have no way to learn
+    // you were looking at a second pass over different text.
+    //
+    // ⭐ **The assertion is on the `reset` row specifically**, ⭐ not on 「there is a
+    // history」. ⭐ A history that renders only the ordinary reviews answers the count
+    // and still hides the edit — ⭐ and the edit is the part that is surprising.
+    await page.route('**/api/v1/notes**', async (route) => {
+      const request = route.request()
+      const url = new URL(request.url())
+      const path = url.pathname
+      const json = (status: number, body: unknown) =>
+        route.fulfill({
+          status,
+          contentType: 'application/json',
+          body: JSON.stringify(body),
+        })
+
+      const note = { ...seed()[0], links: [], schedule: null }
+      void note
+
+      if (path === '/api/v1/notes/tags') return json(200, ['宏观'])
+      if (path === '/api/v1/notes/due') return json(200, [])
+      if (path.endsWith('/backlinks')) return json(200, [])
+
+      if (path.endsWith('/schedule')) {
+        // ⭐ **The note IS on the queue** ⭐ — the history is only rendered for an
+        // enrolled note, ⭐ and a fixture answering 404 here would exercise the wrong
+        // branch and pass for the wrong reason.
+        return json(200, {
+          note_id: 'note_1700000000000',
+          state: 'review',
+          due_at: '2026-10-03T00:00:00.000Z',
+          enrolled_at: '2026-09-01T00:00:00.000Z',
+          updated_at: '2026-09-29T00:00:00.000Z',
+        })
+      }
+      if (path.endsWith('/reviews')) {
+        // ⭐ **Four rows, and the two unusual ones are the point.** ⭐ Two ordinary
+        // reviews, one `reset`, ⭐ and — ⭐ **added because a mutation check found the
+        // fixture had no `deferred` row at all** ⭐ — one `defer`. ⭐ Written
+        // newest-first, which is the order the product's own list uses, ⭐ so the test
+        // would fail if the panel re-sorted them.
+        return json(200, [
+          {
+            id: 'rev_4',
+            note_id: 'note_1700000000000',
+            outcome: 'reset',
+            rating: null,
+            reviewed_at: '2026-09-29T00:00:00.000Z',
+            duration_ms: 0,
+            from_due_at: '2026-09-30T00:00:00.000Z',
+            to_due_at: '2026-10-03T00:00:00.000Z',
+            from_state: 'review',
+            to_state: 'review',
+          },
+          {
+            // ⭐⭐ **`deferred`, and it is here for a measured reason.** ⭐ The first
+            // version of this fixture had three rows ⭐ — ⭐ two `reviewed` and one
+            // `reset` ⭐ — ⭐ and a mutant that dropped the `outcome === 'reviewed'`
+            // half of the rating guard **survived**, ⭐ because with no `deferred` row
+            // in the fixture there was nothing for it to mis-render. ⭐
+            //
+            // ⭐ **A fixture that only holds the cases the code handles is a fixture
+            // that agrees with the code.** ⭐ The three outcomes exist, ⭐ and the one
+            // that carries no rating is the one that proves the guard.
+            //
+            // ⭐ `rating: null` is not a choice here: ⭐ `defer` in spec 028 is 「我的
+            // 想法变了，以后再说」 ⭐ and asking for a grade with that is asking the
+            // reader to score a decision they explicitly declined to make.
+            id: 'rev_3',
+            note_id: 'note_1700000000000',
+            outcome: 'deferred',
+            rating: null,
+            reviewed_at: '2026-09-20T00:00:00.000Z',
+            duration_ms: 0,
+            from_due_at: '2026-09-22T00:00:00.000Z',
+            to_due_at: '2026-10-01T00:00:00.000Z',
+            from_state: 'review',
+            to_state: 'review',
+          },
+          {
+            id: 'rev_2',
+            note_id: 'note_1700000000000',
+            outcome: 'reviewed',
+            rating: 'good',
+            reviewed_at: '2026-09-12T00:00:00.000Z',
+            duration_ms: 4000,
+            from_due_at: '2026-09-12T00:00:00.000Z',
+            to_due_at: '2026-09-22T00:00:00.000Z',
+            from_state: 'review',
+            to_state: 'review',
+          },
+          {
+            id: 'rev_1',
+            note_id: 'note_1700000000000',
+            outcome: 'reviewed',
+            rating: 'again',
+            reviewed_at: '2026-09-05T00:00:00.000Z',
+            duration_ms: 3000,
+            from_due_at: '2026-09-05T00:00:00.000Z',
+            to_due_at: '2026-09-12T00:00:00.000Z',
+            from_state: 'review',
+            to_state: 'review',
+          },
+        ])
+      }
+      if (path === '/api/v1/notes') return json(200, [seed()[0]])
+      return json(200, seed()[0])
+    })
+
+    await openNote(page, '流动性收紧时周期股先跌')
+
+    // ⭐ **The count, so 「4 次」 is a claim about the rows and not about a label.**
+    await expect(page.getByTestId('note-detail')).toContainText('复习流水')
+    await expect(page.getByTestId('note-detail')).toContainText('4 次')
+
+    // ⭐ **The edit is named, in the reader's words.** ⭐ 「排程从头开始」 rather than
+    // 「RESET」 ⭐ — ⭐ the row has to say what happened to the *schedule*, ⭐ which is
+    // the thing the reader cannot see and the question they are asking about.
+    await expect(page.getByTestId('note-detail')).toContainText('这条被我改过，排程从头开始')
+
+    // ⭐ **A grade, in the spec's words, and the four forbidden words are absent.**
+    // ⭐ `recall.spec.ts` asserts 「忘」/「失败」/「重来」/「错误」 never appear in the
+    // review flow, ⭐ and the first version of the adapter's labels was written without
+    // reading that. ⭐ `again` is 「我的想法变了」 — ⭐ which is what spec 028 says it
+    // means for a note.
+    await expect(page.getByTestId('note-detail')).toContainText('我的想法变了')
+    for (const forbidden of ['忘了', '失败', '重来', '错误']) {
+      await expect(page.getByTestId('note-detail')).not.toContainText(forbidden)
+    }
+
+    // ⭐ **And the new due date, because 「什么时候」 is half the question.** ⭐ The
+    // date is truncated to a day on purpose ⭐ — ⭐ a review history shown to the
+    // millisecond is a log, ⭐ and a log is not what a reader checks a schedule in.
+    await expect(page.getByTestId('note-detail')).toContainText('下一次 2026-10-03')
+
+    // ⭐⭐ **A `defer` row carries no grade, and the assertion is on the four labels
+    // rather than on the row's whole text.**
+    //
+    // ⭐ The first version of this asserted the row's `innerText` exactly ⭐ and it
+    // **should not have.** ⭐ The row is 「标签 · 时间戳 · 明细」 ⭐ and the timestamp
+    // is rendered in **local time** ⭐ — ⭐ `2026-09-20T00:00:00Z` is `2026-09-20 08:00`
+    // in UTC+8 and `2026-09-19 17:00` in UTC-7, ⭐ so an exact match would make this
+    // test pass in Shanghai and fail in San Francisco. ⭐ `palette.spec.ts` and the
+    // other timestamp assertions here already learned to assert the *day* ⭐; the row
+    // text is where that habit was missing.
+    //
+    // ⭐ **What the guard is for, stated honestly.** ⭐ `deferred` and `reset` both
+    // carry `rating: null`, ⭐ and the adapter guards on
+    // `outcome === 'reviewed' && rating !== null`. ⭐ ⭐ **A mutant that weakens the
+    // `rating` half is rejected by `tsc`** ⭐ — ⭐ `rating` is `ReviewRating | null`,
+    // ⭐ so `rating !== undefined` does not narrow away `null` ⭐ and
+    // `RATING_LABEL[review.rating]` will not type-check. ⭐ ⭐ That is **not** the same
+    // as a test killing it, ⭐ and it is reported as its own verdict: ⭐ the type
+    // system is a real guard here, ⭐ it is simply not a test.
+    //
+    // ⭐ **So the `deferred` row earns its place on coverage, not on the guard.** ⭐
+    // Two of the three outcomes were rendered by this file before it; ⭐ 「我说以后再看」
+    // — ⭐ spec 028's word for 「我的想法变了，以后再说」 ⭐ — ⭐ was in the source and
+    // in no test, ⭐ so a typo in it would have shipped. ⭐ The four labels below are
+    // the assertion: ⭐ none of them may appear on a row the reader declined to grade.
+    const deferRow = page
+      .getByTestId('note-detail')
+      .locator('ol li')
+      .filter({ hasText: '我说以后再看' })
+    expect(await deferRow.count(), '应当有一行讲「我说以后再看」').toBe(1)
+    await expect(deferRow).toContainText('下一次 2026-10-01')
+    for (const grade of ['我的想法变了', '想起来了，但慢', '记得', '不用想']) {
+      await expect(
+        deferRow,
+        `「我说以后再看」不该带评分「${grade}」`,
+      ).not.toContainText(grade)
+    }
+
+    // ⭐ **The duration is not shown.** The table has it, ⭐ and `duration_ms` is the
+    // one field a self-scoring instinct says to display — ⭐ but 「你复习了 3 秒」
+    // invites the reader to optimise their own recall instead of reading, ⭐ and
+    // spec 028's copy work is entirely about moving them away from that.
+    await expect(page.getByTestId('note-detail')).not.toContainText('4000')
+
+    // ⭐⭐ **The `reset` row is marked, and the assertion is on a computed style.**
+    //
+    // ⭐ Rule 7 puts meaning in colour ⭐ and rule 5 says a category is marked with a
+    // 2px rule rather than a pill ⭐ — ⭐ so the contract is a **2px left rule in a
+    // different colour**, ⭐ and this is the one place in the product where it decides
+    // something: ⭐ 「这条被我改过」 is the only event in a review history whose
+    // consequence differs, ⭐ because it wiped the schedule.
+    //
+    // ⭐ **Computed style, not a class name** — ⭐ the pattern `palette.spec.ts` set for
+    // the 2px brass cursor. ⭐ A class assertion passes just as happily on a renamed
+    // utility as on the intended border, ⭐ and this row's whole point is that it looks
+    // different from the three rows above it.
+    // ⭐ ⭐ **And that is not a hypothetical.** ⭐ `globals.css`'s `.mark` sets
+    // `border-left: 2px solid var(--color-rule)` in a rule outside every `@layer`, ⭐
+    // so it beat the utility classes ⭐ and **every row of every log rendered with the
+    // same left rule** ⭐ for as long as those rows carried it. ⭐ No class-name
+    // assertion could have seen that, ⭐ because the class was present ⭐ and correct ⭐
+    // — ⭐ it was the cascade that was wrong.
+    const ruleColours = await page
+      .getByTestId('note-detail')
+      // ⭐ **Scoped to the list that follows the 复习流水 heading**, ⭐ not to every
+      // `li` with a 2px border. ⭐ The naive version found **five**: ⭐ the three review
+      // rows ⭐ plus the outgoing-link rows ⭐ and the link picker's ⭐ — ⭐ and the
+      // assertion 「every row is unmarked except one」 ⭐ would then be about four
+      // components at once. ⭐ The review history is an `<ol>`, ⭐ and the other two
+      // are `<ul>`s ⭐ — ⭐ which is not a coincidence: ⭐ 「次序是重点」 is the reason
+      // that list is an ordered one.
+      .locator('ol li')
+      .evaluateAll((els) =>
+        els.map((el) => {
+          const style = getComputedStyle(el)
+          return {
+            label: (el.textContent ?? '').slice(0, 12),
+            width: style.borderLeftWidth,
+            colour: style.borderLeftColor,
+          }
+        }),
+      )
+    expect(ruleColours.length, '每条流水都应该是一行').toBe(4)
+    const reset = ruleColours.find((row) => row.label.includes('改过'))
+    const ordinary = ruleColours.filter((row) => !row.label.includes('改过'))
+    expect(reset, '应当有一行讲「这条被我改过」').toBeTruthy()
+    // ⭐ **Transparency matched as a shape, not as one string** ⭐ — ⭐ the first
+    // version compared `borderLeftColor` to the literal `rgba(0, 0, 0, 0)` ⭐ and
+    // failed, ⭐ because Tailwind v4 emits the keyword `transparent`, ⭐ which the
+    // browser reports back as `rgba(0, 0, 0, 0)` in some engines and as `transparent`
+    // in others. ⭐ `palette.spec.ts` already learned this for the brass cursor ⭐ and
+    // the answer is a pattern, ⭐ not a literal ⭐ — ⭐ and a literal here would have
+    // been a test that passes on one browser and fails on another.
+    const isTransparent = (colour: string) =>
+      /^rgba\(0,\s*0,\s*0,\s*0\)$/.test(colour) || colour === 'transparent'
+    for (const row of ordinary) {
+      expect(row.width, '未标记的行也保留 2px，避免文字跳动').toBe('2px')
+      expect(isTransparent(row.colour), `未标记的行左规应当是透明的，实得 ${row.colour}`).toBe(
+        true,
+      )
+    }
+    // ⭐ And the marked row is **2px in a different colour**, ⭐ not 「some other
+    // class」 ⭐ — ⭐ which is the difference between asserting the design and
+    // asserting the implementation.
+    expect(reset?.width).toBe('2px')
+    expect(
+      isTransparent(reset?.colour ?? ''),
+      '「这条被我改过」应当有色左规',
+    ).toBe(false)
+  })
+
+  test('没入队的笔记不显示流水 —— 「它没有回来过」不是关于这条笔记的事实', async ({
+    page,
+  }) => {
+    // ⭐ **The branch, not the other one.** ⭐ A note that was never enroled has no
+    // review history, ⭐ and 「它没有回来过」 ⭐ would be a true statement about the
+    // wrong thing — ⭐ it says the note has never come back, ⭐ when the truth is that
+    // nobody ever asked it to.
+    await page.route('**/api/v1/notes**', async (route) => {
+      const url = new URL(route.request().url())
+      const path = url.pathname
+      const json = (status: number, body: unknown) =>
+        route.fulfill({
+          status,
+          contentType: 'application/json',
+          body: JSON.stringify(body),
+        })
+      if (path === '/api/v1/notes/tags') return json(200, ['宏观'])
+      if (path === '/api/v1/notes/due') return json(200, [])
+      if (path.endsWith('/backlinks')) return json(200, [])
+      // ⭐ 404 = not enrolled, which is the product's own answer for this.
+      if (path.endsWith('/schedule')) return json(404, { detail: 'no schedule' })
+      if (path === '/api/v1/notes') return json(200, [seed()[0]])
+      return json(200, seed()[0])
+    })
+
+    await openNote(page, '流动性收紧时周期股先跌')
+    await expect(page.getByTestId('note-enrol')).toBeVisible()
+    // ⭐ And the enrolment control is *the* thing on screen, ⭐ because 「请它回来」
+    // is the only action this note offers.
+    await expect(page.getByTestId('note-detail')).not.toContainText('复习流水')
   })
 })
 

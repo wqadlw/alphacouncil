@@ -5,7 +5,7 @@
  * what it is for: **「知识库像知识库的地方」**.
  *
  * ⭐ **A note is worth more once something else points at it, and a backlink is the only
- * thing on the page that says so.** Every other element in the vault answers 「这是什���」;
+ * thing on the page that says so.** Every other element in the vault answers 「这是什么」;
  * this one answers 「我说过它吗，别人说过吗」 — which is the question that turns a list of
  * notes into something you can navigate by thinking.
  *
@@ -64,7 +64,7 @@ export function BacklinkList({ backlinks, onSelect }: BacklinkListProps) {
           // ⭐ A 2px left rule, not a bullet or a pill (规则 5). ⭐ And the same
           // `mark` class `RecallView` uses, so a backlink row and a recall row read as
           // two instances of one list rather than as two components.
-          className="mark border-b border-[color:var(--color-rule-soft)] border-l-2 border-l-[color:var(--color-navy)] py-1.5"
+          className="border-b border-[color:var(--color-rule-soft)] border-l-2 border-l-[color:var(--color-navy)] py-1.5"
         >
           <button
             type="button"

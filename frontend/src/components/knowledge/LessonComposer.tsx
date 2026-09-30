@@ -133,7 +133,7 @@ export default function LessonComposer({
 
       {error ? (
         <p
-          className="mark mt-1.5 border-l-2 border-l-[color:var(--color-up)] py-1 type-prose text-[color:var(--color-up)]"
+          className="mt-1.5 border-l-2 border-l-[color:var(--color-up)] py-1 type-prose text-[color:var(--color-up)]"
           data-testid="lesson-error"
  >
           {error}
@@ -141,7 +141,7 @@ export default function LessonComposer({
       ) : null}
       {notice ? (
         <p
-          className="mark mt-1.5 border-l-2 border-l-navy py-1 type-prose text-navy"
+          className="mt-1.5 border-l-2 border-l-navy py-1 type-prose text-navy"
           data-testid="lesson-notice"
  >
           {notice}

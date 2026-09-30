@@ -64,6 +64,7 @@ import {
   enrollNote,
   listNoteBacklinks,
   listNoteTags,
+  listNoteReviews,
   listNotes,
   type Note,
   type NoteDraft,
@@ -74,6 +75,7 @@ import { BacklinkCount, BacklinkList } from './components/knowledge/BacklinkList
 import { Markdown } from './components/knowledge/Markdown'
 import { NoteEditor } from './components/knowledge/NoteEditor'
 import { NoteLinks } from './components/knowledge/NoteLinks'
+import { NoteReviewTimeline } from './components/data/timelineAdapters'
 import LessonList from './components/knowledge/LessonList'
 import LessonRecallView from './components/knowledge/LessonRecallView'
 import RecallView from './components/knowledge/RecallView'
@@ -538,12 +540,12 @@ function NoteComposer({
       </p>
 
       {error ? (
-        <p className="mark mt-1.5 border-l-2 border-l-[color:var(--color-up)] py-1 type-prose text-[color:var(--color-up)]" data-testid="note-error">
+        <p className="mt-1.5 border-l-2 border-l-[color:var(--color-up)] py-1 type-prose text-[color:var(--color-up)]" data-testid="note-error">
           {error}
         </p>
       ) : null}
       {notice ? (
-        <p className="mark mt-1.5 border-l-2 border-l-navy py-1 type-prose text-navy" data-testid="note-notice">
+        <p className="mt-1.5 border-l-2 border-l-navy py-1 type-prose text-navy" data-testid="note-notice">
           {notice}
         </p>
       ) : null}
@@ -695,6 +697,24 @@ function NoteDetail({
   useEffect(() => {
     setEditing(false)
   }, [note.id])
+
+  /**
+   * ⭐ **The note's review history, fetched per note for the same reason the
+   * backlinks are.** ⭐ Its dependency is `note.id`, ⭐ so opening another note asks
+   * again; ⭐ and the history is only rendered when the note is on the queue, ⭐ which
+   * is decided by a *different* request ⭐ — ⭐ so this one is created unconditionally
+   * and the render decides whether to show it, ⭐ rather than a conditional hook
+   * whose call order would depend on a network answer.
+   */
+  const reviews = useResource(
+    useCallback(() => listNoteReviews(note.id), [note.id]),
+    [note.id],
+    useCallback(
+      (cause: unknown) =>
+        cause instanceof ApiError ? cause.message : '无法读取复习流水。',
+      [],
+    ),
+  )
 
   /**
    * ⭐ **Backlinks, and a resource that is re-created per note.**
@@ -942,6 +962,46 @@ function NoteDetail({
               到时候提醒我再读一遍
             </Button>
           )}
+
+          {/* ── 复习流水 ────────────────────────────────────────────────────
+              ⭐⭐ **This closes a question spec 028 opened two releases ago.**
+
+              spec 028 made 「改写笔记」 a `reset` rather than quietly moving the due
+              date, ⭐ and gave the reason as 「**我复习过 5 次，为什么今天又来了**」 —
+              ⭐ a question about *this note's history*. ⭐ The mechanism was built
+              (`note_reviews` is append-only, `reset` is an outcome, ⭐ and the API has
+              returned the whole history since) ⭐ and ⭐ **nothing ever displayed it**:
+              ⭐ `listNoteReviews` had zero callers, ⭐ so the answer existed and there
+              was no place to read it. ⭐ A note you edited would reappear on schedule
+              ⭐ and you would have no way to learn that you were looking at a
+              **second** pass over different text.
+
+              ⭐ **Only rendered once the note is on the queue**, ⭐ because a note that
+              was never enroled has no history ⭐ and 「它没有回来过」 ⭐ would be a
+              true statement about the wrong thing. ⭐ The enrolment line above already
+              answers 「它在不在队列上」, ⭐ and this answers 「它什么时候回来的、为什么」.
+
+              ⭐ **Fetched per note, not with the rest**, ⭐ for the same reason the
+              backlinks are: ⭐ there is no 「all reviews」 endpoint, ⭐ and adding one
+              to avoid a second request would put every note's review history into the
+              payload of a page that renders one note. */}
+          {enrolled ? (
+            <div className="mt-3">
+              <div className="flex items-baseline gap-2">
+                <span className="type-meta caps text-ink-faint">复习流水</span>
+                <span className="num type-meta text-ink-faint">
+                  {reviews.data?.length ?? 0} 次
+                </span>
+              </div>
+              {reviews.error ? (
+                <p className="mt-1 type-prose text-ink-faint">{reviews.error}</p>
+              ) : reviews.loading ? null : (
+                <div className="mt-1">
+                  <NoteReviewTimeline reviews={reviews.data ?? []} />
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
 
         {error ? <p className="mt-1 type-prose text-[color:var(--color-up)]">{error}</p> : null}

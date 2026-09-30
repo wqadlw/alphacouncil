@@ -113,7 +113,7 @@ export default function StopLossPrompt({ criteria, onClose }: Props) {
 
       {usable && rateUsable ? (
         <>
-          <div className="mark mt-3 border-l-2 border-l-up py-1">
+          <div className="mt-3 border-l-2 border-l-up py-1">
             <p className="type-prose">
               恢复所需年数：约{' '}
               {/* Serif, and the largest number in the product. It is a quotation of the
@@ -240,7 +240,7 @@ function CriteriaReadback({ criteria }: { criteria: KillCriterion[] }) {
         {criteria.map((criterion, index) => (
           <li
             key={`${criterion.metric}-${criterion.as_of}-${index}`}
-            className="mark border-l-2 border-l-brass py-1 type-prose"
+            className="border-l-2 border-l-brass py-1 type-prose"
  >
             {formatPredicate(criterion)}
           </li>

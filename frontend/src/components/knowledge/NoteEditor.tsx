@@ -129,7 +129,7 @@ export function NoteEditor({
 
       {error ? (
         <p
-          className="mark mt-1.5 border-l-2 border-l-[color:var(--color-up)] py-1 type-prose text-[color:var(--color-up)]"
+          className="mt-1.5 border-l-2 border-l-[color:var(--color-up)] py-1 type-prose text-[color:var(--color-up)]"
           data-testid="note-edit-error"
         >
           {error}

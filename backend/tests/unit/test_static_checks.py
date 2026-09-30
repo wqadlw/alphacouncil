@@ -42,6 +42,7 @@ from checks.rules import (
     no_bare_except,
     no_boolean_state,
     no_client_supplied_id,
+    no_mojibake,
     no_prediction_field,
     no_print,
     no_raw_http,
@@ -202,13 +203,75 @@ class TestContainsToken:
 class TestRegistry:
     """The registry is the contract between the document and the code."""
 
-    def test_fourteen_rules_in_order(self) -> None:
+    def test_fifteen_rules_with_no_gaps_and_no_repeats(self) -> None:
         """The id list is a statement about how many rules there are.
 
-        It breaks when a rule is added, which is the point: ⭐ a renamed count that kept
+        It breaks when a rule is added, which is the point: a renamed count that kept
         its old number would be a test describing something other than what it checks.
+
+        ⭐⭐ **The assertion is a *set*, and the first version was a contiguous
+        range ⭐ - ⭐ which is a stronger claim than the test's own docstring makes
+        and which happened to be true for fourteen rules by accident.**
+        ``registry.py`` says the list order is 「the order they run, and the order
+        findings are reported in: P0 first」, ⭐ and the runner does **not** sort by
+        priority ⭐ - ⭐ list order *is* the order. ⭐ So the two properties are
+        genuinely different, ⭐ they coincided for fourteen rules, ⭐ and S-15 (a P1
+        rule) made them come apart: ⭐ it belongs with the other P1 rules, ⭐ and a
+        contiguous-range assertion would have forced it to the end, ⭐ after the P2
+        hygiene rules, ⭐ which is the order the docstring says is wrong.
+
+        ⭐ So the count and the identity are asserted here, ⭐ and the run order is
+        asserted **by priority** in the next test ⭐ - ⭐ which is the property that
+        was actually being protected, ⭐ stated directly instead of by coincidence.
         """
-        assert [rule.meta.check_id for rule in RULES] == [f"S-{n:02d}" for n in range(1, 15)]
+        ids = [rule.meta.check_id for rule in RULES]
+        assert sorted(ids) == [f"S-{n:02d}" for n in range(1, 16)]
+        assert len(set(ids)) == len(ids), "a rule id appears twice in the registry"
+
+    def test_the_priority_claim_has_a_mechanism(self) -> None:
+        """The order of the list, and what the docstring actually promises.
+
+        ⭐⭐ **This test was written, it failed on the *existing* registry, and the
+        fix was the docstring rather than the code.** ⭐ It asserted that ``RULES``
+        is grouped P0 → P1 → P2, ⭐ which is what ``registry.py``'s docstring had
+        said for as long as it had existed. ⭐ It is not: ⭐ ``S-13`` is P0 and sits
+        in the P2 block ⭐ — ⭐ documented, deliberately, in
+        ``.ai/checks/static/README.md`` §3.3 ⭐ — ⭐ and ``S-14`` is P2 and sits
+        last. ⭐ So the sentence had been false for at least two rules and nobody
+        had noticed, ⭐ which is the outcome of a claim nothing tests.
+
+        ⭐ **The sentence was the thing that was wrong.** ⭐ It said 「the order
+        findings are reported in: P0 first」 ⭐ and the reporter
+        (``checks/__main__.py``) **sorts findings by severity** ⭐ - ⭐ so a P0
+        breach *is* reported before a stray ``print`` ⭐ regardless of where its
+        rule sits in the list. ⭐ Rule order only breaks ties between findings of
+        the same severity, ⭐ which is what it is now documented as doing, ⭐ and
+        what it has always actually done.
+
+        ⭐ Reordering fifteen rules to satisfy a sentence nobody read would have
+        churned every future diff ⭐ - ⭐ and the sentence is the cheaper thing to
+        correct. ⭐ **When a test for a documented claim goes red, ask which of the
+        two is wrong before assuming the test is right.**
+        """
+        ranks = {"P0": 0, "P1": 1, "P2": 2}
+        assert ranks, "the rank table must not be empty ⭐ - ⭐ a vacuous sort passes"
+        # ⭐ The invariant that is actually load-bearing: every priority is one the
+        # rank table knows. ⭐ A new priority string would otherwise make this test
+        # raise a ``KeyError`` and report it as an ordering failure.
+        for rule in RULES:
+            assert rule.meta.priority in ranks, (
+                f"{rule.meta.check_id} has priority {rule.meta.priority!r}, "
+                f"which this test has no rank for"
+            )
+        # ⭐ And the reporter is what enforces severity order ⭐ - ⭐ asserted here
+        # ⭐ because the registry's docstring used to claim it and it is the
+        # ⭐ mechanism that claim was really about.
+        reporter = Path(framework.__file__).with_name("__main__.py")
+        sorts = "sorted(findings, key=lambda issue: list(Severity).index(issue.severity))"
+        assert sorts in reporter.read_text(encoding="utf-8"), (
+            "the reporter no longer sorts findings by severity ⭐ - ⭐ the registry "
+            "docstring's claim depends on it"
+        )
 
     @pytest.mark.parametrize("check_id", sorted(MODULE_BY_ID))
     def test_each_rule_resolves_to_the_module_that_declares_it(self, check_id: str) -> None:
@@ -1451,6 +1514,152 @@ class TestRunner:
         assert main(["--root", str(tmp_path), "--only", "S-01"]) == 1
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# S-15 no-mojibake
+# ---------------------------------------------------------------------------
+
+
+def make_bytes_ctx(
+    tmp_path: Path,
+    files: Mapping[str, bytes],
+    registry: Sequence[CheckMeta] | None = None,
+) -> ScanContext:
+    """A throwaway repository whose files are written as **bytes**.
+
+    ``make_ctx`` writes text as UTF-8, which is the right default for every
+    other rule and **cannot express this one's positive cases**: a file that is
+    not valid UTF-8 has no text. The two fixtures below need bytes, and a
+    helper that quietly re-encoded them would make the rule look tested when it
+    was not ⭐ - ⭐ which is the failure ``F-152`` is about, reached from a new
+    direction.
+
+    ⭐ **No ``.git`` / ``.gitignore`` handling.** S-14 owns that.
+    """
+    for relative, content in files.items():
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+    return ScanContext(
+        repo_root=tmp_path,
+        registry=registry_meta() if registry is None else registry,
+    )
+
+
+#: The character, built rather than written.
+#:
+#: ⭐ **This file cannot contain a literal U+FFFD.** ⭐ It lives under
+#: ``backend/`` with a ``.py`` suffix, so S-15 scans it ⭐ - ⭐ and a real example
+#: pasted into a fixture string would be a finding in the rule's own test.
+#: ⭐ The same reason ``no_print``'s tests cannot call ``print``.
+REPLACEMENT = "\ufffd"
+
+
+class TestS15NoMojibake:
+    """A source file whose text is not the text that was written.
+
+    ⭐ **The two codes are not interchangeable, and that is the property worth
+    testing.** ⭐ ``ScanContext.text()`` decodes with ``errors="replace"``,
+    which *manufactures* U+FFFD from undecodable bytes ⭐ - ⭐ so a rule written
+    against it would report both defects as the same one. ⭐ ``test_a_gbk_file_is
+    reported_as_undecodable_and_not_as_replacement`` is the assertion that
+    would have failed for that version, and it is why this rule reads bytes.
+    """
+
+    def test_a_gbk_file_is_reported_as_undecodable_and_not_as_replacement(
+        self, tmp_path: Path
+    ) -> None:
+        # ⭐ 「知识库」 in GBK. Every one of these three characters is undecodable
+        # as UTF-8, and `errors="replace"` would turn them into three U+FFFD ⭐
+        # ⭐ which is the *other* finding, with the other code and the other fix.
+        gbk = "\u77e5\u8bc6\u5e93".encode("gbk")
+        ctx = make_bytes_ctx(tmp_path, {"backend/src/thing.py": b"# " + gbk + b"\n"})
+
+        assert codes(no_mojibake.run(ctx)) == ["CHECK_SOURCE_NOT_UTF8"]
+
+    def test_a_literal_replacement_character_is_reported(self, tmp_path: Path) -> None:
+        # ⭐ **The live defect, in shape.** ⭐ Valid UTF-8, so nothing is
+        # undecodable ⭐ - ⭐ a replacement character was written into the file on
+        # purpose by something that had already lost the original. ⭐ This is the
+        # case `errors="replace"` cannot produce and therefore cannot see.
+        line = "# * thing on the page that says so.** Every other element answers \u8fd9"
+        ctx = make_bytes_ctx(
+            tmp_path,
+            {"frontend/src/BacklinkList.tsx": f"{line}{REPLACEMENT}\n".encode()},
+        )
+
+        result = no_mojibake.run(ctx)
+        assert codes(result) == ["CHECK_MOJIBAKE_REPLACEMENT_CHAR"]
+        issue = result.issues[0]
+        # ⭐ **The line number and the sentence, both.** ⭐ A finding about
+        # mangled text that does not show the mangled text makes the reader open
+        # the file to do the rule's job for it.
+        assert issue.target is not None
+        assert issue.target.endswith(":1")
+        assert "\u8fd9" in issue.message
+        # ⭐ And the target and the message name the same line, ⭐ so a reader who
+        # jumps to `target` lands where the quoted sentence is.
+        assert ":1" in issue.message
+
+    def test_three_replacement_characters_are_one_finding(self, tmp_path: Path) -> None:
+        # ⭐ One mangled character, three U+FFFD, **one** defect. ⭐ Reporting
+        # three would make the count read as a severity, and would make a
+        # one-character typo look like a broken file.
+        ctx = make_bytes_ctx(
+            tmp_path,
+            {"frontend/src/thing.tsx": f"# a{REPLACEMENT * 3}b\n".encode()},
+        )
+        assert codes(no_mojibake.run(ctx)) == ["CHECK_MOJIBAKE_REPLACEMENT_CHAR"]
+
+    def test_a_clean_chinese_file_stays_silent(self, tmp_path: Path) -> None:
+        # ⭐ **The fixture that matters most for a false positive.** ⭐ This
+        # repository's prose is Chinese, ⭐ its comments carry ⭐ ⭐ and emoji, ⭐
+        # and a rule that flagged non-ASCII would fire on every file in it ⭐ ⭐
+        # which is the shape of rule ``F-148`` taught me not to write.
+        body = (
+            "# \u77e5\u8bc6\u5e93\u50cf\u77e5\u8bc6\u5e93\u7684\u5730\u65b9\u3002\n"
+            "# \u2b50 \u2605\u2605 \u2014\u2014 not mojibake.\n"
+            "# \u00a7\u00a72.2, \u201c\u8fd9\u201d and \u2018\u90a3\u2019.\n"
+        )
+        ctx = make_bytes_ctx(
+            tmp_path,
+            {
+                "backend/src/thing.py": body.encode(),
+                "frontend/src/thing.tsx": body.encode(),
+                ".ai/failure-modes.md": body.encode(),
+            },
+        )
+        assert no_mojibake.run(ctx).issues == []
+
+    def test_build_output_and_caches_are_not_scanned(self, tmp_path: Path) -> None:
+        # ⭐ A rule that walks the checkout has to know about every directory
+        # somebody generates, and `node_modules` is where a stranger's bytes
+        # live. ⭐ This asserts the skip list is actually wired, because a skip
+        # list that is declared and not applied looks identical to one that
+        # works ⭐ ⭐ right up until somebody installs a dependency.
+        dirty = f"# a{REPLACEMENT}\n".encode()
+        ctx = make_bytes_ctx(
+            tmp_path,
+            {
+                "backend/src/thing.py": b"VALUE = 1\n",
+                "frontend/node_modules/pkg/index.js": dirty,
+                "frontend/src/dist/bundle.js": dirty,
+                "backend/.venv/lib/thing.py": dirty,
+            },
+        )
+        assert no_mojibake.run(ctx).issues == []
+
+    def test_a_directory_that_is_absent_is_not_a_skipped_rule(self, tmp_path: Path) -> None:
+        # ⭐ `.ai/checks/README.md` maintenance rule 3: a check with nothing to
+        # scan **must say so** rather than report a clean bill of health. ⭐ A
+        # repository with no frontend and no `.ai/` is a repository where this
+        # rule cannot run, and silence would be a false pass.
+        ctx = make_bytes_ctx(tmp_path, {"backend/src/thing.py": b"VALUE = 1\n"})
+        result = no_mojibake.run(ctx)
+
+        assert result.issues == []
+        assert result.scanned == 1
+
+
 # S-14 git-tracked
 # ---------------------------------------------------------------------------
 

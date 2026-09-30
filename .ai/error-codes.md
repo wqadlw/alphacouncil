@@ -280,6 +280,8 @@ class DataFetchError(RuntimeError): ...
 | `CHECK_TOOL_ENCODING_UNGUARDED` | error | S-13 | 开发者工具打印人类可读输出却没调 `use_utf8()`（回归 0004；cp936 控制台上会中途崩溃并把绿灯报成退出码 1） |
 | `CHECK_UNTRACKED_SOURCE` | error | S-14 | 源文件在磁盘上但 git 没有它 —— 本地一切正常，**每一次克隆都缺这个文件** |
 | `CHECK_IGNORED_SOURCE` | warning | S-14 | 源文件被 `.gitignore` 藏起来了 —— ⚠️ `git status` **不显示被忽略的文件**，所以这一类缺陷恰好是那个命令看不见的 |
+| `CHECK_SOURCE_NOT_UTF8` | error | S-15 | 源文件的字节**不是合法 UTF-8**（多半是 GBK / latin-1 存下来的）—— 本地能读，别人读不了 |
+| `CHECK_MOJIBAKE_REPLACEMENT_CHAR` | error | S-15 | 源文件里含 U+FFFD —— 字节合法，**所以这个替换字符是被故意写进去的**，工具链、编译器、测试全都看不出来 |
 | `CHECK_EXEMPTION_UNREASONED` | error | —（运行器） | `# noqa: S-xx` 没写理由 —— **豁免必须有理由** |
 | `CHECK_RUNNER_ERROR` | error | —（运行器） | 规则脚本自身崩溃 —— **崩溃与通过无法区分，必须报** |
 

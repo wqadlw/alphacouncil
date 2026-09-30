@@ -54,7 +54,7 @@
 
 ## 我做错的两处
 
-### �1 · 我差点做一次「读起来必要」的 refactor（`F-163`）
+### ⭐1 · 我差点做一次「读起来必要」的 refactor（`F-163`）
 
 下一步我打算把 `<CommandPalette>` 从 `AppShellFrame` 挪到 `App`，理由是「这样它就是 shell 的兄弟」。
 

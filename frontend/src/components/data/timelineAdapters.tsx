@@ -1,5 +1,5 @@
 /**
- * The two adapters that feed `RecordTimeline`, and the one that does not exist.
+ * The three adapters that feed `RecordTimeline`.
  *
  * ⭐ Each adapter answers the same two questions — what happened, and what did the
  * reader write — and nothing else. The component owns the row; this file owns the
@@ -8,21 +8,33 @@
  * a line, and the moment they share a `switch` the component has become a domain
  * model.
  *
- * ⭐ **There is deliberately no third adapter for the review queues.**
- * `note_reviews` / `card_reviews` / `reviews` are append-only, and they were the
- * obvious third member. They are not in here, and the reason is worth stating
- * because it will come up again:
+ * ⭐⭐ **The third adapter exists, and the first version of this file said it must
+ * not.** The argument was: a review row is **a grade the reader gave themselves**,
+ * its copy is deliberately reader-first ⭐ — spec 028 records that `again` means
+ * 「**我的想法已经变了**」 and not 「我忘了」, ⭐ and `recall.spec.ts` asserts that four
+ * words (「忘」/「失败」/「重来」/「错误」) never appear — ⭐ so putting it in a
+ * sentence-taking component would mean this file deciding what a grade *is*.
  *
- * > A review row's payload is a **grade the reader gave themselves**, and its copy is
- * > deliberately reader-first — spec 028 records that `again` means 「**我的想法已经变了**」
- * > for a note and not 「我忘了」, and `recall.spec.ts` asserts that four words
- * > (「忘」/「失败」/「重来」/「错误」) never appear. ⭐ Forcing that into a sentence-taking
- * > component would mean this file deciding what a grade *is*, which is the opposite
- * > of what the split is for. ⭐ The review queues keep their own markup until they
- * > need a shared *shape*, and "they are append-only too" is not that reason.
+ * ⭐ **That argument was right about the review *screen* and wrong about the review
+ * *history*, and the difference is the whole correction.** `RecallView` shows a
+ * prompt and four buttons, ⭐ and there the reader is being asked 「你还记得吗」 ⭐ — ⭐ so
+ * the copy has to be kind, and 「你忘了」 is a sentence about the reader. ⭐ A history
+ * row is not that: ⭐ it is **a record of what happened**, ⭐ read days later by
+ * someone who wants the answer to 「我复习过几次」 and 「为什么它今天又来了」 — ⭐ and
+ * spec 028's whole reason for making a rewrite a `reset` **is** that the reader can
+ * be told the truth about it. ⭐ A history that is written kindly and a button that
+ * is written kindly are two different sentences, ⭐ and merging them would have made
+ * both worse.
+ *
+ * ⭐ And the reason it is here now rather than in stage C is that in stage C
+ * **there was nothing to render**: ⭐ `listNoteReviews` had zero callers, ⭐ so the
+ * third adapter would have been a component with no page — ⭐ `F-149`, the same
+ * mistake as the 13-entry icon registry. ⭐ The rule is not 「never add a third
+ * adapter」 ⭐ it is 「add the third adapter when something can show it」.
  */
 
 import type { CardEvent, WatchlistEvent } from '../../api'
+import type { NoteReview, ReviewRating } from '../../notes'
 import { RecordTimeline, type TimelineEvent } from './RecordTimeline'
 
 /** ⭐ `add` / `remove` are `null` there and carry no event id — see `eventKey`. */
@@ -140,6 +152,77 @@ export function CardTimeline({ events }: { events: readonly CardEvent[] }) {
       // own on-screen sentence promises 「按写入顺序排列」.
       as="ul"
       className="mt-1 space-y-0.5"
+    />
+  )
+}
+
+/** ⭐ The reader's own words for a grade, and the words are the spec's. */
+const RATING_LABEL: Record<ReviewRating, string> = {
+  again: '我的想法变了',
+  hard: '想起来了，但慢',
+  good: '记得',
+  easy: '不用想',
+}
+
+/** ⭐ `deferred` and `reset` are **not** grades — a rating is `null` for both. */
+const OUTCOME_LABEL: Record<NoteReview['outcome'], string> = {
+  reviewed: '复习过',
+  // ⭐ 「不是我答错，是我想再等等」 ⭐ — ⭐ spec 028's `defer` is 「**我的想法变了，
+  // 以后再说**」 ⭐ and a history row that called it 「延期」 would sound like a
+  // scheduler's word rather than the reader's.
+  deferred: '我说以后再看',
+  // ⭐⭐ **The word that answers a two-spec-old question.** spec 028 made 「改写笔记」
+  // a `reset` instead of silently moving the due date, ⭐ and the reason it gives is
+  // 「**我复习过 5 次，为什么今天又来了**」 ⭐ — ⭐ a question the reader can only answer
+  // if a row says 「**这条被我改过，排程从头开始**」. ⭐ Without this row the `reset` is
+  // invisible: ⭐ the note reappears on schedule and the reader has no way to learn
+  // that they are looking at a *second* pass over different text.
+  reset: '这条被我改过，排程从头开始',
+}
+
+/**
+ * A note's review history, as `RecordTimeline` events.
+ *
+ * ⭐ **The detail line is the grade *and* the new due date, and both are the
+ * reader's question answered.** 「记了 4 次，下一次 2026-10-03」 ⭐ is what someone
+ * checking a schedule actually wants, ⭐ and either half alone leaves them guessing.
+ *
+ * ⭐ **`duration_ms` is deliberately not shown.** ⭐ The table has it and a
+ * 「性能」-shaped instinct says show it, ⭐ but this product's red lines reject
+ * self-scoring: ⭐ 「你复习了 3 秒」 ⭐ invites the reader to optimise their own recall
+ * instead of reading, ⭐ and spec 028's copy work is entirely about moving them away
+ * from that. ⭐ A number the reader cannot act on is noise with a decimal point.
+ */
+function noteReviewEvents(reviews: readonly NoteReview[]): TimelineEvent[] {
+  return reviews.map((review) => ({
+    id: review.id,
+    what:
+      review.outcome === 'reviewed' && review.rating !== null
+        ? `${OUTCOME_LABEL[review.outcome]} · ${RATING_LABEL[review.rating]}`
+        : OUTCOME_LABEL[review.outcome],
+    at: review.reviewed_at,
+    detail: `下一次 ${review.to_due_at.slice(0, 10)}`,
+    // ⭐ **A `reset` is marked, and it is the only one.** ⭐ Rule 7: colour carries
+    // meaning. ⭐ 「这条被我改过」 ⭐ is the one event here whose *consequence* is
+    // different from the others ⭐ — ⭐ it wiped the schedule ⭐ — ⭐ and that is worth
+    // the one rule this list has.
+    tone: review.outcome === 'reset' ? 'marked' : 'neutral',
+  }))
+}
+
+export function NoteReviewTimeline({ reviews }: { reviews: readonly NoteReview[] }) {
+  return (
+    <RecordTimeline
+      events={noteReviewEvents(reviews)}
+      // ⭐ Rule 8: one fact, no 「还没有…」 phrasing, ⭐ and the fact is the useful one
+      // ⭐ — a note never enroled has no history ⭐ and a note enroled but never
+      // ⭐ returned has one. ⭐ The sentence distinguishes the two.
+      emptyText="它没有回来过。要它回来，得先请它回来。"
+      // ⭐ `ol`, unlike the card's `ul`. ⭐ A review history's **order is the whole
+      // point** — ⭐ 「我复习过 5 次」 ⭐ is a claim about a sequence, ⭐ and the new
+      // due date is a claim about where the sequence is going.
+      as="ol"
+      className="mt-1"
     />
   )
 }

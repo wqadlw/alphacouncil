@@ -281,13 +281,13 @@ export default function PoolPage() {
         </p>
 
         {formError ? (
-          <div className="mark mt-2 border-l-2 border-l-[color:var(--color-up)] py-1">
+          <div className="mt-2 border-l-2 border-l-[color:var(--color-up)] py-1">
             <p className="text-[color:var(--color-up)]">{formError.message}</p>
             {formError.fix ? <p className="type-prose text-ink-soft">{formError.fix}</p> : null}
           </div>
         ) : null}
         {notice ? (
-          <div className="mark mt-2 border-l-2 border-l-navy py-1">
+          <div className="mt-2 border-l-2 border-l-navy py-1">
             <p className="text-navy">{notice}</p>
           </div>
         ) : null}
@@ -318,7 +318,7 @@ export default function PoolPage() {
         ) : null}
 
         {loadError ? (
-          <div className="mark border-l-2 border-l-[color:var(--color-up)] px-4 py-2">
+          <div className="border-l-2 border-l-[color:var(--color-up)] px-4 py-2">
             <p className="type-prose text-[color:var(--color-up)]">{loadError}</p>
             <p className="type-prose text-ink-soft">
               后端未启动时会出现这一行 —— 它不会静默显示成「空」。
@@ -327,7 +327,7 @@ export default function PoolPage() {
         ) : null}
 
         {quotesError ? (
-          <div className="mark border-l-2 border-l-[color:var(--color-up)] px-4 py-2">
+          <div className="border-l-2 border-l-[color:var(--color-up)] px-4 py-2">
             <p className="type-prose text-[color:var(--color-up)]">{quotesError}</p>
             <p className="type-prose text-ink-soft">
               行情没能读取，但关注池本身不受影响 —— 记录与报价是两个请求。

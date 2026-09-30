@@ -246,7 +246,7 @@ export default function DecisionForm({ market, code, onRecorded }: Props) {
       </div>
 
       {error && (
-        <div className="mark mt-2 border-l-2 border-l-up py-1">
+        <div className="mt-2 border-l-2 border-l-up py-1">
           <p className="type-prose text-up">{error.message}</p>
           {error.fix && <p className="type-prose text-ink-soft">{error.fix}</p>}
         </div>
@@ -277,7 +277,7 @@ function CriterionEditor({
   onRemove: () => void
 }) {
   return (
-    <li className="mark mt-1.5 border-l-2 border-l-rule py-1.5">
+    <li className="mt-1.5 border-l-2 border-l-rule py-1.5">
       <div className="flex flex-wrap items-end gap-x-2 gap-y-1.5">
         <label className="flex flex-col gap-1">
           <span className="type-meta caps text-ink-faint">

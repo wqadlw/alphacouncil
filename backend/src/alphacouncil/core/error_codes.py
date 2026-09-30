@@ -209,6 +209,13 @@ class ErrorCode(StrEnum):
     # more \u2014 `git status` does not show ignored files.
     CHECK_UNTRACKED_SOURCE = "CHECK_UNTRACKED_SOURCE"
     CHECK_IGNORED_SOURCE = "CHECK_IGNORED_SOURCE"
+    # S-15. Two codes, and the split is the whole rule: 「the bytes are not UTF-8」
+    # and 「the bytes are UTF-8 and one of the characters in them is U+FFFD」 are
+    # different defects with different repairs. Merging them would also merge them
+    # with the framework's own `errors="replace"`, which manufactures U+FFFD from
+    # undecodable bytes and would make the two indistinguishable in a report.
+    CHECK_SOURCE_NOT_UTF8 = "CHECK_SOURCE_NOT_UTF8"
+    CHECK_MOJIBAKE_REPLACEMENT_CHAR = "CHECK_MOJIBAKE_REPLACEMENT_CHAR"
 
     # -- CHECK_* : emitted by the check runner itself -----------------------
     # Not tied to any single rule, so they cannot be attributed to one row.
