@@ -130,6 +130,13 @@ export function todayClosed(): Body {
           period: null,
           bars_available: null,
         },
+        // ⭐ Added in spec 044: the server ships the sentence, byte-for-byte the one
+        // `domain/criterion_sentence.py` renders for `undetermined`. ⭐ These three
+        // fields live on the **attention item**, not on `metric`, because `metric`
+        // is `null` in another fixture and the reader still needs a sentence then.
+        verdict:
+          '观察期已到 —— 「revenue_yoy」不在我们能算的指标里，这条判据没有被求值过。',
+        adjudicable: false,
       },
     ],
     due: due(),
@@ -150,14 +157,21 @@ export function todayClosed(): Body {
  * "no data" sentence for all of them is the defect §4.6 names.
  */
 export function todayEveryState(): Body {
+  // ⭐ The sentence is **not** written here. It is written in
+  // `backend/src/alphacouncil/domain/criterion_sentence.py` and shipped by `/today`
+  // (spec 044), so these fixtures use the exact strings that server produces. ⭐ They are
+  // literals rather than a re-implementation on purpose: ⭐ a TypeScript copy here would
+  // be the second home the move existed to remove, and it would agree with itself.
   const row = (
     id: string,
     metric: string,
     state: string,
     value: number | null,
     as_of: string | null,
-    period: number | null = null,
-    bars: number | null = null,
+    period: number | null,
+    bars: number | null,
+    verdict: string,
+    adjudicable: boolean,
   ) => ({
     kind: 'kill_criterion_due',
     item: {
@@ -169,13 +183,51 @@ export function todayEveryState(): Body {
       criterion: { metric, operator: '<' as const, threshold: 1200, as_of: '2026-09-20' },
     },
     metric: { state, label: metric, value, as_of, period, bars_available: bars },
+    verdict,
+    adjudicable,
   })
   return {
     generated_at: STAMP,
     attention: [
-      row('2026-09-20T01:00:00.000Z', 'ma20', 'crossed', 1185.3, '2026-09-29'),
-      row('2026-09-20T02:00:00.000Z', 'ma60', 'warming', null, '2026-09-29', 60, 12),
-      row('2026-09-20T03:00:00.000Z', 'revenue_yoy', 'undetermined', null, null),
+      row(
+        '2026-09-20T01:00:00.000Z',
+        'ma20',
+        'crossed',
+        1185.3,
+        '2026-09-29',
+        null,
+        null,
+        // ⭐ `1185.30`, not `1,185.30`. ⭐ `formatValue` in `criterion_sentence.py` only
+        // adds the thousands separator when the value **is an integer** (「整数就按整数
+        // 打印」); ⭐ a fractional reading prints as it is. The first draft of this
+        // fixture put the separator in, ⭐ and the E2E then failed on a *rendering*
+        // difference that had moved the sentence into the server — ⭐ which is exactly
+        // the drift this move was supposed to make impossible.
+        '已越过 —— ma20 现在 1185.30（2026-09-29）。',
+        true,
+      ),
+      row(
+        '2026-09-20T02:00:00.000Z',
+        'ma60',
+        'warming',
+        null,
+        '2026-09-29',
+        60,
+        12,
+        '观察期已到 —— ma60 还差 48 根日线才有值，这条判据暂时没有被求值。',
+        false,
+      ),
+      row(
+        '2026-09-20T03:00:00.000Z',
+        'revenue_yoy',
+        'undetermined',
+        null,
+        null,
+        null,
+        null,
+        '观察期已到 —— 「revenue_yoy」不在我们能算的指标里，这条判据没有被求值过。',
+        false,
+      ),
       {
         kind: 'kill_criterion_due',
         item: {
@@ -189,6 +241,10 @@ export function todayEveryState(): Body {
         // ⭐ `null` — the server could not read any bars at all. A different fault from
         // `warming`, on a different side, and the page must not merge them.
         metric: null,
+        // ⭐ The sentence is still there, and that is the point of putting it on the
+        // attention item rather than on the metric (spec 044).
+        verdict: '观察期已到 —— 这个代码没有日线，这条判据没有被求值过。',
+        adjudicable: false,
       },
     ],
     due: due(),

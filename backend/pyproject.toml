@@ -181,6 +181,13 @@ ignore = [
 # being checkable against the constitution by eye. The only CJK in the file is that
 # quotation and the 「唯一入口」 table, so the exemption buys nothing else.
 "src/alphacouncil/core/http.py" = ["RUF001", "RUF002"]
+# `domain/criterion_sentence.py` (spec 044) for a **stronger** version of the reason the
+# others give: those files mix code with Chinese UI copy, ⭐ and this one is **almost
+# entirely** the copy — a module whose product is five sentences. ⭐ The fullwidth
+# punctuation is the sentences' own, so "fixing" it would change what the reader reads.
+# ⭐ It also moved here deliberately: spec 040 built these in TypeScript, and the reason a
+# notification could not reuse them is that there was no server-side home for them.
+"src/alphacouncil/domain/criterion_sentence.py" = ["RUF001", "RUF002"]
 # ⭐ `providers/financial.py` (spec 043) deliberately has **no** exemption here, even though
 # it is written in mixed CJK/English. The first draft asked for one, on the grounds that
 # `ProviderCapabilities.notes` is 「§4.5 的降级说明，会上屏」. ⭐ **That was false** —

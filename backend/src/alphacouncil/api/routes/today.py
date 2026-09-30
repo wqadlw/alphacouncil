@@ -42,6 +42,7 @@ from alphacouncil.api.deps import DatabaseConnection, MarketData
 from alphacouncil.api.routes.decisions import KillCriterionRead
 from alphacouncil.core.time import utc_millis
 from alphacouncil.domain.criterion_eval import CriterionVerdict, evaluate
+from alphacouncil.domain.criterion_sentence import MetricFacts, sentence_for
 from alphacouncil.domain.decision import DecisionAction
 from alphacouncil.domain.trading import (
     TradingDayBasis,
@@ -144,6 +145,31 @@ class AttentionRead(BaseModel):
     #: ⭐ Added in spec 040. Absent means "we could not read any bars for this instrument",
     #: which is **not** the same as a metric that evaluated cleanly to `warming`.
     metric: MetricStateRead | None = None
+    #: ⭐⭐ **Added in spec 044, and on this class rather than on `MetricStateRead`.**
+    #:
+    #: ⭐ The sentence belongs to the **attention item**, not to the metric: ⭐ when `metric`
+    #: is absent the reader still needs a sentence, ⭐ so putting it on `MetricStateRead`
+    #: would have left the one case with no wording and pushed a fallback back into the
+    #: client — ⭐ which is exactly the second home this move was meant to remove.
+    #:
+    #: ⭐ It was a TypeScript function until a notification needed it in a place with no
+    #: browser in it. The alternatives were rewriting it in Python (two homes, and they
+    #: drift) or sending the bare state (a debug line, not a reminder). ⭐ Shipping it here
+    #: makes 「今日页和通知不会说不一样」 structural rather than a convention somebody has to
+    #: remember.
+    verdict: str = Field(
+        description=(
+            "⭐ The sentence, already rendered. ⭐ The client must render this verbatim and "
+            "must not re-derive it -- see `domain/criterion_sentence.py` for the five."
+        )
+    )
+    #: ⭐ Whether the reader is being told something they could act on today. `False` for
+    #: the three 「we don't know」 states. ⭐ Kept as a flag rather than left to the client
+    #: to infer from the text, because the styling says the same thing as the sentence and
+    #: the two must not be able to disagree.
+    adjudicable: bool = Field(
+        description="True only when the comparison actually ran."
+    )
 
 
 class DueCount(BaseModel):
@@ -271,18 +297,36 @@ def today(connection: DatabaseConnection, market_data: MarketData) -> TodayRead:
                 bars = bars_for(symbol)
                 loaded = True
             metric: MetricStateRead | None = None
+            # ⭐ Rendered here, once, by the module that owns the wording (spec 044).
+            # ⭐ The client used to own it -- and a notification cannot, so the sentence
+            # would have ended up in a second language the first time anything outside a
+            # browser needed it.
+            facts = MetricFacts(state=CriterionVerdict.NO_BARS, label=criterion.metric)
             if bars is not None:
                 evaluation = evaluate(criterion, bars, as_of=today_date)
-                metric = MetricStateRead(
+                facts = MetricFacts(
                     state=evaluation.verdict,
                     label=evaluation.reading.label,
                     value=evaluation.reading.value,
-                    as_of=evaluation.reading.as_of,
+                    as_of=(
+                        evaluation.reading.as_of.isoformat()
+                        if evaluation.reading.as_of
+                        else None
+                    ),
                     # ⭐ No bars at all means there is nothing to count towards the
                     # period, so the count would be a fabrication.
                     period=evaluation.reading.period if evaluation.reading.as_of else None,
                     bars_available=len(bars) if evaluation.reading.as_of else None,
                 )
+                metric = MetricStateRead(
+                    state=evaluation.verdict,
+                    label=evaluation.reading.label,
+                    value=evaluation.reading.value,
+                    as_of=evaluation.reading.as_of,
+                    period=evaluation.reading.period if evaluation.reading.as_of else None,
+                    bars_available=len(bars) if evaluation.reading.as_of else None,
+                )
+            sentence = sentence_for(facts)
             attention.append(
                 AttentionRead(
                     item=DueCriterionRead(
@@ -299,6 +343,8 @@ def today(connection: DatabaseConnection, market_data: MarketData) -> TodayRead:
                         ),
                     ),
                     metric=metric,
+                    verdict=sentence.verdict,
+                    adjudicable=sentence.adjudicable,
                 )
             )
     return TodayRead(

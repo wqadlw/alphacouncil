@@ -580,6 +580,24 @@ export interface AttentionItem {
    * a different fault, on a different side, with a different fix.
    */
   metric: MetricReading | null
+  /**
+   * ⭐ The sentence, already rendered by `domain/criterion_sentence.py` (spec 044).
+   *
+   * ⭐ It lives on the **attention item** rather than on the metric, because `metric` is
+   * `null` when the server could not read any bars — ⭐ and the reader needs a sentence
+   * exactly then. Putting it on the metric would have left one case unwritten and pushed a
+   * fallback back into this file, which is the second home the move existed to remove.
+   *
+   * ⭐ Render verbatim. Do not re-derive it here: a notification sends the same string,
+   * and two wordings is one drift away.
+   */
+  verdict: string
+  /**
+   * ⭐ Whether the reader is being told something they could act on today. `false` for
+   * the three 「we don't know」 states. ⭐ A flag rather than something derived from the
+   * text, because the styling says the same thing as the sentence.
+   */
+  adjudicable: boolean
 }
 
 /** Whether the market opens today — or that the probe could not tell. */

@@ -42,7 +42,7 @@ import {
   formatPredicate,
 } from './format'
 import { POOL_HREF, instrumentHref, queueHref, type QueueName } from './routing'
-import { criterionVerdict } from './criterionVerdict'
+import { criterionPresentation } from './criterionVerdict'
 import QuoteCell from './QuoteCell'
 import { Badge, Rule } from './components/ui'
 import { DataTable, type Column } from './components/data/DataTable'
@@ -203,7 +203,7 @@ function Section({
 /** One due criterion, as a row rather than a card. */
 function AttentionRow({ item }: { item: AttentionItem }) {
   const { decision_id: decisionId, display, action, criterion } = item.item
-  const sentence = criterionVerdict(item.metric)
+  const sentence = criterionPresentation(item)
   return (
     <a
       href={instrumentHref(item.item.market, item.item.code)}

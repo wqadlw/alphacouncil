@@ -77,7 +77,12 @@ test.describe('今日页（spec 005/007 + 红线 9）', () => {
     await expect(rows.nth(2)).toContainText('不在我们能算的指标里')
 
     // no bars at all: a different fault, and it must not borrow the other sentences
-    await expect(rows.nth(3)).toContainText('取不到这个代码的日线')
+    // ⭐ The wording moved to `criterion_sentence.py` in spec 044 and is now shipped by the
+    // server, so the assertion is against **that** sentence. ⭐ It used to be
+    // 「取不到这个代码的日线」 because `metric: null` meant "we could not read any bars";
+    // ⭐ the sentence now says 「这个代码没有日线」, which names the same fault in fewer
+    // words — ⭐ and the fixture carries the server's exact string so the two cannot drift.
+    await expect(rows.nth(3)).toContainText('这个代码没有日线')
     await expect(rows.nth(3)).not.toContainText('不在我们能算的指标里')
 
     // ⭐ and nowhere does the page say the criterion held
