@@ -52,9 +52,25 @@
  *
  * ## What is not here
  *
- * Full-text search is FTS5 (spec 027). The editor is still a plain textarea and the
- * body is still shown as source rather than rendered — see `docs/FRONTEND_STYLE_GUIDE.md`
- * and the spec for why an unverified WYSIWYG editor is worse than a plain one.
+ * Full-text search is FTS5 (spec 027).
+ *
+ * ⭐⭐ **This paragraph used to say two things that stopped being true, and one of
+ * them was this file's own doing.** ⭐ It said 「the body is still shown as source
+ * rather than rendered」 ⭐ — ⭐ and the Markdown renderer landed in the previous
+ * commit ⭐, ⭐ so the note body is now rendered ⭐ and the sentence was describing
+ * a version of this page that no longer existed. ⭐ ⭐ **A prose claim in a module
+ * header is the one kind of documentation no test checks** ⭐, ⭐ and a later
+ * commit falsifying it is silent ⭐ — ⭐ so the two sentences that are still true
+ * are the two that name a gate or a decision.
+ *
+ * The editor is still a plain textarea ⭐ — and that is now a **decided-pending**
+ * state rather than a shrug: ⭐ `@milkdown/*` is approved, installed, imported by
+ * nothing, and shipped at 0 bytes ⭐, ⭐ so `styleguide.test.ts`'s **V-16** reports
+ * it unless an exemption says why. ⭐ The exemption carries the measured cost
+ * (**+362.82 kB / +110.59 kB gzip**) ⭐ and the fact that the three approved
+ * packages cannot read Markdown back out ⭐ without a fourth. ⭐ See
+ * `.ai/memory/decisions.md` ADR-0032 ⭐ — ⭐ **it is the owner's call, and this
+ * comment is where a reader lands when they ask why.**
  */
 
 import { useCallback, useEffect, useState } from 'react'

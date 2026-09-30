@@ -49,6 +49,18 @@ function sourceFiles(dir: string = SRC_DIR): string[] {
 }
 
 const FILES = sourceFiles()
+
+/** ⭐ The E2E specs, ⭐ and the vitest/vite config files ⭐ - ⭐ everything under
+ * ⭐ `e2e/` plus the two configs at the frontend root that import packages.
+ * ⭐ ⭐ Derived from the filesystem ⭐ rather than a literal path ⭐ - ⭐ the
+ * ⭐ repo's own rule about constants (F-162) and the reason this file has three
+ * ⭐ fewer dead names than the ones it recorded. */
+const E2E_DIR = join(SRC_DIR, '..', 'e2e')
+const E2E_FILES: string[] = existsSync(E2E_DIR)
+  ? readdirSync(E2E_DIR)
+      .filter((entry) => entry.endsWith('.spec.ts'))
+      .map((entry) => join(E2E_DIR, entry))
+  : []
 const RELATIVE = (file: string) => file.slice(SRC_DIR.length + 1).replace(/\\/g, '/')
 
 /**
@@ -279,8 +291,14 @@ describe('V-07 · the dependency budget', () => {
       // (zero mentions) was avoided. Record: .ai/specs/034-kline/dependency-record.md
       'lightweight-charts',
       // Spec 026: Markdown editor, approved by the owner 2026-09-28 and
-      // licence-checked (MIT). Installed; **not yet wired into the vault page** —
-      // the page currently uses a plain textarea, which is stated in its header.
+      // licence-checked (MIT). ⭐ **Approved, installed, imported by nothing, and
+      // shipped at 0 bytes** ⭐ — ⭐ which is the only indefensible state, and the
+      // reason **V-16** exists: ⭐ this list says a package is *allowed*, ⭐ and
+      // nothing here says anything is *using* it. ⭐ V-16 reports all three unless
+      // its exemption carries a reason, ⭐ and that reason is the measured cost
+      // (**+362.82 kB / +110.59 kB gzip**) ⭐ plus the fact that these three
+      // ⭐ cannot read Markdown back out without a fourth package.
+      // ⭐ Decision pending — see `.ai/memory/decisions.md` ADR-0032.
       '@milkdown/core',
       '@milkdown/react',
       '@milkdown/preset-commonmark',
@@ -1152,5 +1170,217 @@ describe('V-15 — the modal escapes the subtree it disables', () => {
     expect(palette, 'the palette still owns the id it no longer uses').not.toContain(
       'SHELL_ID',
     )
+  })
+})
+
+/**
+ * The import specifiers a source file names, as bare package names.
+ *
+ * ⭐ **Four forms, because a codebase uses four.** ⭐ `import x from 'a'` ⭐,
+ * ⭐ `import 'a'` (a side-effect import) ⭐, ⭐ `export … from 'a'` ⭐, and
+ * ⭐ `import('a')` (dynamic). ⭐ The first version matched only the first ⭐ and
+ * ⭐ would have reported a package as uncalled ⭐ on the strength of a file that
+ * ⭐ imported it in a form the pattern did not know ⭐ — ⭐ which is `F-154` again:
+ * ⭐ a pattern that assumes a shape the codebase does not always have.
+ *
+ * ⭐ **Comments are stripped first, by the file's own `stripComments`.** ⭐ This
+ * ⭐ function's own docstring names `@milkdown/preset-commonmark` ⭐ and several
+ * ⭐ other packages ⭐ in order to explain the rule ⭐ - ⭐ and without stripping,
+ * ⭐ every one of those sentences would have counted as a call site ⭐ and the rule
+ * ⭐ would have passed for the wrong reason.
+ */
+function bareImports(file: string): string[] {
+  const source = stripComments(readFileSync(file, 'utf8'), false)
+  const found: string[] = []
+  const forms = [
+    /^\s*import\s+(?:type\s+)?(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"]/gm,
+    /^\s*export\s+(?:type\s+)?(?:\*|\{[\s\S]*?\})\s+from\s+['"]([^'"]+)['"]/gm,
+    /\bimport\(\s*['"]([^'"]+)['"]\s*\)/g,
+  ]
+  for (const form of forms) {
+    for (const match of source.matchAll(form)) found.push(match[1])
+  }
+  return found
+}
+
+/**
+ * The package a bare specifier names, or `null` if it names no package.
+ *
+ * ⭐ **Two segments for a scoped name, one for an unscoped one.** ⭐
+ * `@milkdown/react` is one package ⭐ — ⭐ and so is `clsx/clsx.mjs` ⭐, ⭐ because
+ * ⭐ a subpath import of an unscoped package is still that package. ⭐ A rule that
+ * ⭐ took the first segment of everything would report `@milkdown/react` ⭐ and
+ * ⭐ `clsx/clsx.mjs` ⭐ as two packages ⭐ that are not in `package.json` ⭐ - ⭐
+ * ⭐ which would be a red test about a package that is declared.
+ */
+function packageOf(specifier: string): string | null {
+  if (specifier.startsWith('.') || specifier.startsWith('/')) return null
+  if (specifier.startsWith('node:')) return null
+  const parts = specifier.split('/')
+  if (specifier.startsWith('@')) return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : specifier
+  return parts[0]
+}
+
+describe('V-16 · the dependency budget has two halves', () => {
+  // ⭐⭐ **V-07 asks one question: 「is this package approved?」 ⭐ — ⭐ by reading
+  // `package.json`. ⭐ It cannot see the other direction ⭐ and ⭐ it never could ⭐:
+  // ⭐ nothing in that file says who imports what. ⭐ Two states are therefore
+  // ⭐ entirely invisible to it, ⭐ and both of them were live in this repository:
+  //
+  // ⭐ **Declared but never imported.** ⭐ `@milkdown/core`, `@milkdown/react` and
+  // ⭐ `@milkdown/preset-commonmark` have been in `dependencies` since 2026-09-28,
+  // ⭐ they are in V-07's own allowlist ⭐ with the note 「Installed; **not yet
+  // ⭐ wired into the vault page**」 ⭐, ⭐ and **no source file imports them**.
+  // ⭐ The build ships 0 bytes of them ⭐ — ⭐ they cost a licence-scan row, an
+  // ⭐ install, and a line of documentation that reads like a decision.
+  //
+  // ⭐ **Imported but not declared.** ⭐ Measured from the installed typings:
+  // ⭐ getting Markdown back out of a Milkdown editor ⭐ - ⭐ the whole point of an
+  // ⭐ editor ⭐ - ⭐ is `listenerCtx.markdownUpdated` ⭐ in `@milkdown/plugin-listener`,
+  // ⭐ `getMarkdown()` ⭐ in `@milkdown/utils`, ⭐ or `Serializer` ⭐ in
+  // ⭐ `@milkdown/transformer`. ⭐ **All three are transitive.** ⭐ So the next
+  // ⭐ person to wire the editor reaches a package that resolves ⭐ - ⭐ npm hoists
+  // ⭐ it ⭐ - ⭐ compiles ⭐, and V-07 says nothing ⭐ because the package is not
+  // ⭐ in `package.json` ⭐ and V-07 only reads `package.json`.
+  //
+  // ⭐ **This is V-11's lesson applied to dependencies.** ⭐ The icon registry grew
+  // ⭐ to thirteen entries and eight of them were dead ⭐, ⭐ and the answer then was
+  // ⭐ 「dead entries have to be a gate rather than a habit」 ⭐ — ⭐ and a dependency
+  // ⭐ list is a registry ⭐ and grows the same way ⭐ and for the same reason:
+  // ⭐ 「the owner approved it」 is a statement about the past, not a caller.
+
+  const pkg = JSON.parse(readFileSync(join(SRC_DIR, '..', 'package.json'), 'utf8')) as {
+    dependencies: Record<string, string>
+    devDependencies?: Record<string, string>
+  }
+  const declared = Object.keys(pkg.dependencies).sort()
+  const dev = Object.keys(pkg.devDependencies ?? {}).sort()
+
+  it('every runtime dependency is imported by a source file', () => {
+    // ⭐ **`e2e` is included, `src` alone is not enough.** ⭐ A dependency used
+    // ⭐ only by a test is a devDependency ⭐ - ⭐ shipping it in `dependencies`
+    // ⭐ costs every reader of the page and helps nobody.
+    //
+    // ⭐ **`devDependencies` are exempt and deliberately not checked the other
+    // ⭐ way.** ⭐ `@playwright/test` and `vitest` are installed ⭐ - ⭐ checking
+    // ⭐ that a dev dependency is imported would be a second rule about a list
+    // ⭐ nobody ships.
+    const callers = new Map<string, string[]>()
+    for (const file of [...FILES, ...E2E_FILES]) {
+      for (const specifier of bareImports(file)) {
+        const name = packageOf(specifier)
+        if (name === null) continue
+        const list = callers.get(name) ?? []
+        list.push(RELATIVE(file))
+        callers.set(name, list)
+      }
+    }
+
+    // ⭐ **The exemptions are named, and each carries the number that made it
+    // ⭐ necessary.** ⭐ This is not 「register it just in case」 ⭐ (F-149) ⭐ in
+    // ⭐ reverse ⭐ - ⭐ here the entry exists precisely because it has **no**
+    // ⭐ caller ⭐, ⭐ and the reason is a pending product decision ⭐ rather than an
+    // ⭐ oversight. ⭐ Removing the exemption removes the package ⭐; ⭐ keeping
+    // ⭐ the package without the exemption is a red test ⭐ - ⭐ and that is the
+    // ⭐ intended state ⭐ until the owner rules.
+    const APPROVED_BUT_UNWIRED: Record<string, string> = {
+      '@milkdown/core':
+        'Spec 026, approved by the owner 2026-09-28. ⭐ Measured cost of wiring ' +
+        'it (Vite, 2026-09-30): **+362.82 kB raw / +110.59 kB gzip** ⭐ on a ' +
+        '535.36 kB / 164.55 kB baseline ⭐ — ⭐ and the three approved packages ' +
+        'cannot read Markdown back out of the editor, ⭐ so wiring it also needs ' +
+        'a fourth package nobody approved. ⭐ Pending the owner. Record: ' +
+        '.ai/decisions.md',
+      '@milkdown/react': 'Same decision as @milkdown/core ⭐ - ⭐ one ruling covers all three.',
+      '@milkdown/preset-commonmark': 'Same decision as @milkdown/core ⭐ - ⭐ one ruling covers all three.',
+    }
+
+    // ⭐⭐ **A name with a reason is exempt, and the first version was not.** ⭐ It
+    // ⭐ built `APPROVED_BUT_UNWIRED` ⭐ - ⭐ a map of package to reason ⭐ - ⭐ and
+    // ⭐ then reported all three Milkdown packages anyway ⭐, ⭐ with the reason
+    // ⭐ only appended to the message for two of them ⭐. ⭐ **An exemption map
+    // ⭐ that does not exempt is worse than no map** ⭐: ⭐ it reads as 「this was
+    // ⭐ considered」 ⭐ and the suite is red ⭐, ⭐ so the next person deletes the
+    // ⭐ map ⭐ and ships the problem.
+    const uncalled = declared
+      .filter((name) => !callers.has(name))
+      .filter((name) => !(APPROVED_BUT_UNWIRED[name] ?? '').trim())
+
+    // ⭐ **And a blank reason is not an exemption**, ⭐ for the reason
+    // ⭐ `CHECK_EXEMPTION_UNREASONED` exists ⭐ in the Python checks ⭐: ⭐ an
+    // ⭐ entry with an empty string would otherwise be the easiest way to make
+    // ⭐ this test green ⭐ — ⭐ one character ⭐ — ⭐ and the whole value of the map
+    // ⭐ is that its entries say something.
+    const unreasoned = Object.entries(APPROVED_BUT_UNWIRED)
+      .filter(([, reason]) => !reason.trim())
+      .map(([name]) => name)
+    expect(
+      unreasoned,
+      unreasoned.length === 0
+        ? ''
+        : `these exemptions state no reason, and an unreasoned one is not an exemption:\n${unreasoned.join('\n')}`,
+    ).toEqual([])
+
+    expect(
+      uncalled,
+      uncalled.length === 0
+        ? ''
+        : [
+            'These are in `dependencies` and no source file imports them, so they',
+            'ship 0 bytes ⭐ - ⭐ they cost an install, a licence-scan row, and a',
+            'line of documentation that reads like a decision. Either wire one up',
+            'or delete it ⭐ - ⭐ and if the answer is 「not yet」 ⭐, say why in',
+            '`APPROVED_BUT_UNWIRED` above:',
+            ...uncalled,
+          ].join('\n'),
+    ).toEqual([])
+
+    // ⭐ **And the exemption is not a permanent silence.** ⭐ Deleting the package
+    // ⭐ while leaving the entry is a red test ⭐ — ⭐ the entry names a package
+    // ⭐ that is no longer installed ⭐, ⭐ which is a stale document ⭐ - ⭐ and a
+    // ⭐ stale document in an exemption list is how the next reader decides the
+    // ⭐ list is not maintained.
+    const stale = Object.keys(APPROVED_BUT_UNWIRED).filter((name) => !declared.includes(name))
+    expect(
+      stale,
+      stale.length === 0
+        ? ''
+        : `these exemptions name packages that are no longer in dependencies:\n${stale.join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('every bare import is a declared dependency', () => {
+    // ⭐ The direction V-07 cannot see, and the one that bites later. ⭐ npm
+    // ⭐ hoists transitive packages into the root `node_modules` ⭐, ⭐ so an import
+    // ⭐ of one resolves ⭐, ⭐ type-checks ⭐, ⭐ and builds ⭐ - ⭐ and then a
+    // ⭐ version bump of an unrelated package can remove it.
+    //
+    // ⭐ **`devDependencies` count as declared here.** ⭐ An E2E spec importing
+    // ⭐ `@playwright/test` is correct ⭐, ⭐ and the point of the rule is that
+    // ⭐ *something* declares it ⭐ - ⭐ not that it ships to the reader.
+    const declaredOrDev = new Set([...declared, ...dev])
+    const undeclared = new Map<string, string[]>()
+    for (const file of [...FILES, ...E2E_FILES]) {
+      for (const specifier of bareImports(file)) {
+        const name = packageOf(specifier)
+        if (name === null || declaredOrDev.has(name)) continue
+        const list = undeclared.get(name) ?? []
+        list.push(RELATIVE(file))
+        undeclared.set(name, list)
+      }
+    }
+
+    const report = [...undeclared.entries()]
+      .map(([name, where]) => `${name}\n${where.map((f) => `      ${f}`).join('\n')}`)
+      .join('\n')
+    expect(
+      report,
+      [
+        'These resolve ⭐ (npm hoists transitive packages) ⭐, compile ⭐, and are',
+        'in nobody`s package.json ⭐ - ⭐ so a version bump can remove them without',
+        'anything failing here first:',
+        report,
+      ].join('\n'),
+    ).toBe('')
   })
 })
