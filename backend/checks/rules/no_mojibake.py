@@ -98,7 +98,7 @@ CODE = REPLACEMENT
 #: no allow-list.
 REPLACEMENT_CHAR = "\ufffd"
 
-#: (root, suffixes). The roots are the four trees the gate already reads; the
+#: (root, suffixes). The roots are the trees the gate already reads; the
 #: suffixes keep the walk cheap and keep generated files out.
 #:
 #: ⭐ **Fixed list, not "everything under the repo".** ⭐ A rule that walks the
@@ -106,12 +106,44 @@ REPLACEMENT_CHAR = "\ufffd"
 #: ``.venv``, ``playwright-report`` and whatever comes next ⭐ - ⭐ and every one of
 #: those is a place this rule would fire on somebody else's bytes. ⭐
 #: ``SKIP_DIRS`` covers most of it and ``frontend.files()`` covers the rest, ⭐ but
-#: the honest shape is a list of four roots that each mean "source".
+#: the honest shape is a list of trees that each mean "source".
+#:
+#: ⭐⭐ **The repository root's own Markdown was missing, and the rule found it the
+#: first time it ran** ⭐⭐ — ⭐ `README.zh-CN.md` had three U+FFFD in it ⭐⭐ ⭐, and
+#: ⭐⭐ **a README is the single most-read file in the repository** ⭐⭐. ⭐ ⭐ The
+#: ⭐⭐ first version of this rule scanned ``.ai/`` ⭐⭐ ⭐ — ⭐⭐ which is where the
+#: ⭐⭐ reasoning lives ⭐⭐ ⭐ - ⭐⭐ and it still let a mangled sentence through in
+#: ⭐⭐ the one file every visitor sees first ⭐⭐. ⭐⭐ ⭐ ⭐ The three roots were
+#: ⭐⭐⭐ chosen from where I expected defects ⭐⭐⭐ rather than from where a
+#: ⭐⭐⭐ mangled byte can actually land ⭐⭐⭐.
+#: ⭐⭐ ⭐ **A rule's scope is a claim about where the defect can occur, ⭐ and the
+#: ⭐⭐ ⭐ cheapest way to get it wrong is to enumerate the places you have looked.**
 _ROOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("backend", (".py",)),
     (".ai", (".md",)),
     ("frontend/src", (".ts", ".tsx", ".js", ".jsx", ".css", ".html")),
     ("frontend/e2e", (".ts",)),
+)
+
+#: Individual files at the repository root, named exactly.
+#:
+#: ⭐⭐ **A separate constant, and the first version hung these names off the
+#: ⭐⭐ suffix tuple with an 「empty means by name」 convention** ⭐⭐ ⭐ — ⭐⭐ and the
+#: ⭐⭐ mutation check left it alive ⭐⭐⭐ ⭐: ⭐⭐ the tuple was
+#: ⭐⭐ ⭐⭐ ``(".", ("README.md", "CONTRIBUTING.md", …))`` ⭐⭐ ⭐⭐, ⭐⭐ ⭐⭐ so the
+#: ⭐⭐ ⭐⭐ walk took the **extension** branch ⭐⭐ ⭐⭐, ⭐⭐ ⭐⭐ and ``README.md``
+#: ⭐⭐ ⭐⭐ has a suffix of ``.md`` ⭐⭐ ⭐⭐ — ⭐⭐ ⭐⭐ so every root document was
+#: ⭐⭐ ⭐⭐ skipped ⭐⭐ ⭐⭐ and a U+FFFD in ``README.md`` was reported **clean**
+#: ⭐⭐ ⭐⭐. ⭐⭐ ⭐⭐ ⭐⭐ **A convention that makes a tuple's meaning depend on
+#: ⭐⭐ ⭐⭐ whether it is empty is a convention a reader has to discover by
+#: ⭐⭐ ⭐⭐ getting it wrong** ⭐⭐ ⭐⭐ ⭐⭐ — ⭐⭐ ⭐⭐ and the failure is silent
+#: ⭐⭐ ⭐⭐, ⭐⭐ ⭐⭐ because 「no findings」 and 「nothing was looked at」 print the
+#: ⭐⭐ ⭐⭐ same line ⭐⭐ ⭐⭐. ⭐⭐ ⭐⭐ Two constants say what each one means.
+_ROOT_FILES: tuple[str, ...] = (
+    "README.md",
+    "README.zh-CN.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
 )
 
 #: ⭐ A long line of context in the message makes the finding usable without
@@ -165,7 +197,7 @@ def run(ctx: ScanContext) -> CheckResult:
 
 
 def _source_files(ctx: ScanContext) -> list[Path]:
-    """Every file in the four source trees, sorted, with build output excluded.
+    """Every governed file, sorted, with build output excluded.
 
     ⭐ **One skip list, not two.** ⭐ ``checks.frontend`` keeps its own
     ``_SKIP_PARTS`` because it is the UI rules' business, ⭐ and the tempting move
@@ -173,8 +205,18 @@ def _source_files(ctx: ScanContext) -> list[Path]:
     in one rule and not the other. ⭐ ``SKIP_DIRS`` already holds ``node_modules``,
     ``dist``, ``build`` and every Python cache, ⭐ and the two directories
     ``_SKIP_PARTS`` adds on top (``.vite``, ``coverage``) ⭐ live inside
-    ``node_modules`` or at a source root ⭐ — ⭐ so ``SKIP_DIRS`` is sufficient and
-    there is exactly one list to keep current.
+    ``node_modules`` or at a source root ⭐ — ⭐ so ``SKIP_DIRS`` is
+    sufficient and there is exactly one list to keep current.
+
+    ⭐⭐ **The root's documents come from ``_ROOT_FILES`` — a flat list of exact
+    ⭐⭐ names — and not from a ``"."`` entry in ``_ROOTS``** ⭐⭐⭐. ⭐⭐ A
+    ⭐⭐⭐ ``"."`` root plus ``rglob`` reaches ``backend/`` and ``.ai/`` as well
+    ⭐⭐⭐ ⭐ and would re-walk both ⭐⭐⭐, reporting every finding there
+    ⭐⭐⭐ **twice** ⭐⭐⭐⭐ ⬏ ⭐⭐ and a duplicate finding is worse than a
+    ⭐⭐⭐ missing one ⭐⭐⭐, ⭐⭐⭐ because it trains the reader to
+    ⭐⭐⭐ discount the count ⭐⭐⭐⬏ ⭐⭐ and the count is the only thing a
+    ⭐⭐⭐ summary line can honestly show ⭐⭐⭐⬏ ⭐⭐ Two lists, each meaning
+    ⭐⭐ one thing.
     """
     found: list[Path] = []
     for relative, suffixes in _ROOTS:
@@ -187,7 +229,11 @@ def _source_files(ctx: ScanContext) -> list[Path]:
             if SKIP_DIRS.intersection(path.parts):
                 continue
             found.append(path)
-    return found
+    for name in _ROOT_FILES:
+        candidate = ctx.repo_root / name
+        if candidate.is_file():
+            found.append(candidate)
+    return sorted(found)
 
 
 def _replacement_sites(text: str) -> list[tuple[int, int, str]]:

@@ -1,169 +1,272 @@
 # AlphaCouncil
 
-> A multi-agent investment research system built on LangGraph — four-way hybrid retrieval, citation-grounded answers, and full-chain LLM observability.
+> A knowledge system for people who trade A-shares. It puts **the data about one
+> instrument, the judgements you wrote down, and what happened to those judgements**
+> on the same page.
+> Append-only decision log · spaced repetition · a quality quadrant for decisions ·
+> **it optimises your process, never your return forecast**
 
-[![CI](https://github.com/OWNER/alphacouncil/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/alphacouncil/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/OWNER/alphacouncil/branch/main/graph/badge.svg)](https://codecov.io/gh/OWNER/alphacouncil)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
+**中文** | [English](README.md)
+
+[![CI](https://github.com/wqadlw/alphacouncil/actions/workflows/ci.yml/badge.svg)](https://github.com/wqadlw/alphacouncil/actions/workflows/ci.yml)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-**English** | [简体中文](README.zh-CN.md)
+<!-- ⭐ The screenshots are real: a real backend, a real SQLite file, real quotes from
+     tencent (600519.SH, 2026-09-30 19:47), and a K-line the product drew itself.
+     ⭐ The records in them are a seeded demo set, not the author's own positions, and
+     ⭐ the seed text deliberately obeys red line 1 (no price targets, no forecasts,
+     ⭐ no buy/sell advice) ⭐ — ⭐ because `S-03` is a gate, and a README's pictures
+     ⭐ should not be able to turn the build red.
+     ⭐ Full Chinese README with more screenshots: README.zh-CN.md -->
+
+![The today page: your own kill criterion, evaluated](docs/screenshots/today.png)
+
+> The first line of that screenshot reads: **「你写的失效条件『截至 2026-09-30,
+> close 小于 1280』已越过 —— 收盘价 现在 1258.62」** — *the invalidation condition you
+> wrote has been crossed; the close is now 1258.62.*
+>
+> That one line is the product. **You write down the sentence that should
+> disprove you, and then it comes looking for you — not the price.**
 
 ---
 
-## Why this project
+## 1. What it is
 
-Most RAG demos are chatbots bolted onto a vector store. Investment research is a harder problem:
+Three things, one page:
 
-- **It needs multiple retrieval strategies.** A semantic question ("what are the market's concerns about this company") and a factual one ("Q3 gross margin") cannot be served by the same index. Entity-relationship questions ("who are this company's upstream suppliers") need a graph, not embeddings.
-- **It needs multiple perspectives.** Valuation, technicals, sentiment, and risk are genuinely different analytical frames — and they disagree with each other.
-- **It needs verifiability.** An unsourced claim in investment research is worthless. Every conclusion must trace back to a document.
-
-AlphaCouncil treats these as first-class engineering problems rather than prompt-engineering problems.
-
-## Architecture
-
-```
-                        ┌──────────────────┐
-                        │  Orchestrator    │  LangGraph state graph
-                        └────────┬─────────┘
-        ┌────────────┬───────────┼───────────┬────────────┐
-        ▼            ▼           ▼           ▼            ▼
-   ┌─────────┐ ┌──────────┐ ┌─────────┐ ┌─────────┐ ┌──────────┐
-   │  Data   │ │Retrieval │ │Technical│ │Fundamen-│ │Sentiment │
-   │  Agent  │ │  Agent   │ │ Analyst │ │  tal    │ │  Agent   │
-   └────┬────┘ └────┬─────┘ └────┬────┘ └────┬────┘ └────┬─────┘
-        └───────────┴────────────┼───────────┴───────────┘
-                                  ▼
-                        ┌──────────────────┐
-                        │ Research Agent   │  synthesizes views
-                        └────────┬─────────┘
-                                 ▼
-                        ┌──────────────────┐
-                        │  Risk Agent      │  risk review
-                        └────────┬─────────┘
-                                 ▼
-                        ┌──────────────────┐
-                        │  Critic Agent    │  adversarial challenge
-                        └────────┬─────────┘
-                                 ▼
-                        ┌──────────────────┐
-                        │  Human Review    │  human-in-the-loop
-                        └────────┬─────────┘
-                                 ▼
-                        Citation-grounded report
-```
-
-### Retrieval layer
-
-Single-vector retrieval fails on three of the four question types we care about, so the retrieval layer runs four strategies in parallel and fuses them:
-
-| Route | Backend | Serves |
+| | what it is | provenance |
 |---|---|---|
-| Dense vector | Qdrant + BGE-M3 | Semantic / thematic questions |
-| Sparse lexical | BM25 / SPLADE | Exact terms, tickers, figures |
-| Graph | LightRAG | Entity and relationship questions |
-| Structured | Text-to-SQL | Aggregations over financial data |
+| **Card** | a judgement you are willing to sign | ⭐ **a source is required** |
+| **Note** | something you wrote down | may have none |
+| **Decision** | one action + rationale + counter-evidence + **an invalidation condition** | timestamped by the server |
 
-Results are fused with **Reciprocal Rank Fusion**, re-ranked with a cross-encoder, then compressed before reaching the agent.
+That asymmetry — a card needs a source, a note need not — is the premise of the
+whole knowledge base, so it lives in the **input's placeholder text** and not only
+in a document:
 
-## Key features
+![The vault](docs/screenshots/vault.png)
 
-- **Graph-orchestrated multi-agent workflow** with conditional routing and failure retry (LangGraph)
-- **Four-way hybrid retrieval** with RRF fusion and cross-encoder re-ranking
-- **RAG evaluation harness** — RAGAS metrics over a curated question set, wired into CI
-- **Full-chain observability** — every agent step, tool call, and retrieval traced in Langfuse
-- **Citation grounding** — every claim carries `doc_id`, page, and source snippet
-- **Adversarial Critic agent** — a dedicated agent whose only job is to challenge the research
-- **Human-in-the-loop** — research conclusions require explicit human approval before finalization
+What a working investor actually lacks is not data. It is **nowhere to put "what
+I was thinking at the time"**. This puts those three things next to the quotes, so
+that *what you said* and *what happened afterwards* can be lined up.
 
-## Tech stack
+## 2. The interface
 
-| Layer | Choice |
+**A note** — rendered Markdown, plus who cites it and what it cites
+
+![A note](docs/screenshots/note-detail.png)
+
+**One instrument** — answers five questions: where is it now, why do I follow it,
+what have I said about it, what have I done, what have I decided
+
+![Quote](docs/screenshots/instrument-quote.png)
+
+The chart is drawn by the product (`lightweight-charts`), **A-share convention: red
+up, green down**
+
+![K-line](docs/screenshots/instrument-chart.png)
+
+> **Prices do not refresh themselves — press once. This page is not a quote
+> terminal.**
+> Source and timestamp are stated per reading: `tencent` · `2026-09-30 19:47`.
+> ⭐ **No data renders empty, never `0`** (red line 6, guarded by `S-08`).
+
+**Watchlist** — the reason is mandatory, because a reason is not a note-to-self
+
+![Watchlist](docs/screenshots/watchlist.png)
+
+> **You follow things, and why you follow them. The reason is not a comment — it
+> is the sentence you will have to face when someone asks you six months from now.**
+
+Revising the reason for the same ticker does not overwrite it. The watchlist is an
+**event log plus a current view** (`watchlist_current` is a VIEW, not a table).
+
+**Review** — FSRS spaced repetition, with copy that puts the reader first
+
+![Review](docs/screenshots/review-queue.png)
+
+The four buttons are **忘了 / 有点难 / 记得 / 太简单 / 现在不是时候** — *forgot / hard /
+remembered / easy / not now.* ⭐ There is no "failed" and no "start over" here: those
+two words score the reader instead of describing what happened. ⭐ `again` is pinned
+by spec 028 to mean "**my mind changed**", not "I forgot".
+
+**Command palette** — `Ctrl` + `K`
+
+![Command palette](docs/screenshots/command-palette.png)
+
+> The nav behind the palette is dimmed ⭐ — that is the three things a modal owes
+> you: remember the original focus, keep Tab inside, mark the background `inert`.
+> ⭐ They live in one hook (`useModalFocus`) ⭐ because `CommandPalette` was the only
+> ⭐ component that needed them ⭐, ⭐ and an abstraction with one caller eventually
+> ⭐ gets inlined back.
+
+## 3. Decisions specific enough to quote
+
+`docs/` and `.ai/` say more about this project than the code does. Four of them,
+taken verbatim from the interface, because they *are* the design:
+
+1. **An immature result renders empty, not `0` and not `—`** (red line 6, `S-08`).
+   An MA20 drawn from five bars is a line through the present that a chart will
+   happily render ⭐ so it is not drawn.
+2. **An invalidation condition cannot be a sentence, at the schema level.**
+   `metric` must match `lowercase letters, digits and underscores` ⭐ — a
+   **machine-readable field name** — plus an operator, a threshold and an `as_of`.
+   ⭐ The API rejects "sell if the fundamentals deteriorate".
+3. **Append-only is not a convention, it is 24 database triggers**:
+   `decisions_no_delete`, `note_reviews_no_delete`, … ⭐ A `DELETE` on an
+   append-only table is not a slow query, **it is an error**. ⭐ Changing your mind
+   appends a row too.
+4. **The home page does not push.** No red dot, no count, no "3 cards waiting" on a
+   nav item. ⭐ A badge turns "you owe three cards" into a number you can see and
+   climb. ⭐ The today page does not headline "you have 5 things to handle"; it
+   headlines **which invalidation condition you wrote has come due**.
+
+## 4. Stack
+
+| | |
 |---|---|
-| Agent orchestration | [LangGraph](https://github.com/langchain-ai/langgraph) |
-| Retrieval framework | [LlamaIndex](https://github.com/run-llama/llama_index) |
-| Vector store | [Qdrant](https://github.com/qdrant/qdrant) |
-| Graph retrieval | [LightRAG](https://github.com/HKUDS/LightRAG) |
-| Observability | [Langfuse](https://github.com/langfuse/langfuse) |
-| Backend | FastAPI + Pydantic v2 |
-| Frontend | Next.js + shadcn/ui + Vercel AI SDK |
-| Data | [AKShare](https://github.com/akfamily/akshare) |
-| Quality | Ruff · mypy · pytest · pre-commit · GitHub Actions |
+| Backend | Python 3.12+ · FastAPI · Pydantic v2 · SQLAlchemy 2 · SQLite (FTS5 / trigram) · fsrs · structlog |
+| Frontend | React 19 · Vite · Tailwind CSS v4 · lucide-react · lightweight-charts |
+| Data | Tencent · Sina · Eastmoney (quotes and daily bars) |
+| Runtime deps | **9 Python packages · 10 npm packages** (named one by one by the `V-07` gate) |
+| Size | 74 commits · 41.9k lines of Python · 18.1k lines of frontend · 22.0k lines of `.ai/` · 12 migrations · schema v12 |
 
-## Quick start
+⭐ **No LLM dependency.** No `openai`, no `langchain`, no `langgraph` in
+`pyproject.toml` ⭐ — ⭐ and the `OPENAI_API_KEY` in `.env.example` is there for a
+future that has not arrived. ⭐ That is deliberate; ADR-0027 records LangGraph and
+fastmcp as **adopted, not built**.
+
+## 5. Run it
 
 ```bash
 git clone https://github.com/wqadlw/alphacouncil.git
-cd alphacouncil/backend
-python -m venv .venv && . .venv/Scripts/activate   # Windows; bin/activate on Unix
-pip install -e ".[dev]"
+cd alphacouncil
 
-python scripts/dev.py check   # lint + typecheck + tests + static checks
-python -m alphacouncil        # API on http://127.0.0.1:8000
+# backend
+python -m venv backend/.venv
+backend/.venv/Scripts/pip install -e "backend[dev]"      # Windows
+backend/.venv/bin/pip    install -e "backend[dev]"      # macOS / Linux
+
+# frontend
+cd frontend && npm install && cd ..
+
+# two terminals
+backend/.venv/Scripts/python -m alphacouncil            # API → 127.0.0.1:8000
+cd frontend && npm run dev                              # → 127.0.0.1:5173 (/api proxied)
 ```
 
-The frontend is a separate dev server:
+The database lands in `%LOCALAPPDATA%\AlphaCouncil\`, is migrated on first run, and
+⭐ **the app starts with no network at all** ⭐ — the quotes are simply empty.
+Settings are in `.env.example`; never commit `.env`.
+
+## 6. The gate
+
+`dev.py check` runs **11 steps**, and locally it runs the same list CI does ⭐⭐ a
+missing step is a failure.
+
+```
+lint · typecheck · licenses · check-static · test · test-integration
+frontend-typecheck · frontend-lint · frontend-test · frontend-build · e2e
+→ ran 11 · passed 11 · failed 0
+```
+
+Current numbers (2026-09-30, green on one machine):
+
+```
+backend unit 1333 · integration 43 · frontend 182 · E2E 101 · static checks 15/15
+```
+
+⭐ **The 15 static checks are not style checks.** They guard **code that should not
+exist** ⭐⭐ a test can prove the paths it walks behave, and can never prove that
+nobody added a second HTTP client ⭐⭐ so `S-01…S-15` guard, among other things: the
+single HTTP entry point, append-only on the decision log, error codes registered,
+⭐ **both directions of the dependency budget** (an approved package must be
+imported; an import must be declared) ⭐, ⭐ and **that no source file contains
+mojibake** ⭐.
 
 ```bash
-cd frontend
-npm install
-npm run dev                   # http://127.0.0.1:5173, proxies /api to :8000
+cd backend && .venv/Scripts/python scripts/dev.py check
 ```
 
-Requires Python 3.12+ and Node 20+.
+## 7. ⭐ Status, including what is missing
 
-> **On `make`:** the `Makefile` is only a thin wrapper. The real entry point is
-> `backend/scripts/dev.py` — `make` is not installed everywhere this project is
-> developed, and a gate that cannot be run is not a gate.
+The most convincing part of a README is the part that admits what it does not have.
 
-## Project structure
+**Built**: 5 pages · 12 migrations · 43 API endpoints · FTS5 search · the decision
+log and its quality quadrant · review scheduling for cards and notes · charts and
+quotes · the command palette · 15 static checks · an 11-step gate.
 
-```
-alphacouncil/
-├── .ai/                  # Agent-driven development framework
-│   ├── constitution.md   # Non-negotiable project rules
-│   ├── agents/           # Role definitions (architect/dev/tester/reviewer)
-│   ├── specs/            # Spec-driven feature specs
-│   ├── logs/             # Append-only change ledger
-│   └── regressions/      # Defect records, with mutation-check evidence
-├── backend/
-│   ├── checks/           # 12 static checks (AST-level anti-patterns)
-│   ├── scripts/dev.py    # Single command entry point
-│   ├── src/alphacouncil/
-│   │   ├── api/          # FastAPI routes and the error envelope
-│   │   ├── core/         # Config, logging, error codes, clock
-│   │   ├── domain/       # Business rules: ticker parsing, watchlist
-│   │   ├── models/       # Pydantic contracts
-│   │   ├── providers/    # Market data: three sources, routing, cache
-│   │   └── storage/      # SQLite, migrations, repositories, constraints
-│   └── tests/            # unit / integration
-├── frontend/             # Vite + React + TypeScript
-├── docs/                 # Architecture docs and ADRs
-└── deploy/               # Docker Compose
-```
+**Adopted, not built** (each recorded in `.ai/`, each with a reason):
 
-## Development
+- ⭐ **Multi-agent orchestration** (LangGraph / fastmcp) — ADR-0027. ⭐⭐ *The
+  previous version of this README described exactly that* ⭐⭐ **and it is not what
+  this project is** ⭐⭐ ⭐ — ⭐ every screenshot on this page came from the current
+  code.
+- ⭐ **The desktop shell** (pywebview) — ⭐ **not a dependency** ⭐. The pages assume
+  the desktop shape (a static bundle, hash routing, one process); the shell is not
+  built.
+- ⭐ **Filings and financial-statement sources** (D4 / D5) — quotes and daily bars
+  are wired (Tencent / Sina / Eastmoney); ⭐ filings are not ⭐ ⭐, and the sentence
+  「公告与财务数据源尚未接入（D4 / D5）」 is a real line on the today page.
+- ⭐ **Four floating-layer components** (`Drawer`, `Popover`, `Toast`, `DatePicker`)
+  — in the spec, ⭐ surveyed, and with no callers** ⭐. `Drawer` and `Popover` do
+  not exist, `DatePicker` is two native `<input type="date">`, and all 16 of
+  `Toast`'s message sites are errors. ⭐⭐ Building four components nobody calls is
+  the exact failure mode this repository keeps writing down.
+- ⭐ **A WYSIWYG editor** — `@milkdown/*` is approved, installed, ⭐ **imported by no
+  source file** ⭐, and ships 0 bytes. ⭐ Measured cost of wiring it: **+362.82 kB
+  (gzip +110.59 kB), JavaScript up 68%** ⭐ — ⭐ and the three approved packages
+  ⭐ **cannot read Markdown back out** ⭐ without a fourth, undeclared one.
+  ⭐ Decision pending: `.ai/memory/decisions.md` ADR-0032.
+- ⭐ **5 of 15 red lines have a runnable verifier** (`dev.py eval`, ⭐ deliberately
+  ⭐ **not** in the gate ⭐ — ⭐ a permanently red gate trains everyone to ignore the
+  summary). Baseline in `.ai/eval/redlines.json`.
 
-This repository is developed by AI agents under a spec-driven workflow. Before contributing — human or agent — read [`.ai/constitution.md`](.ai/constitution.md). It defines the non-negotiable rules: tech stack lock, type-annotation requirements, test coverage gates, and forbidden patterns.
+**Known defect, found while writing this README, not fixed**: a note's
+**outgoing** link renders the raw id (`笔记 note_1789214400001`) while the
+**incoming** side renders a title ⭐⭐ — the two sides disagree. It is visible at
+the bottom of `docs/screenshots/note-detail.png`.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
+## 8. Where the screenshot data came from
 
-## Roadmap
+All of it is real ⭐ — a real backend, a real SQLite file, real quotes
+(`tencent`, 600519.SH, 2026-09-30 19:47), and a chart the product drew itself.
+⭐ **The record contents are seed data**, ⭐⭐ written so as not to breach red line 1
+⭐⭐ — ⭐ no price targets, no forecasts, no buy/sell advice ⭐⭐ ⭐, because
+`S-03` (`no-prediction-field`) is a gate and a README should not be able to turn it
+red. ⭐ The review schedule is generated by the product's **own** domain functions
+(`note_recall.enroll` / `record_review`), so the FSRS state is real ⭐ — "next
+2026-10-03" is not a string somebody typed.
 
-- [x] **P0** Scaffolding, agent dev framework, CI
-- [ ] **P1** Data layer — AKShare ingestion into local store
-- [ ] **P2** Retrieval layer — four-way recall + fusion + re-ranking + eval harness
-- [ ] **P3** Agent layer — LangGraph orchestration
-- [ ] **P4** Observability — Langfuse tracing
-- [ ] **P5** Frontend — research UI with live agent trace
-- [ ] **P6** Open-source polish — docs, screenshots, first release
+## 9. Documentation
 
-## Disclaimer
+`docs/FRONTEND_STYLE_GUIDE.md` — the interface rules. Its 16 acceptance items
+(`V-01…V-16`) are **tests, not prose**, in `frontend/src/styleguide.test.ts` ⭐⭐
+because prose does not fail a build ⭐⭐ ⭐ and that is precisely how the twelve
+components the guide asked for once shipped as **zero built**.
 
-AlphaCouncil is a research tool. It produces **analyst-style research notes with citations**, not trading signals. It does not connect to any brokerage, does not place orders, and nothing it outputs constitutes investment advice.
+`.ai/` — 22k lines, and the real design record:
 
-## License
+| | |
+|---|---|
+| `.ai/constitution.md` | the red lines and the invariants |
+| `.ai/memory/decisions.md` | 32 ADRs, including the **pending** one |
+| `.ai/failure-modes.md` | **178** recorded failures ⭐ each with how it was found |
+| `.ai/specs/` | 45 specs, each with a plan and a record of what happened |
+| `.ai/status.md` | the current state, **including what is missing** |
 
-[MIT](LICENSE)
+⭐ `failure-modes.md` is the most unusual file here ⭐ it does not record code, it
+records **where my judgement was wrong**, and each entry says how it was caught
+⭐⭐ — `F-154` for instance: a filter matched **zero files** because of a path
+separator, ⭐⭐ and the test still reported 「found 0」 ⭐⭐ which reads like
+"somebody deleted both adapters".
+
+## 10. Licence
+
+[MIT](LICENSE) ⭐⭐ ⭐ Dependencies are licence-checked too ⭐ — the `licenses` step
+scans the whole tree (338 packages) and copyleft fails the gate ⭐⭐. ⭐ **No
+off-the-shelf knowledge manager is used as a base** ⭐ (Siyuan / Logseq / AppFlowy /
+AFFiNE / Joplin / Trilium are all AGPL/GPL/BSL) ⭐⭐ ⭐ — ⭐ building on one of
+them would oblige this product to be open source. The survey is in
+`references/research/09`.
