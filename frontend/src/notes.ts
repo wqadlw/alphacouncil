@@ -22,6 +22,12 @@ export type NoteLinkKind = 'note' | 'card' | 'decision' | 'instrument' | 'lesson
 export interface NoteLink {
   to_kind: NoteLinkKind
   to_id: string
+  /**
+   * The target's own words, when it has any. `null` for a decision and an
+   * instrument, neither of which has a reliably populated name column, and for a
+   * note id that is not in the database.
+   */
+  to_title: string | null
 }
 
 export interface NoteSymbol {
@@ -130,7 +136,21 @@ export function removeNoteTag(id: string, tag: string): Promise<Note> {
   })
 }
 
-export function addNoteLink(id: string, link: NoteLink): Promise<Note> {
+/**
+ * What a caller sends to name a link target.
+ *
+ * Deliberately not `NoteLink`. That one is a response, and it carries `to_title`,
+ * which the server derives and a client cannot know. Reusing it for the request
+ * meant every caller had to supply a field the backend rejects as unknown
+ * (`NoteLinkInput` is `extra="forbid"`), so `tsc` caught it the moment `to_title`
+ * was added. One type per direction: what you send, and what you get back.
+ */
+export interface NoteLinkTarget {
+  to_kind: NoteLinkKind
+  to_id: string
+}
+
+export function addNoteLink(id: string, link: NoteLinkTarget): Promise<Note> {
   return request<Note>(`/api/v1/notes/${encodeURIComponent(id)}/links`, {
     method: 'POST',
     body: JSON.stringify(link),
@@ -151,7 +171,7 @@ export function addNoteLink(id: string, link: NoteLink): Promise<Note> {
  * were added together ⭐ is that the fifth instance of a rule is written from
  * whichever instance is nearest.
  */
-export function removeNoteLink(id: string, link: NoteLink): Promise<Note> {
+export function removeNoteLink(id: string, link: NoteLinkTarget): Promise<Note> {
   return request<Note>(
     `/api/v1/notes/${encodeURIComponent(id)}/links/${encodeURIComponent(
       link.to_kind,

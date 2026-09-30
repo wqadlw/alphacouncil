@@ -66,8 +66,22 @@ def _now() -> datetime:
 
 
 class NoteLinkRead(BaseModel):
+    """One outgoing reference, with the target's own words when it has any.
+
+    ``to_title`` sits next to ``to_id`` because a link you cannot name is half a
+    link. The first version of this model sent only the pair, and the interface
+    resolved an id against the notes on screen, so a link the reader had written
+    turned into a raw id the moment the search box narrowed the list. A row's
+    rendering was depending on unrelated screen state.
+
+    It is ``None`` for a decision and an instrument, neither of which has a
+    reliably populated name column. See ``_LINK_TARGET_TITLE`` for why those two
+    are absent rather than composed from fields.
+    """
+
     to_kind: str
     to_id: str
+    to_title: str | None = None
 
 
 class NoteSymbolRead(BaseModel):
@@ -109,7 +123,10 @@ def _to_read(row: object) -> NoteRead:
         created_at=row.note.created_at,
         updated_at=row.note.updated_at,
         tags=list(row.tags),
-        links=[NoteLinkRead(to_kind=lk.to_kind.value, to_id=lk.to_id) for lk in row.links],
+        links=[
+        NoteLinkRead(to_kind=lk.to_kind.value, to_id=lk.to_id, to_title=lk.to_title)
+        for lk in row.links
+    ],
         symbols=[
             NoteSymbolRead(market=s.market.value, code=s.code) for s in row.symbols
         ],

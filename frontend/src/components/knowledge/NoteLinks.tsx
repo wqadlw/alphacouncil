@@ -35,16 +35,37 @@
 import { useState } from 'react'
 
 import { ApiError } from '../../api'
+import { displayCode } from '../../format'
 import { addNoteLink, removeNoteLink, type Note, type NoteLink } from '../../notes'
 import { Button, Input, Rule } from '../ui'
 
-/** ⭐ The five kinds `note_links.to_kind` accepts, in the reader's words. */
+/** The five kinds `note_links.to_kind` accepts, in the reader's words. */
 const KIND_LABEL: Record<NoteLink['to_kind'], string> = {
   note: '笔记',
   card: '卡片',
   decision: '决策',
   instrument: '标的',
   lesson: '教训',
+}
+
+/**
+ * What a link row says when the target has no name.
+ *
+ * An `instrument` target's id is `market|code`, and everything else in the
+ * interface already shows that as `600519.SH`, so deriving it here keeps the row
+ * consistent with the rest of the product for the cost of a split.
+ *
+ * A `decision` falls through to its id, which is a timestamp and reads as nothing.
+ * That is left visible rather than dressed up: the row is unreachable from the
+ * interface, since the picker only ever creates note links, and a decision id
+ * shown next to 「决策」 is more honest than a label composed from its fields.
+ */
+function describeUnnamed(link: NoteLink): string {
+  if (link.to_kind === 'instrument') {
+    const [market, code] = link.to_id.split('|')
+    if (market && code) return displayCode(market, code)
+  }
+  return link.to_id
 }
 
 export function NoteLinks({
@@ -70,7 +91,6 @@ export function NoteLinks({
   // nowhere, ⭐ and a picker full of rows that do nothing is the worst kind of
   // picker.
   const linkedIds = new Set(note.links.filter((l) => l.to_kind === 'note').map((l) => l.to_id))
-  const byId = new Map(candidates.map((candidate) => [candidate.id, candidate]))
   const needle = query.trim().toLowerCase()
   const options = candidates
     .filter((candidate) => candidate.id !== note.id && !linkedIds.has(candidate.id))
@@ -127,7 +147,10 @@ export function NoteLinks({
       ) : (
         <ul className="mt-1">
           {note.links.map((link) => {
-            const target = link.to_kind === 'note' ? byId.get(link.to_id) : undefined
+            // The title comes off the link itself. This used to be
+            // `byId.get(link.to_id)` over the notes on screen, so typing in the
+            // search box turned a link the reader had written into a raw id.
+            const title = link.to_title
             return (
               <li
                 key={`${link.to_kind}:${link.to_id}`}
@@ -136,27 +159,24 @@ export function NoteLinks({
                 <span className="type-meta caps shrink-0 text-ink-faint">
                   {KIND_LABEL[link.to_kind]}
                 </span>
-                {/* ⭐ **A note link is a button, not an `<a>`, and for the same reason
-                    `BacklinkList` is one:** the vault selects with component state
-                    and the note id is not in the hash, ⭐ so there is no URL. ⭐ For a
-                    link to a card, a decision or an instrument there is no title to
-                    resolve in this page either, ⭐ so the id is printed — ⭐ honestly,
-                    ⭐ and it is the reader's own record so they can recognise it. */}
-                {target ? (
+                {/* A note link is a button, not an `<a>`, and for the same reason
+                    `BacklinkList` is one: the vault selects with component state
+                    and the note id is not in the hash, so there is no URL. */}
+                {title !== null ? (
                   <button
                     type="button"
-                    onClick={() => onOpen(target.id)}
+                    onClick={() => onOpen(link.to_id)}
                     className="type-prose block min-w-0 flex-1 truncate text-left text-navy no-underline hover:underline data-[motion=l1]"
                     data-testid="note-link-open"
                   >
-                    {target.title}
+                    {title}
                   </button>
                 ) : (
                   <span
                     className="type-prose min-w-0 flex-1 truncate text-ink"
                     data-testid="note-link-id"
                   >
-                    <span className="num">{link.to_id}</span>
+                    <span className="num">{describeUnnamed(link)}</span>
                   </span>
                 )}
                 {/* ⭐ **The unlink control, and it is on every row.** ⭐ A link you

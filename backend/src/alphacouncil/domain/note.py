@@ -196,10 +196,17 @@ class NoteDraft:
 
 @dataclass(frozen=True, slots=True)
 class Link:
-    """One outgoing reference."""
+    """One outgoing reference.
+
+    ``to_title`` is the target's own words, and it is optional. A decision has no
+    title column at all and its id is a timestamp; an instrument's name is nullable
+    and unread because nothing fetches names. Both come back ``None`` rather than
+    composed from other fields, because a name nobody wrote is a claim nobody made.
+    """
 
     to_kind: LinkKind
     to_id: str
+    to_title: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

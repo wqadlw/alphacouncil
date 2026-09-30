@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from collections.abc import Sequence
 from datetime import UTC, date, datetime
 
 from alphacouncil.core.time import utc_millis
@@ -178,6 +179,17 @@ _LINK_TARGET_COLUMN: dict[LinkKind, str] = {
     LinkKind.LESSON: "lesson_id",
 }
 
+#: The column each kind keeps the target's own words in, for the three that have
+#: one. `DECISION` and `INSTRUMENT` are absent on purpose, and the absence is the
+#: answer: neither has a column that is reliably populated. An instrument's `to_id`
+#: is already `market|code`, which the interface renders as `600519.SH`, so reading
+#: a name over the wire would buy nothing the id does not already say.
+_LINK_TARGET_TITLE: dict[LinkKind, str] = {
+    LinkKind.NOTE: "title",
+    LinkKind.CARD: "content",
+    LinkKind.LESSON: "content",
+}
+
 
 # ── id minting ──────────────────────────────────────────────────────────────
 
@@ -249,10 +261,56 @@ def _load_tags(connection: sqlite3.Connection, note_id: str) -> tuple[str, ...]:
     )
 
 
+def _link_titles(
+    connection: sqlite3.Connection, rows: Sequence[sqlite3.Row]
+) -> dict[tuple[LinkKind, str], str]:
+    """Each link target's own words, batched by kind rather than by link.
+
+    A note with twelve outgoing links to notes would otherwise cost twelve
+    `SELECT`s to paint one panel. Grouping by kind makes it at most
+    ``len(_LINK_TARGET_TITLE)`` queries, three, however many links there are.
+
+    A missing table is skipped rather than raised on, through the same
+    :func:`_table_present` guard the existence check uses.
+    """
+    titles: dict[tuple[LinkKind, str], str] = {}
+    for kind, column in _LINK_TARGET_TITLE.items():
+        ids = [r["to_id"] for r in rows if r["to_kind"] == kind.value]
+        if not ids:
+            continue
+        table = _LINK_TARGET_TABLE[kind]
+        if not _table_present(connection, table):
+            continue
+        id_column = _LINK_TARGET_COLUMN[kind]
+        marks = ", ".join("?" * len(ids))
+        # All three names come from the closed maps above, and only the
+        # placeholder list is built here, so no value reaches the statement text.
+        for found in connection.execute(
+            f"SELECT {id_column}, {column} FROM {table} "  # noqa: S608
+            f"WHERE {id_column} IN ({marks})",
+            ids,
+        ):
+            titles[(kind, found[0])] = found[1]
+    return titles
+
+
 def _load_links(connection: sqlite3.Connection, note_id: str) -> tuple[Link, ...]:
+    """The note's outgoing links, each carrying the target's own words.
+
+    The title is resolved here, on the read path, because the interface cannot get
+    it any other way. It only ever knew the notes currently on screen, so typing in
+    the search box turned a link the reader had written into a raw id. The backlink
+    side has always sent a title for the same reason: the reader needs the words.
+    """
+    rows = connection.execute(_SELECT_LINKS, (note_id,)).fetchall()
+    titles = _link_titles(connection, rows)
     return tuple(
-        Link(to_kind=LinkKind(r["to_kind"]), to_id=r["to_id"])
-        for r in connection.execute(_SELECT_LINKS, (note_id,)).fetchall()
+        Link(
+            to_kind=LinkKind(r["to_kind"]),
+            to_id=r["to_id"],
+            to_title=titles.get((LinkKind(r["to_kind"]), r["to_id"])),
+        )
+        for r in rows
     )
 
 
@@ -336,28 +394,28 @@ def create(
             _INSERT_SYMBOL, (note_id, sym.market.value, sym.code, stamp)
         )
 
-    return NoteRow(
-        note=Note(
-            id=note_id,
-            title=draft.title,
-            body=draft.body,
-            created_at=stamp,
-            updated_at=stamp,
-        ),
-        # ⭐ Sorted, not in the order they were supplied.
-        #
-        # `get_by_id` reads them back with `ORDER BY tag`, so returning insertion
-        # order here made the *same note* answer with a different tag list
-        # depending on whether you had just written it or fetched it again.
-        # `test_tags_can_be_added_and_removed` caught it: a client that renders the
-        # create response would show one order, and the same client a second later
-        # another, with no edit in between.
-        tags=tuple(sorted({validate_tag(t) for t in draft.tags})),
-        links=tuple(sorted(draft.links, key=lambda lk: (lk.to_kind.value, lk.to_id))),
-        symbols=draft.symbols,
-        as_of=draft.as_of,
-    )
-
+    # Read the note back rather than assembling a `NoteRow` from the draft.
+    #
+    # This used to build one by hand, and the two hand-buildings were not the same
+    # object. `get_by_id` fills each link's `to_title` from the target; this one
+    # could not, because a draft's links carry only what the caller sent. So
+    # `POST /notes` answered with `None` where `GET /notes/{id}` answered with the
+    # target's own words. The API test caught it the moment the field was added,
+    # which is the only reason it is not still true.
+    #
+    # Patching `to_title` into the draft copy would have fixed that one field and
+    # left the shape of the problem alone, because the tag-ordering comment that
+    # used to sit here described the same hazard: the same note must answer
+    # identically whether you have just written it or fetched it again, and a
+    # hand-assembly is a second place to keep in step. One assembly, `_to_note_row`,
+    # which is the one `get_by_id` already uses.
+    #
+    # The extra read runs on the caller's own connection inside their transaction,
+    # so it sees the rows this function just wrote.
+    row = get_by_id(connection, note_id)
+    if row is None:  # pragma: no cover - the INSERT above put it there
+        raise RuntimeError(f"note {note_id} vanished inside its own create()")
+    return row
 
 def get_by_id(connection: sqlite3.Connection, note_id: str) -> NoteRow:
     """One note, or refuse. There is no "create if missing" here on purpose."""
@@ -499,6 +557,23 @@ def add_link(connection: sqlite3.Connection, note_id: str, link: Link) -> None:
     )
 
 
+def _table_present(connection: sqlite3.Connection, table: str) -> bool:
+    """Whether ``table`` exists in this database at all.
+
+    Extracted from :func:`link_targets_exist` because the title resolver needs the
+    same answer. `LESSON` is a declared kind whose table a migration may not have
+    created, and querying a table that is not there raises rather than returning
+    nothing. Two copies of the check is how the two halves would drift, and the
+    failure would be that reading a note depends on an unrelated migration.
+    """
+    return (
+        connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
+        ).fetchone()
+        is not None
+    )
+
+
 def link_targets_exist(connection: sqlite3.Connection, link: Link) -> bool:
     """Whether the link's target is really there.
 
@@ -527,10 +602,7 @@ def link_targets_exist(connection: sqlite3.Connection, link: Link) -> bool:
     # covering the same situation one migration later: a `LinkKind` declared ahead of
     # its table. ⭐ A link that cannot be resolved is refused rather than written to
     # nowhere, which is the correct answer; it is a **refusal**, not a pass.
-    present = connection.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
-    ).fetchone()
-    if present is None:
+    if not _table_present(connection, table):
         return False
 
     if link.to_kind is LinkKind.INSTRUMENT:
@@ -540,7 +612,7 @@ def link_targets_exist(connection: sqlite3.Connection, link: Link) -> bool:
         ).fetchone()
         return row is not None
     row = connection.execute(
-        f"SELECT 1 FROM {table} WHERE {_LINK_TARGET_COLUMN[link.to_kind]} = ?",  # noqa: S608 - both from closed maps
+        f"SELECT 1 FROM {table} WHERE {_LINK_TARGET_COLUMN[link.to_kind]} = ?",  # noqa: S608
         (link.to_id,),
     ).fetchone()
     return row is not None

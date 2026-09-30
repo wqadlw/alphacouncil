@@ -38,7 +38,7 @@ interface Note {
   created_at: string
   updated_at: string
   tags: string[]
-  links: { to_kind: string; to_id: string }[]
+  links: { to_kind: string; to_id: string; to_title: string | null }[]
   symbols: { market: string; code: string }[]
 }
 
@@ -168,7 +168,16 @@ async function routeVault(page: Page): Promise<{ rows: Note[] }> {
       if (method === 'POST') {
         const payload = request.postDataJSON() as { to_kind: string; to_id: string }
         if (!row.links.some((l) => l.to_kind === payload.to_kind && l.to_id === payload.to_id)) {
-          row.links.push(payload)
+          // The fixture resolves the target's title the way the backend does,
+          // because a mock that echoes the request back without it would render a
+          // raw id and the two tests below would fail for the wrong reason. This
+          // is the shape of the bug that was fixed: a link row can only be named
+          // when the server fills the name in, not when the client asks for one.
+          const target = rows.find((candidate) => candidate.id === payload.to_id)
+          row.links.push({
+            ...payload,
+            to_title: target === undefined ? null : target.title,
+          })
         }
         return json(200, row)
       }
@@ -684,6 +693,35 @@ test.describe('引用一条（spec 045 · 知识库的基本能力）', () => {
     // reader could have been spared.
     await expect(page.getByTestId('note-link-option')).toHaveCount(0)
     await expect(page.getByTestId('note-link-picker')).toContainText('没有匹配项')
+  })
+
+  test('搜不到目标笔记时，已有的引用仍然显示它的标题', async ({ page }) => {
+    // The defect this pins. The detail panel used to resolve a target's name from
+    // the notes currently loaded, so a link the reader had written turned into a
+    // raw id the moment the search box narrowed the list. A row's rendering was
+    // depending on unrelated screen state.
+    //
+    // The mechanism is the same search box used in the test above, run *after* the
+    // link exists. Nothing about the link changed; only what the list holds.
+    await routeVault(page)
+    await openNote(page, '流动性收紧时周期股先跌')
+    await page.getByTestId('note-link-open-picker').click()
+    await page.getByTestId('note-link-search').fill('批价')
+    await page.getByTestId('note-link-option').first().click()
+    await expect(page.getByTestId('note-links')).toContainText('批价是渠道库存的先行指标')
+
+    // The detail panel survives the list narrowing, so the way to prove the target
+    // is not in the list is to assert the list no longer holds it. Counting rows
+    // would pin the search's own result count, which is a different fact and
+    // would make this test fail for an unrelated reason.
+    await page.keyboard.press('Escape')
+    const vaultSearch = page.getByPlaceholder('搜标题与正文')
+    await vaultSearch.fill('流动性')
+    await expect(page.getByRole('row').filter({ hasText: '批价' })).toHaveCount(0)
+
+    // The row is still there and still named. Under the old code this was the id.
+    await expect(page.getByTestId('note-links')).toContainText('批价是渠道库存的先行指标')
+    await expect(page.getByTestId('note-link-id')).toHaveCount(0)
   })
 
   test('引用可以撤掉 —— 「我不再认为它们有关」得能被说出来', async ({ page }) => {

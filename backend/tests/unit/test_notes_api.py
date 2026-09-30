@@ -67,8 +67,16 @@ class TestRecording:
         assert fetched["body"] == body
 
     def test_a_note_may_carry_tickers(self, client: TestClient) -> None:
+        """Sorted, because the create response is now a read of the note.
+
+        It used to be assembled from the draft and so came back in the order the
+        caller supplied, while `GET /notes/{id}` ordered them. One note answering
+        two ways depending on how you reached it is the hazard the assembly change
+        set out to remove, and this is what that looks like from the outside: the
+        order is the database's, not the caller's.
+        """
         created = _post_note(client, symbols=["600519", "sh000858"])
-        assert [s["code"] for s in created["symbols"]] == ["600519", "000858"]
+        assert [s["code"] for s in created["symbols"]] == ["000858", "600519"]
 
     def test_an_ambiguous_ticker_is_refused_not_guessed(
         self, client: TestClient
@@ -206,7 +214,40 @@ class TestTagsAndLinks:
         created = _post_note(
             client, links=[{"to_kind": "card", "to_id": card_id}]
         )
-        assert created["links"] == [{"to_kind": "card", "to_id": card_id}]
+        # `to_title` rides along on every link. It was absent from the wire format
+        # and the interface filled the gap from the list on screen, which is the
+        # state the note detail panel rendered a raw id in.
+        assert created["links"] == [
+            {
+                "to_kind": "card",
+                "to_id": card_id,
+                "to_title": "渠道库存是白酒先行指标",
+            }
+        ]
+
+    def test_a_note_to_note_link_carries_the_target_title(
+        self, client: TestClient
+    ) -> None:
+        """The case the interface could not serve at all.
+
+        Two notes, one pointing at the other, and the target's title present in the
+        source note's own payload. Before this the field did not exist on the wire,
+        so a row could only be named when the target happened to be in the list
+        currently loaded.
+        """
+        target = _post_note(client, title="目标笔记的标题")
+        source = _post_note(
+            client,
+            title="源笔记",
+            links=[{"to_kind": "note", "to_id": target["id"]}],
+        )
+        assert source["links"] == [
+            {
+                "to_kind": "note",
+                "to_id": target["id"],
+                "to_title": "目标笔记的标题",
+            }
+        ]
 
 
 class TestEditingAndAbsence:

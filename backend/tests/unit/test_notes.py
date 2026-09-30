@@ -15,6 +15,7 @@ risk is in a knowledge store:
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from collections.abc import Iterator
 from datetime import date
@@ -27,6 +28,12 @@ from alphacouncil.domain.card import (
     CardOrigin,
     CardStatus,
     ClaimType,
+)
+from alphacouncil.domain.decision import (
+    ComparisonOperator,
+    Decision,
+    DecisionAction,
+    KillCriterion,
 )
 from alphacouncil.domain.note import (
     Link,
@@ -45,6 +52,7 @@ from alphacouncil.models.market import Market, Symbol
 from alphacouncil.storage import db, migrate
 from alphacouncil.storage.db import transaction
 from alphacouncil.storage.repositories import cards as cards_repo
+from alphacouncil.storage.repositories import decisions as decisions_repo
 from alphacouncil.storage.repositories import notes as repo
 
 NOW = "2026-09-28T00:00:00.000Z"
@@ -285,7 +293,16 @@ class TestTags:
 
 
 class TestLinks:
-    def test_a_note_can_link_to_a_card(self, connection: sqlite3.Connection) -> None:
+    def test_a_note_can_link_to_a_card(
+        self, connection: sqlite3.Connection
+    ) -> None:
+        """A card link comes back carrying the card's own words.
+
+        This test predates the change and asserted the link came back with nothing
+        but its kind and its id. That was not a bug report, it was a description
+        of the interface having no title to show, and it is the state the note
+        detail panel rendered a raw id in.
+        """
         with transaction(connection):
             card_id = cards_repo.create(
                 connection,
@@ -306,8 +323,127 @@ class TestLinks:
             links=(Link(to_kind=LinkKind.CARD, to_id=card_id),),
         )
         assert repo.get_by_id(connection, note_id).links == (
-            Link(to_kind=LinkKind.CARD, to_id=card_id),
+            Link(
+                to_kind=LinkKind.CARD,
+                to_id=card_id,
+                to_title="渠道库存是白酒先行指标",
+            ),
         )
+
+    def test_a_note_link_carries_the_target_notes_title(
+        self, connection: sqlite3.Connection
+    ) -> None:
+        """The one the interface needed and had no way to get.
+
+        The detail panel resolved a target's name from the notes currently on
+        screen, so a link the reader had written turned into a raw id the moment
+        the search box narrowed the list. A row's rendering was depending on
+        unrelated screen state, and the title has to travel on the link instead.
+        """
+        target = _write(connection, title="目标笔记的标题")
+        source = _write(
+            connection,
+            title="源笔记",
+            links=(Link(to_kind=LinkKind.NOTE, to_id=target),),
+        )
+        (link,) = repo.get_by_id(connection, source).links
+        assert link.to_kind is LinkKind.NOTE
+        assert link.to_title == "目标笔记的标题"
+
+    def test_a_decision_link_reads_as_none(
+        self, connection: sqlite3.Connection
+    ) -> None:
+        """A decision has no title column and its id is a timestamp.
+
+        Left as `None` rather than composed from the ticker and the action: a name
+        nobody wrote is a claim nobody made, and the UI cannot create a decision
+        link anyway, so this row only arrives from a write made outside the
+        interface. `decisions` is real here rather than faked, so that adding
+        `DECISION` to the title map by mistake would be caught.
+        """
+        with transaction(connection):
+            decision = decisions_repo.append(
+                connection,
+                Decision(
+                    symbol=Symbol(market=Market.SH, code="600519"),
+                    action=DecisionAction.HOLD,
+                    rationale="理由",
+                    counter_evidence="反面证据",
+                    kill_criteria=(
+                        KillCriterion(
+                            metric="close",
+                            operator=ComparisonOperator.LT,
+                            threshold=1280,
+                            as_of=date(2026, 9, 30),
+                        ),
+                    ),
+                ),
+                now=NOW,
+            )
+        source = _write(connection, title="源笔记")
+        with transaction(connection):
+            connection.execute(
+                "INSERT INTO note_links (from_note_id, to_kind, to_id, created_at)"
+                " VALUES (?, 'decision', ?, ?)",
+                (source, decision.id, NOW),
+            )
+        (link,) = repo.get_by_id(connection, source).links
+        assert link.to_kind is LinkKind.DECISION
+        assert link.to_title is None
+
+    def test_a_link_to_a_note_that_is_not_there_reads_as_none(
+        self, connection: sqlite3.Connection
+    ) -> None:
+        """No exception, and no invented name.
+
+        `link_targets_exist` refuses to write one, so this row is either older
+        than that check or hand-edited into the file. Reading it must not be the
+        thing that fails.
+        """
+        source = _write(connection, title="源笔记")
+        with transaction(connection):
+            connection.execute(
+                "INSERT INTO note_links (from_note_id, to_kind, to_id, created_at)"
+                " VALUES (?, 'note', 'note_0000000000000', ?)",
+                (source, NOW),
+            )
+        (link,) = repo.get_by_id(connection, source).links
+        assert link.to_id == "note_0000000000000"
+        assert link.to_title is None
+
+    def test_titles_are_resolved_once_per_kind_not_once_per_link(
+        self, connection: sqlite3.Connection
+    ) -> None:
+        """Twelve links to notes is one query, not twelve.
+
+        A per-row lookup inside a list comprehension is the shape that makes this
+        expensive, and it is the shape the first draft of the resolver had. The
+        count comes from a trace callback rather than from a comment, because a
+        comment asserting a performance property is worth nothing the day the
+        property regresses.
+        """
+        targets = [_write(connection, title=f"笔记 {n}") for n in range(12)]
+        source = _write(
+            connection,
+            title="源笔记",
+            links=tuple(Link(to_kind=LinkKind.NOTE, to_id=t) for t in targets),
+        )
+        statements: list[str] = []
+        connection.set_trace_callback(statements.append)
+        try:
+            read = repo.get_by_id(connection, source)
+        finally:
+            connection.set_trace_callback(None)
+        title_queries = [
+            s
+            for s in statements
+            if "SELECT id, title FROM notes WHERE id IN" in s
+        ]
+        assert len(title_queries) == 1, statements
+        # The trace callback shows bound values already substituted, so the count
+        # is of the ids rather than of the placeholders.
+        assert len(re.findall(r"'note_[0-9]+'", title_queries[0])) == 12, title_queries[0]
+        assert {lk.to_title for lk in read.links} == {f"笔记 {n}" for n in range(12)}
 
     def test_a_link_to_a_missing_target_is_refused(
         self, connection: sqlite3.Connection
