@@ -24,7 +24,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { CommandPalette, useCommandPalette, type Command } from '../components/nav/CommandPalette'
+import { CommandPalette, useCommandPalette, SHELL_ID, type Command } from '../components/nav/CommandPalette'
 import { Input, Rule } from '../components/ui'
 import { Icon } from '../components/ui/Icon'
 import { ROUTES, type RouteName } from '../routing'
@@ -108,7 +108,13 @@ export function AppShellFrame({
     : ROUTES.find((entry) => entry.name === route)?.href ?? ''
 
   return (
-    <div className="flex h-full flex-col" data-testid="app-shell">
+    // ⭐ **`id` as well as `data-testid`, and the two are not redundant.**
+    // `CommandPalette` sets `inert` on this element while it is open, so that Tab
+    // cannot reach the eight focusable things on the page behind. ⭐ That requires
+    // finding the node from outside, and an `id` is the contract both files can
+    // hold — ⭐ `SHELL_ID` is exported from the palette and used here, so a rename
+    // is a type error in this file rather than a runtime no-op.
+    <div className="flex h-full flex-col" id={SHELL_ID} data-testid="app-shell">
       {/* ── Top bar: identity, the search front door, the palette hint ─────── */}
       <header className="flex shrink-0 items-center gap-4 border-b border-rule bg-surface px-4 py-2">
         <a href="#/" className="serif type-claim text-ink no-underline" data-testid="brand">
@@ -208,6 +214,13 @@ export function AppShellFrame({
         ) : null}
       </div>
 
+      {/* ⭐ **Still rendered here, and the portal is what makes that correct.**
+          `CommandPalette` portals its panel into `document.body`, ⭐ so although this
+          call site is lexically inside the shell, the DOM lands it as a **sibling** of
+          `#root` — ⭐ which is why the `inert` the palette sets on the shell does not
+          freeze the palette. ⭐ Moving the call to `App` would have been the obvious
+          refactor and would have changed nothing: the portal decides where the node
+          ends up, not where it was written. */}
       <CommandPalette
         open={paletteOpen}
         commands={allCommands}

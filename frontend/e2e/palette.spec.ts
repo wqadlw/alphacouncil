@@ -320,3 +320,138 @@ test.describe('命令面板（spec 025 · ⌘K）', () => {
     expect(hint).toContain('K')
   })
 })
+
+/**
+ * ⭐ Focus (spec 045 stage D).
+ *
+ * ⭐ **These three tests exist because the palette shipped with hand verification
+ * and no focus assertion at all**, and the gap is invisible from the markup:
+ * `role="dialog"` and `aria-modal="true"` were both present, ⭐ which is why a
+ * reader of the source concludes the accessibility work is done. It was not.
+ *
+ * ⭐ **Every number below was measured with a browser probe before the fix, and the
+ * measurements are the reason the tests look the way they do:**
+ *
+ * - closing left `document.activeElement` on `body` — nothing had recorded the
+ *   reader's focus, so nothing could give it back;
+ * - Tab *forwards* stayed inside for five presses and left on the sixth;
+ * - Tab *backwards* left on the very first press.
+ *
+ * ⭐ **The two directions could not both be right by accident**, and the reading that
+ * 「the panel is last in `<body>` so forward Tab is naturally safe」 is the one that
+ * makes the bug invisible: the panel is portalled, ⭐ so forward Tab had to pass
+ * through the whole page first, and the five safe steps were the browser's own
+ * order rather than a trap doing its job. ⭐ One direction escaping immediately and
+ * the other escaping late is what a **missing** trap looks like when the panel
+ * happens to sit at the end of the tab order — which is why this file presses Tab
+ * **more times than there are rows** on both sides.
+ */
+test.describe('命令面板的焦点（spec 045 阶段 D）', () => {
+  test('关闭后焦点回到原处，不是 body', async ({ page }) => {
+    await stub(page)
+    await page.goto('/#')
+
+    // ⭐ **A real element, focused deliberately.** The alternative — opening the
+    // palette from wherever focus happens to be — makes 「restored」 mean 「somewhere
+    // plausible」, ⭐ and the pre-fix behaviour (focus on `body`) is a plausible
+    // somewhere. ⭐ The assertion below is therefore on the *same* `data-testid`,
+    // not on 「an element exists」.
+    //
+    // ⭐ **Derived from `ROUTES`, for the reason this file already gives twice.**
+    // The first draft wrote `'nav-市场'` — the right *shape* of the testid but the
+    // wrong view, ⭐ and Playwright reported it as a bare 30s `locator.focus` timeout
+    // with no assertion output. ⭐ A locator that matches nothing is a bad way to
+    // learn which view you meant, so the name comes from the route table and a
+    // rename or a reordering cannot break it.
+    const before = page.getByTestId(`nav-${ROUTES[0].label}`)
+    await before.focus()
+    await expect(before).toBeFocused()
+
+    await page.keyboard.press('Control+k')
+    await expect(page.getByTestId('palette-input')).toBeFocused()
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('palette')).toHaveCount(0)
+    // ⭐ One frame, because the restore is scheduled in a rAF ⭐ — an assertion
+    // immediately after `toHaveCount(0)` would race the very thing it checks.
+    await page.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => done(null))),
+    )
+    await expect(before, '关闭后焦点应回到打开它的那个链接').toBeFocused()
+  })
+
+  test('Tab 与 Shift+Tab 都出不去面板', async ({ page }) => {
+    await stub(page)
+    await page.goto('/#')
+    await page.keyboard.press('Control+k')
+    await expect(page.getByTestId('palette')).toBeVisible()
+
+    const rows = await page.getByTestId('palette-item').count()
+    // ⭐ **Press more than there are stops, in both directions.** Any smaller number
+    // passes against a *missing* trap ⭐ — the pre-fix forward walk needed exactly
+    // `rows + 1` presses to escape, so `rows` presses prove nothing.
+    const presses = rows + 3
+    const inPanel = async () =>
+      page.evaluate(
+        () => Boolean(document.activeElement?.closest('[data-testid="palette"]')),
+      )
+
+    for (let i = 0; i < presses; i += 1) {
+      await page.keyboard.press('Tab')
+      expect(await inPanel(), `向前 Tab 第 ${i + 1} 次跑出了面板`).toBe(true)
+    }
+    for (let i = 0; i < presses; i += 1) {
+      await page.keyboard.press('Shift+Tab')
+      expect(await inPanel(), `向后 Tab 第 ${i + 1} 次跑出了面板`).toBe(true)
+    }
+  })
+
+  test('背景对 Tab 关闭，而且面板自己没被自己冻住', async ({ page }) => {
+    /**
+     * ⭐ **The mechanism behind the previous test, checked separately.**
+     *
+     * The trap keeps the *keyboard* inside; `inert` is what stops a **script** or a
+     * browser's own focus handling from landing on the page behind. ⭐ They are
+     * different mechanisms and either can be right while the other is wrong, ⭐ so
+     * the previous test's success is not evidence about this one.
+     */
+    await stub(page)
+    await page.goto('/#')
+    await page.keyboard.press('Control+k')
+    await expect(page.getByTestId('palette')).toBeVisible()
+
+    // ⭐ `inert` on the shell, and the panel **outside** it. Both halves, because
+    // `inert` on the shell is only correct if the panel escaped the subtree ⭐ —
+    // and a panel that is still inside would be frozen, which looks exactly like a
+    // working modal until the reader types.
+    const shape = await page.evaluate(() => {
+      const shell = document.getElementById('app-shell')
+      return {
+        shellFound: Boolean(shell),
+        shellInert: shell?.inert ?? null,
+        panelInsideShell: Boolean(shell?.querySelector('[data-testid="palette"]')),
+      }
+    })
+    expect(shape.shellFound, '找不到 app-shell，inert 无从施加').toBe(true)
+    expect(shape.shellInert, '面板打开时背景应为 inert').toBe(true)
+    expect(shape.panelInsideShell, '面板不能落在被 inert 的子树里，否则它自己会被冻住').toBe(
+      false,
+    )
+
+    // ⭐ And the trap is not a lock: the panel still takes keystrokes. A modal that
+    // passes the three assertions above and cannot be typed into is broken.
+    await page.getByTestId('palette-input').fill('知识')
+    await expect(page.getByTestId('palette-item')).toHaveCount(1)
+    await page.keyboard.press('Enter')
+    await expect(page).toHaveURL(/#\/vault/)
+    await expect(page.getByTestId('palette')).toHaveCount(0)
+
+    // ⭐ **And `inert` is undone on close**, so the page is usable again. A cleanup
+    // that leaves the shell inert passes every assertion above ⭐ — the reader sees
+    // a working page that cannot be clicked.
+    expect(
+      await page.evaluate(() => document.getElementById('app-shell')?.inert ?? null),
+      '关闭后背景不应仍为 inert',
+    ).toBe(false)
+  })
+})

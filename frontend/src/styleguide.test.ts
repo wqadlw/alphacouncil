@@ -916,3 +916,84 @@ describe('V-14 — an append-only log has one rendering', () => {
     ).toContain('absentDetail="（离开时没有留下说明）"')
   })
 })
+
+/**
+ * V-15 — a modal is not inside the subtree it disables (spec 045 stage D).
+ *
+ * ⭐ **Why a source rule when the behaviour has an E2E test.** The E2E test is the
+ * real assertion; this one exists because the E2E test is *also* satisfied by a
+ * palette that has no `inert` at all ⭐ if the Tab trap happens to be working, and
+ * the failure that matters — a frozen modal — ⭐ looks like a working modal to every
+ * test that does not try to type into it. ⭐ This rule pins the **mechanism**, so
+ * the trap and the `inert` each have to be there.
+ *
+ * ⭐ **The rule is structural, not textual.** 「the palette must be portalled」 could
+ * be checked by looking for `createPortal`, and that version is weaker than it looks:
+ * a `createPortal` in the file says nothing about *where it portals to*. ⭐
+ * `document.body` is the assertion, because it is the specific fact that makes the
+ * panel a **sibling** of `#root` rather than a descendant of the shell.
+ */
+describe('V-15 — the modal escapes the subtree it disables', () => {
+  const palette = readFileSync(
+    [SRC_DIR, 'components', 'nav', 'CommandPalette.tsx'].join('/'),
+    'utf8',
+  )
+  const shell = readFileSync([SRC_DIR, 'app', 'AppShellFrame.tsx'].join('/'), 'utf8')
+
+  it('portals the panel to document.body, not into the shell', () => {
+    // ⭐ The argument is the whole point, so the assertion is on the argument and not
+    // on the presence of the function. ⭐ A `createPortal(node, someDivInsideTheShell)`
+    // satisfies 「the palette is portalled」 and fails here, ⭐ which is the version of
+    // this rule that would have let the bug through.
+    //
+    // ⭐ **`\s*[,)]` after `document.body`, and the mutation check is why.** The first
+    // version ended the pattern at `document\.body`, ⭐ so `document.body
+    // .firstElementChild` — the portal target being the shell's own first child, ⭐
+    // which puts the panel straight back inside the subtree it disables — matched as
+    // a prefix and the mutant survived. ⭐ A rule that checks a *prefix* of a value
+    // is not checking the value, and `F-148` has a mirror image: ⭐ I have now been
+    // wrong in both directions on the same rule, wide in stage C and narrow here.
+    expect(
+      palette,
+      'the panel must portal into document.body itself, or `inert` on the shell freezes it',
+    ).toMatch(/createPortal\([\s\S]*?document\.body\s*[,)]/)
+  })
+
+  it('makes the shell inert while open, and undoes it on close', () => {
+    // ⭐ **Three claims, because the two halves fail differently.** Setting `inert`
+    // and never clearing it produces a page that looks fine and cannot be clicked;
+    // ⭐ clearing it to a hard-coded `false` produces the same bug the moment
+    // something else wants the shell inert, ⭐ so the restore must assign the value
+    // it read.
+    expect(palette, 'the palette never sets inert on anything').toMatch(/\.inert = true/)
+    expect(palette, 'the palette restores inert to a literal instead of the value it read')
+      .toMatch(/shell\.inert = wasInert/)
+  })
+
+  it('records what had focus, and gives it back', () => {
+    // ⭐ `previousFocus.current = null` would pass a test that only looks for the
+    // ref's existence, ⭐ so the assertion is on the *recording* — `activeElement` —
+    // and on the `isConnected` check that keeps a restore from silently becoming a
+    // no-op against a detached node.
+    expect(palette, 'nothing records where focus came from').toMatch(
+      /previousFocus\.current[\s\S]{0,120}activeElement/,
+    )
+    expect(
+      palette,
+      'the restore does not check the element is still in the document',
+    ).toContain('isConnected')
+  })
+
+  it('has one id contract between the shell and the palette', () => {
+    // ⭐ Both sides use the same constant, so a rename is a type error in
+    // `AppShellFrame` rather than a runtime no-op where the page silently stops
+    // going inert. ⭐ Asserting the *contract* rather than the literal id means the
+    // test does not have to be edited when the id is.
+    expect(palette, 'the palette does not export the shell id it looks up').toMatch(
+      /export const SHELL_ID/,
+    )
+    expect(shell, 'the shell does not set the id the palette looks for').toMatch(
+      /id=\{SHELL_ID\}/,
+    )
+  })
+})
