@@ -388,3 +388,119 @@ class TestBacklinks:
         assert remaining == 0, "the link row outlived its note — the cascade is not there"
 
         assert client.get(f"/api/v1/notes/{target['id']}/backlinks").json() == []
+
+
+class TestUnlinking:
+    """`DELETE /notes/{id}/links/{kind}/{target}` (spec 045 · 知识库基本功能).
+
+    ⭐ **This endpoint exists because the link was a one-way door.** A note could be
+    pointed at another note, a card or a decision, and never un-pointed — ⭐ so a
+    claim the reader has stopped making stayed in the graph forever, ⭐ and in a
+    knowledge base 「我不再认为 A 和 B 有关」 is a statement the reader has to be able
+    to make. ⭐ `note_tags` has had `POST` + `DELETE` since spec 026 ⭐ and
+    `note_links` never had either, ⭐ which is a gap rather than a design.
+    """
+
+    def test_a_link_can_be_taken_back(self, client: TestClient) -> None:
+        source = _post_note(client, title="说 A 和 B 有关的那条")
+        target = _post_note(client, title="B")
+        client.post(
+            f"/api/v1/notes/{source['id']}/links",
+            json={"to_kind": "note", "to_id": target["id"]},
+        )
+
+        response = client.delete(
+            f"/api/v1/notes/{source['id']}/links/note/{target['id']}"
+        )
+        assert response.status_code == 200, response.text
+        # ⭐ **The whole note comes back, and the link is gone from it.** ⭐ Asserting
+        # on the response rather than on a follow-up GET is what pins the contract's
+        # shape: the tag routes return `_to_read(...)` too, ⭐ and a reader of this
+        # test should not have to fetch a second time to find out.
+        assert response.json()["links"] == []
+        assert client.get(f"/api/v1/notes/{target['id']}/backlinks").json() == []
+
+    def test_removing_one_link_leaves_the_others(self, client: TestClient) -> None:
+        """⭐ **The one that needs a test to exist.**
+
+        `note_links` is keyed on `(from_note_id, to_kind, to_id)`, ⭐ and a delete
+        written on two columns — the shape `note_tags` uses, ⭐ where the tag is the
+        only variable — **removes every link to that id regardless of kind**. ⭐
+        `card_7` and `decision_7` are different things, ⭐ and a note may well name
+        both, ⭐ so the difference between a two-column and a three-column delete is
+        invisible until a reader has both.
+        """
+        from alphacouncil.core.config import get_settings
+        from alphacouncil.storage import db as sdb
+
+        source = _post_note(client)
+        first = _post_note(client, title="第一个")
+        second = _post_note(client, title="第二个")
+        for target in (first, second):
+            client.post(
+                f"/api/v1/notes/{source['id']}/links",
+                json={"to_kind": "note", "to_id": target["id"]},
+            )
+        # ⭐ And a *different kind* pointing at the same id text, ⭐ which is the
+        # shape a two-column delete cannot tell apart.
+        connection = sdb.connect(get_settings().database_path)
+        try:
+            with connection:
+                connection.execute(
+                    "INSERT INTO note_links (from_note_id, to_kind, to_id, created_at)"
+                    " VALUES (?, 'decision', ?, '2026-01-01T00:00:00.000Z')",
+                    (source["id"], first["id"]),
+                )
+        finally:
+            connection.close()
+
+        before = client.get(f"/api/v1/notes/{source['id']}").json()["links"]
+        assert len(before) == 3, before
+
+        client.delete(f"/api/v1/notes/{source['id']}/links/note/{first['id']}")
+        after = client.get(f"/api/v1/notes/{source['id']}").json()["links"]
+        # ⭐ As `(kind, id)` pairs, ⭐ because the kind is part of the identity ⭐ and
+        # the first version of this assertion compared a two-element `set` against a
+        # `set` of `tuple`s, ⭐ which is false for every input ⭐ and read as a
+        # product bug. ⭐ **Assert on the shape the identity actually has.**
+        remaining = {(link["to_kind"], link["to_id"]) for link in after}
+        assert ("note", first["id"]) not in remaining
+        assert ("note", second["id"]) in remaining
+        # ⭐ And the same id under a different kind survived, ⭐ which is the whole
+        # point of the three-column delete.
+        assert ("decision", first["id"]) in remaining
+        assert len(after) == 2, after
+
+    def test_removing_a_link_that_is_not_there_succeeds(self, client: TestClient) -> None:
+        """⭐ **Idempotence, stated because the alternative was tempting.**
+
+        The caller's intent — 「this note does not point there」 ⭐ — is satisfied
+        whether or not it ever did, ⭐ and answering 404 would make an idempotent
+        action look like a failure. ⭐ A future reader adding 「for consistency with
+        the other routes」 ⭐ would break a retry, ⭐ so the behaviour is pinned.
+        """
+        source = _post_note(client)
+        target = _post_note(client)
+        response = client.delete(
+            f"/api/v1/notes/{source['id']}/links/note/{target['id']}"
+        )
+        assert response.status_code == 200, response.text
+
+    def test_a_missing_note_is_a_404(self, client: TestClient) -> None:
+        """⭐ The same trap the backlinks route carries, ⭐ and the reason the handler
+        is not a bare delete: the note has to exist, ⭐ because a link from a note
+        that is gone is not a thing to store."""
+        response = client.delete(
+            "/api/v1/notes/note_9999999999999/links/note/note_1"
+        )
+        assert response.status_code == 404, response.text
+
+    def test_an_unknown_kind_is_rejected(self, client: TestClient) -> None:
+        """⭐ `LinkKind(...)` raises on a string that is not a kind, ⭐ and the answer
+        is a 500 unless something catches it. ⭐ Asserting it is a 4xx says the route
+        treats a malformed path as a client error ⭐ rather than as a bug."""
+        source = _post_note(client)
+        response = client.delete(
+            f"/api/v1/notes/{source['id']}/links/planet/{source['id']}"
+        )
+        assert 400 <= response.status_code < 500, response.text

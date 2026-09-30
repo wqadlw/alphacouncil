@@ -396,6 +396,44 @@ def add_link(
         return _to_read(repository.get_by_id(connection, note_id))
 
 
+@router.delete(
+    "/{note_id}/links/{to_kind}/{to_id}",
+    summary="Stop pointing a note at something",
+)
+def remove_link(
+    note_id: str, to_kind: str, to_id: str, connection: DatabaseConnection
+) -> NoteRead:
+    """Take a note's pointer away, ⭐ which the surface could not do at all.
+
+    ⭐ **This endpoint exists because the link was a one-way door.** `note_links` has
+    never had append-only triggers — ⭐ it is a relationship table like `note_tags`,
+    and tags have had `POST` and `DELETE` since spec 026 ⭐ — ⭐ yet a note could be
+    pointed at something and never un-pointed. ⭐ In a knowledge base that means a
+    claim you have stopped making stays in the graph forever, ⭐ and the only way out
+    is to edit the database by hand.
+
+    ⭐ **The `to_kind` is in the path rather than in a body, ⭐ because a `DELETE`
+    with a body is a thing some clients drop.** It also matches the tag route's
+    shape, ⭐ which is the precedent: `DELETE /{note_id}/tags/{tag}` ⭐ rather than
+    `DELETE /{note_id}/tags` with `{"tag": …}` in a body.
+    """
+    kind = LinkKind(to_kind)
+    with transaction(connection):
+        # ⭐ **`get_by_id` raises, and `NOTE_NOT_FOUND` is not in `errors.py`'s status
+        # table** ⭐ — so an uncaught `NoteNotFoundError` falls through to the 400
+        # default. ⭐ I wrote the 404 test first and the route answered 400, ⭐ which
+        # is the third time in this repository that this exact trap has caught
+        # something: `notes.py`'s own `GET /{note_id}`, ⭐ the backlinks route in
+        # stage C, ⭐ and this one. ⭐ The pattern is now three-for-three, ⭐ so the
+    # rule is: **any new handler that reads a note converts this exception
+    # explicitly** ⭐ rather than trusting the fallback.
+        try:
+            repository.remove_link(connection, note_id, Link(to_kind=kind, to_id=to_id))
+        except NoteNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return _to_read(repository.get_by_id(connection, note_id))
+
+
 # ── the recall queue (spec 028) ─────────────────────────────────────────────
 #
 # ⭐ **`/due` is declared before `/{note_id}`**, and that ordering is the whole

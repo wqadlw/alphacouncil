@@ -72,6 +72,8 @@ import {
 } from './notes'
 import { BacklinkCount, BacklinkList } from './components/knowledge/BacklinkList'
 import { Markdown } from './components/knowledge/Markdown'
+import { NoteEditor } from './components/knowledge/NoteEditor'
+import { NoteLinks } from './components/knowledge/NoteLinks'
 import LessonList from './components/knowledge/LessonList'
 import LessonRecallView from './components/knowledge/LessonRecallView'
 import RecallView from './components/knowledge/RecallView'
@@ -363,6 +365,12 @@ export default function VaultPage() {
           note={selected}
           onChanged={notes.reload}
           onSelectNote={openNoteById}
+          // ⭐ The list the picker offers. ⭐ It is the **filtered** list, ⭐ so a
+          // reader who has typed into the search box can only link to something they
+          // can see ⭐ — ⭐ and a picker offering notes hidden by the filter would
+          // produce links the reader cannot trace back to where they made them.
+          siblings={notes.data ?? []}
+          onShow={setSelected}
         />
       ) : null}
 
@@ -650,10 +658,26 @@ function NoteDetail({
   note,
   onChanged,
   onSelectNote,
+  siblings,
+  onShow,
 }: {
   note: Note
   onChanged: () => void
   onSelectNote: (noteId: string) => void
+  /**
+   * Show a note the server just returned.
+   *
+   * This exists because `selected` is separate state from the list.
+   * Reloading the list refreshes the table and leaves `selected` holding the
+   * object it was given when the reader clicked, so after a save the panel
+   * kept showing the old text. Re-looking the id up did not help, because the
+   * lookup ran against the pre-reload list.
+   */
+  onShow: (note: Note) => void
+  /** ⭐ Every note the reader can see, ⭐ which is the link picker's only source. ⭐
+   * Passed in rather than fetched: ⭐ the vault already holds this list, ⭐ and a
+   * second request for it would be the same data in two places. */
+  siblings: readonly Note[]
 }) {
   const [newTag, setNewTag] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -661,6 +685,16 @@ function NoteDetail({
   // states because "we have not looked" and "it is not enrolled" call for
   // different copy, and collapsing them means showing a button that then fails.
   const [enrolled, setEnrolled] = useState<boolean | null>(null)
+  // ⭐ **Editing is local state, and it resets when the note changes.** ⭐ A reader who
+  // opens note A, presses 改这条, and then clicks note B in the list ⭐ should be
+  // reading note B ⭐ — ⭐ and an `editing` flag that outlives the note would drop
+  // them into an editor seeded with A's text. ⭐ The effect is the one place a
+  // `setState`-in-effect is right: ⭐ it is synchronising with **which record is on
+  // screen**, ⭐ which is an external fact and not a derivation.
+  const [editing, setEditing] = useState(false)
+  useEffect(() => {
+    setEditing(false)
+  }, [note.id])
 
   /**
    * ⭐ **Backlinks, and a resource that is re-created per note.**
@@ -732,16 +766,55 @@ function NoteDetail({
 
   return (
     <section className="mt-4 border-t border-rule pt-3" data-testid="note-detail">
+      {/* ⭐ **The header is the same in both modes, and the 改这条 control sits in it.**
+          ⭐ Putting it beside the title ⭐ — rather than at the bottom of a long note,
+          or inside a menu ⭐ — means it is where the eye already is. */}
       <div className="flex flex-wrap items-baseline gap-2 px-4 pb-1.5">
         <h2 className="serif type-claim text-ink">{note.title}</h2>
         <span className="num ml-auto type-badge text-ink-faint">
           写于 {formatMoment(note.created_at)}
           {note.as_of ? ` · 数据截至 ${note.as_of}` : ''}
         </span>
+        {/* ⭐ **「改这条」 and why it is a plain button rather than an icon.** ⭐ The
+            icon registry has five entries ⭐ and all five are *views* ⭐ — a view is
+            something you go to, ⭐ and 「改这条」 is not a place, ⭐ it is an action on
+            the thing already on screen. ⭐ Putting it in the registry would make it
+            the sixth kind of thing there, ⭐ which is the 「先注册再说」 mistake again. */}
+        {editing ? null : (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="type-badge text-ink-faint hover:text-ink-soft data-[motion=l1]"
+            data-testid="note-edit-open"
+          >
+            改这条
+          </button>
+        )}
       </div>
       <Rule />
 
-      <div className="px-4 pt-2">
+      {/* ⭐ **Editing replaces reading, rather than sitting below it.**
+          ⭐ The alternative ⭐ — the fields appear under the rendered note ⭐ — means
+          that while correcting a sentence the reader is looking at the wrong version
+          of it, ⭐ and a long note pushes the fields below the fold entirely. ⭐ The
+          editor carries its own live preview ⭐ (`NoteEditor`), ⭐ so nothing is lost
+          by hiding the reading view: ⭐ what you were checking against is the second
+          thing on the same screen. */}
+      {editing ? (
+        <div className="px-4 pt-2">
+          <NoteEditor
+            note={note}
+            onCancel={() => setEditing(false)}
+            onSaved={(saved) => {
+              // The note the server sent, not a re-lookup. See `onShow`.
+              setEditing(false)
+              onShow(saved)
+              onChanged()
+            }}
+          />
+        </div>
+      ) : (
+        <div className="px-4 pt-2">
         {/*
           The body is shown as **source**, not rendered.
 
@@ -827,16 +900,25 @@ function NoteDetail({
           </Button>
         </div>
 
-        {note.links.length > 0 ? (
-          <p className="mt-2 type-prose text-ink-soft">
-            指向：
-            {note.links.map((l) => (
-              <span key={`${l.to_kind}:${l.to_id}`} className="num ml-1 text-ink-faint">
-                {l.to_kind}/{l.to_id}
-              </span>
-            ))}
-          </p>
-        ) : null}
+        {/* ⭐ **`NoteLinks` replaces a paragraph of raw identifiers**, ⭐ and the
+            paragraph is worth naming because it is what this product had for its
+            whole life: ⭐ every outgoing link printed as `note/note_1700000000000` —
+            ⭐ a row that names a record, does not open it, and does not say what it
+            is. ⭐ 「知识库像知识库的地方」 (§8.2) is a reader being able to follow a
+            thought, ⭐ and this was the opposite of that. */}
+        <div className="mt-3">
+          <NoteLinks
+            note={note}
+            candidates={siblings}
+            onChanged={(updated) => {
+              // Same reason as the editor's save: the link list is rendered from the
+              // prop, so without this the row stays until the reader reopens the note.
+              onShow(updated)
+              onChanged()
+            }}
+            onOpen={onSelectNote}
+          />
+        </div>
 
         <div className="mt-3 border-t border-rule-soft pt-2">
           {/*
@@ -864,6 +946,7 @@ function NoteDetail({
 
         {error ? <p className="mt-1 type-prose text-[color:var(--color-up)]">{error}</p> : null}
       </div>
+      )}
     </section>
   )
 }

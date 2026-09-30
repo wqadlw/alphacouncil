@@ -114,6 +114,13 @@ _INSERT_LINK = """
 INSERT OR IGNORE INTO note_links (from_note_id, to_kind, to_id, created_at)
 VALUES (?, ?, ?, ?)
 """
+# ⭐ Keyed on all three columns, ⭐ because a note may point at **one** card and
+# **one** decision and at several notes, ⭐ and a two-column delete would take the
+# wrong rows with it. ⭐ `to_kind` is part of the identity, not a decoration — ⭐
+# `card_7` and `decision_7` are different things and a note may name both.
+_DELETE_LINK = (
+    "DELETE FROM note_links WHERE from_note_id = ? AND to_kind = ? AND to_id = ?"
+)
 _SELECT_LINKS = """
 SELECT to_kind, to_id FROM note_links WHERE from_note_id = ?
 ORDER BY to_kind, to_id
@@ -450,6 +457,31 @@ def remove_tag(connection: sqlite3.Connection, note_id: str, tag: str) -> None:
     require_open_transaction(connection, operation="notes.remove_tag")
     get_by_id(connection, note_id)
     connection.execute(_DELETE_TAG, (note_id, validate_tag(tag)))
+
+
+def remove_link(connection: sqlite3.Connection, note_id: str, link: Link) -> None:
+    """Take a note's pointer away.
+
+    ⭐ **`note_links` is a relationship table, not a log, so this deletes a row.**
+    That is the whole justification, and it is worth spelling out because this
+    repository protects several tables with append-only triggers and a reader of
+    `add_link` cannot tell which kind of table this is. ⭐ `note_tags` — the other
+    relationship on a note — is deleted the same way and by the same
+    `_to_read`-returning handler, ⭐ and the append-only tables (`decisions`,
+    `card_events`, `reviews`, `watchlist_events`, `audit_log`) have no delete path at
+    all. ⭐ Deleting a *pointer* is not editing the *record that made it*: a decision
+    cannot be un-made, ⭐ and 「I no longer think note A is about this」 can.
+
+    ⭐ **Deleting a link that is not there succeeds.** `remove_tag` behaves the same
+    way, ⭐ and that is deliberate: the caller's intent — 「this note does not point
+    there」 — is satisfied either way, ⭐ and reporting 「not found」 would make an
+    idempotent action look like a failure. ⭐ The test pins it, ⭐ because an
+    unstated 404 here would be the kind of thing a future reader adds 「for
+    consistency」 and breaks a retry with.
+    """
+    require_open_transaction(connection, operation="notes.remove_link")
+    get_by_id(connection, note_id)
+    connection.execute(_DELETE_LINK, (note_id, link.to_kind.value, link.to_id))
 
 
 def add_link(connection: sqlite3.Connection, note_id: str, link: Link) -> None:

@@ -131,10 +131,33 @@ export function removeNoteTag(id: string, tag: string): Promise<Note> {
 }
 
 export function addNoteLink(id: string, link: NoteLink): Promise<Note> {
-  return request<Note>(`/api/v1/notes/${id}/links`, {
+  return request<Note>(`/api/v1/notes/${encodeURIComponent(id)}/links`, {
     method: 'POST',
     body: JSON.stringify(link),
   })
+}
+
+/**
+ * Stop pointing a note at something (spec 045 · 知识库基本功能).
+ *
+ * ⭐ **`to_kind` and `to_id` in the path, not in a body** ⭐ — a `DELETE` with a body
+ * is a thing some HTTP stacks drop, ⭐ and the backend's route is shaped the same way
+ * as its tag route ⭐ for the same reason.
+ *
+ * ⭐ **Both are encoded**, and `encodeURIComponent` is applied to the id here while
+ * `addNoteLink` above does the same ⭐ — ⭐ while the rest of this file interpolates
+ * bare. ⭐ The note ids this product generates are safe, ⭐ so the difference is not
+ * observable today, ⭐ and the reason to write it correctly in the two functions that
+ * were added together ⭐ is that the fifth instance of a rule is written from
+ * whichever instance is nearest.
+ */
+export function removeNoteLink(id: string, link: NoteLink): Promise<Note> {
+  return request<Note>(
+    `/api/v1/notes/${encodeURIComponent(id)}/links/${encodeURIComponent(
+      link.to_kind,
+    )}/${encodeURIComponent(link.to_id)}`,
+    { method: 'DELETE' },
+  )
 }
 
 /** The full card, so the vault can show a claim and a note under one roof. */
