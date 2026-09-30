@@ -30,7 +30,8 @@
     "  required = 必填且非空白：`length(trim(x)) > 0`，**没有 NULL 分支**，",
     "             因为字段本身 NOT NULL，空白是唯一的非法值",
     "10 · lessons：lessons / lesson_schedule / lesson_reviews / lesson_promotions。**lesson_reviews 有 12 条而不是 13 条** —— 我先写了「只有真复习才可能带耗时」，然后发现已入队无耗时 + 已推迟无耗时两条已经覆盖全部三种 outcome，第三条永远不会独立违反。⭐ 永远不可能被违反的约束是噪音：它读起来像防护，实际是维护成本加上一条没人能测的声明。见 2026-09-28 的 spec 030 变更日志。",
-    "financial_reports · PIT 财务数据（spec 043 · D4）。append_only=true 是 **红线 17 的直接后果**而非「因为它是日志表」：一次 UPDATE 是一次静默的重写历史，而本表的全部价值在于「当时看到的就是当时的」。"
+    "financial_reports · PIT 财务数据（spec 043 · D4）。append_only=true 是 **红线 17 的直接后果**而非「因为它是日志表」：一次 UPDATE 是一次静默的重写历史，而本表的全部价值在于「当时看到的就是当时的」。",
+    "notifications_sent · 我们对用户说过什么（spec 044）。append_only=true 的理由**不是**「因为它是日志表」：删掉一行会让同一条判据**再次**被通知，而用户上一次已经处理过了 —— 那不是丢了缓存，是程序在催一件已经做完的事。"
   ],
   "categories": [
     "comparison",
@@ -299,6 +300,15 @@
     "notes_fts": {
       "append_only": false,
       "constraints": {}
+    },
+    "notifications_sent": {
+      "append_only": true,
+      "constraints": {
+        "notifications_sent_kind_check": "required",
+        "notifications_sent_subject_check": "required",
+        "notifications_sent_body_check": "required",
+        "notifications_sent_sent_at_check": "identity"
+      }
     },
     "reviews": {
       "append_only": true,

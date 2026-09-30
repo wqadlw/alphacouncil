@@ -1146,6 +1146,46 @@ class TestS10NoPrint:
         ctx = make_ctx(tmp_path, {"backend/scripts/dev.py": 'print("gate")\n'})
         assert no_print.run(ctx).issues == []
 
+    def test_an_entry_point_may_print(self, tmp_path: Path) -> None:
+        """⭐ `__main__.py` is the file `python -m` runs, ⭐ so a `print` there reaches the
+        person who typed the command — ⭐ which is the whole difference between a report and
+        an invisible line.
+
+        ⭐ ⭐ **This exemption was documented before it existed.** The rule's docstring had
+        said 「`__main__.py` 是 CLI 入口，接口就是 stdout」 since before spec 044, ⭐ and the
+        implementation scanned every ``*.py`` under the package. ⭐ No entry point used
+        ``print`` for all that time, ⭐ so the drift was invisible until ``notify/__main__.py``
+        needed one. ⭐ A docstring that promises an exemption the code does not have is
+        `F-120` again, one rule over.
+        """
+        ctx = make_ctx(
+            tmp_path,
+            {"backend/src/alphacouncil/notify/__main__.py": 'print("发了 1 条")\n'},
+        )
+        assert no_print.run(ctx).issues == []
+
+    def test_but_a_module_the_entry_point_calls_may_not(self, tmp_path: Path) -> None:
+        """⭐ ⭐ **The boundary, and it is the one that keeps the exemption small.**
+
+        ⭐ 「The output is mine」 must not grow into 「the output is anything on the way out」
+        — ⭐ and it would grow that way the moment the exemption were a comment or a
+        directory. ⭐ A module imported by an entry point is ordinary product code, ⭐ so its
+        ``print`` is exactly as invisible as before.
+        """
+        ctx = make_ctx(
+            tmp_path,
+            {
+                "backend/src/alphacouncil/notify/__main__.py": (
+                    "from alphacouncil.notify.dispatch import send\n\n"
+                    "def main() -> int:\n"
+                    '    print("report")\n'
+                    "    return 0\n"
+                ),
+                "backend/src/alphacouncil/notify/dispatch.py": 'print("leaked")\n',
+            },
+        )
+        assert codes(no_print.run(ctx)) == ["CHECK_PRINT_STATEMENT"]
+
 
 # ---------------------------------------------------------------------------
 # S-13 tool-encoding

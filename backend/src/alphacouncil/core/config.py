@@ -111,6 +111,13 @@ class Settings(BaseSettings):
     request_timeout_seconds: int = Field(default=120, ge=1, le=3600)
 
     # ---- credentials (unprefixed aliases) ---------------------------------
+    #: ⭐ The webhook endpoint, as a whole (spec 044). ⭐ **Secret because the token is in
+    #: the URL** -- 飞书 puts it in the path (`/hook/xxxxxxxx`) -- ⭐ so a base-plus-token
+    #: split would leave the token in an ordinary field that anything may print. ⭐ Same
+    #: shape as the LLM keys below: an environment variable, never a file in the repo.
+    webhook_url: SecretStr | None = Field(
+        default=None, validation_alias="ALPHACOUNCIL_WEBHOOK_URL"
+    )
     openai_api_key: SecretStr | None = Field(default=None, validation_alias="OPENAI_API_KEY")
     anthropic_api_key: SecretStr | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
     deepseek_api_key: SecretStr | None = Field(default=None, validation_alias="DEEPSEEK_API_KEY")

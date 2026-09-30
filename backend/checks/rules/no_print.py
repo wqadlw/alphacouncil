@@ -19,11 +19,22 @@ no return value anyone asserts on, and no exception. Deleting a ``print`` breaks
 no test; adding one breaks no test. Only a rule that looks for the call itself
 can see it.
 
-Scope: ``src/alphacouncil/`` — the shipped product. ``scripts/`` and
-``__main__.py`` are CLI entry points whose *interface is stdout*, and they are
-already exempt from ``ruff``'s ``T201`` for the same reason. Keeping the scope
-identical to the linter's means there is one rule about ``print``, not two that
-disagree.
+Scope: ``src/alphacouncil/`` — the shipped product, **except the files whose interface
+is stdout**. ``scripts/`` and ``__main__.py`` are CLI entry points, and a command's output
+is its product; ``ruff``'s ``T201`` already exempts them for exactly this reason.
+Keeping the scope identical to the linter's means there is one rule about ``print``, not
+two that disagree.
+
+⭐ **That sentence is the reason :data:`CLI_ENTRY_POINTS` exists.** The scope above was
+written down before the implementation, ⭐ and the implementation scanned every ``*.py``
+under the package — ⭐ so for as long as no entry point used ``print``, the drift was
+invisible. ⭐ ``notify/__main__.py`` (spec 044) is the first file to need one, ⭐ and it
+exposed a rule that documented an exemption it did not have.
+
+⭐ The exemption is a **filename**, not a comment: ⭐ a per-call ``noqa`` would need three
+of them and would be reviewable line by line, ⭐ while 「the entry point is the file Python
+runs with ``-m``」 is one sentence and cannot be applied by accident in the middle of a
+module.
 """
 
 from __future__ import annotations
@@ -46,11 +57,23 @@ META = CheckMeta(
 #: `print` under an alias, and the `builtins.` form.
 _BANNED_CALLS = frozenset({"print", "builtins.print"})
 
+#: ⭐ Files whose stdout **is** the interface. ⭐ Named by filename because that is the one
+#: thing that makes the exemption reviewable: ``python -m alphacouncil`` runs
+#: ``__main__.py``, ⭐ so a `print` in it reaches the person who typed the command — ⭐ which
+#: is the whole difference between a report and an invisible line.
+#:
+#: ⚠️ **And a `print` in any *other* file still fails**, ⭐ including a module the entry
+#: point calls. ⭐ Otherwise 「the output is mine」 would grow into 「the output is anything
+#: on the way out」, ⭐ and that is the rule this whole project exists to prevent.
+CLI_ENTRY_POINTS = frozenset({"__main__.py"})
+
 
 def run(ctx: ScanContext) -> CheckResult:
     """Find ``print`` calls in the shipped package."""
     result = CheckResult()
     for path in ctx.python_files(ctx.product):
+        if path.name in CLI_ENTRY_POINTS:
+            continue
         tree = ctx.tree(path)
         if tree is None:
             continue
@@ -66,7 +89,9 @@ def run(ctx: ScanContext) -> CheckResult:
                 f"`{name}()` in the product writes to a console nobody reads",
                 target=format_target(ctx, path, node.lineno),
                 fix='Use `structlog`: `logger.info("event_name", key=value)`. '
-                "A packaged app has no visible stdout (constitution 7.4).",
+                "A packaged app has no visible stdout (constitution 7.4). "
+                "The one exception is a file named `__main__.py`, whose stdout *is* "
+                "the interface.",
             )
     return result
 

@@ -109,6 +109,13 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+# ⭐ `T201` here, and the same boundary in `checks/rules/no_print.py` (S-10) — ⭐ because the
+# two rules exist to have **one** scope, which is what S-10's docstring says it wants.
+# ⭐ Narrow on purpose: only the file `python -m` runs. ⭐ A module an entry point *calls*
+# is ordinary product code and still fails, ⭐ because otherwise 「the output is mine」
+# would grow into 「the output is anything on the way out」 — ⭐ and that growth is exactly
+# what S-10 exists to prevent. (spec 044)
+"src/alphacouncil/notify/__main__.py" = ["T201"]
 "tests/**" = [
     "S101",   # assert is the assertion mechanism
     "ANN201",

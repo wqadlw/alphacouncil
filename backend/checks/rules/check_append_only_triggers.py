@@ -132,6 +132,13 @@ APPEND_ONLY_TABLES = frozenset(
         # primary key carries the announcement date cannot express an overwrite at all,
         # and the triggers make the same promise the key does.
         "financial_reports",
+        # notifications_sent (spec 044): the first table here whose contents are **about
+        # the reader rather than about the market**. ⭐ The deletion failure is not a lost
+        # cache entry — ⭐ deleting a row makes the same criterion notify *again*, to
+        # somebody who already dealt with it, ⭐ and that looks exactly like a bug while
+        # being the program's version of nagging. ⭐ `sent_at` has no TTL either, because
+        # 「you cannot un-hear something」 is not a cache property.
+        "notifications_sent",
         # lesson_promotions (spec 030): **not** a review, and a different reason.
         # The other nine tables are histories of things that *happened to* the
         # reader. This one is a promise they made: 「这条教训我已经签成卡片了」. A
