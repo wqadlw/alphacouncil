@@ -47,6 +47,32 @@ class _Response:
         self.status_code = status_code
 
 
+class _Clock:
+    """A monotonic clock that **advances on every read**, and remembers what it gave out.
+
+    ⭐ ⭐ **This exists because a pinned clock made an assertion vacuous.** ⭐ The throttle's
+    「failed calls still count」 test pinned ``monotonic`` to a constant, ⭐ so
+    ``last_sent == 100.0`` was true whether the timestamp was updated or not — ⭐ and the
+    mutation run said so by surviving the removal. ⭐ A clock that moves turns 「was it
+    written?」 into 「is it the value this clock last produced?」.
+
+    ⭐ The ``reads`` list is what makes the assertion independent of **how many** times the
+    code happens to read the clock. ⭐ Hard-coding an expected value instead would pin the
+    test to today's call sequence, ⭐ so a harmless extra read would break it — ⭐ and the
+    next person would delete the assertion rather than the read.
+    """
+
+    def __init__(self, start: float = 100.0, step: float = 7.0) -> None:
+        self.now = start
+        self.reads: list[float] = []
+        self._step = step
+
+    def __call__(self) -> float:
+        self.reads.append(self.now)
+        self.now += self._step
+        return self.now - self._step
+
+
 class _Client:
     """Records every POST, answers from a script.
 
@@ -208,12 +234,43 @@ class TestTheChannel:
         assert outcome.delivered is False
         assert client.posts == []
 
-    @pytest.mark.parametrize("url", ["", "   ", "not a url", "ftp://x/y", "file:///etc/passwd"])
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "",
+            "   ",
+            "not a url",
+            "ftp://x/y",
+            # ⭐⭐ **`file://host/x`, not `file:///etc/passwd`.** ⭐ The first version of
+            # this list used the triple-slash form, ⭐ and the mutation run then showed a
+            # `file://` scheme added to the allowlist survived — ⭐ because
+            # `urlsplit("file:///etc/passwd").netloc` is `''`, ⭐ so the URL was already being
+            # refused for **having no host** rather than for its scheme. ⭐ The test was
+            # passing for the wrong reason, ⭐ and a scheme check that is only ever
+            # exercised by a URL that fails another check is not a scheme check.
+            "file://host/etc/passwd",
+            "data://host/x",
+        ],
+    )
     def test_a_bad_url_is_refused_before_any_request(self, url: str) -> None:
-        """⭐ ⭐ ``file://`` is in the list on purpose. ⭐ This function's whole contract is
+        """⭐ ⭐ Each case isolates **one** reason, ⭐ because a URL can fail several and a
+        test that does not isolate cannot say which rule fired.
+
+        ⭐ ``file://`` is in the list on purpose. ⭐ This function's whole contract is
         「hand a rendered message to somebody else's endpoint」, ⭐ and a scheme outside that
-        is a configuration mistake worth catching before a socket."""
+        is a configuration mistake worth catching before a socket.
+        """
         assert webhook.is_valid_url(url) is False
+
+    @pytest.mark.parametrize("scheme", ["file", "data", "ftp", "gopher", "javascript"])
+    def test_only_the_two_schemes_are_allowed(self, scheme: str) -> None:
+        """⭐ The scheme allowlist, stated as a property rather than as three examples.
+
+        ⭐ A list of bad URLs stops at the first scheme nobody thought of, ⭐ and the fix
+        above happened because a mutation found a gap — ⭐ not because the list was read
+        carefully.
+        """
+        assert webhook.is_valid_url(f"{scheme}://host/path") is False
 
     def test_nothing_to_say_is_not_a_delivery(self, client: _Client) -> None:
         assert send_webhook(ChannelConfig(url=URL), "  ", "正文").delivered is False
@@ -373,19 +430,38 @@ class TestTheChannel:
 
         ⭐ A throttle that forgives failures is the one that gets an address blocked, and a
         webhook endpoint that starts rate-limiting us is how a reader stops being told.
+
+        ⭐⭐ **The clock has to *move*, and the first version of this test did not.** ⭐ It
+        pinned ``monotonic`` to a constant and asserted ``last_sent == 100.0`` — ⭐ which is
+        exactly what the fixture had set it to, ⭐ so deleting the assignment entirely
+        survived the mutation run. ⭐ **A constant clock makes 「the timestamp was
+        updated」 and 「the timestamp was left alone」 the same observation**, ⭐ and this
+        assertion was vacuous until the clock advanced.
         """
         slept: list[float] = []
+        clock = _Clock()
         monkeypatch.setattr("alphacouncil.notify.webhook.time.sleep", slept.append)
-        monkeypatch.setattr(webhook, "_MIN_INTERVAL_S", 0.5)
+        monkeypatch.setattr("alphacouncil.notify.webhook.time.monotonic", clock)
+        # ⭐ A floor of 60s and a starting point 30s in the past, ⭐ so the wait is
+        # ``60 - 30 = 30`` and the sleep happens — ⭐ **and** so the fixture's value is
+        # neither what the clock first returns (100) nor any later one.
+        # ⭐ The first two versions failed the mutation run for the same reason: ⭐ the
+        # fixture's starting value **coincided with a value the clock produces**, ⭐ so
+        # 「the timestamp was updated」 and 「it was never touched」 were the same number.
+        # ⭐ That is a nastier shape than a weak assertion: ⭐ the test looked strict.
+        monkeypatch.setattr(webhook, "_MIN_INTERVAL_S", 60.0)
         monkeypatch.setattr(webhook, "_JITTER_S", 0.0)
-        monkeypatch.setattr("alphacouncil.notify.webhook.time.monotonic", lambda: 100.0)
-        monkeypatch.setattr(webhook._GATE, "last_sent", 100.0)
+        monkeypatch.setattr(webhook._GATE, "last_sent", clock.now - 30.0)
+        started_at = clock.now - 30.0
 
         client.status = 500
         send_webhook(ChannelConfig(url=URL), "标题", "正文")
 
-        assert slept == [pytest.approx(0.5)]
-        assert webhook._GATE.last_sent == pytest.approx(100.0)
+        assert slept == [pytest.approx(30.0)]
+        # ⭐ **The value the clock last handed out**, ⭐ which can only have come from the
+        # `finally` block — ⭐ and that block runs on the failure path too.
+        assert webhook._GATE.last_sent == pytest.approx(clock.reads[-1])
+        assert webhook._GATE.last_sent != pytest.approx(started_at)
 
 
 # --------------------------------------------------------------------------
