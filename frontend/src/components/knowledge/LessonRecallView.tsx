@@ -35,6 +35,7 @@ import { listDueLessons, reviewLesson, type LessonRating } from '../../lessons'
 import { formatAgo } from './formatAgo'
 import { Badge, Button, Rule } from '../ui'
 import { useResource } from '../../useResource'
+import { Markdown } from './Markdown'
 
 /**
  * ⭐ The four buttons, and the first one is not 「忘了」.
@@ -124,9 +125,14 @@ export default function LessonRecallView({ onDone }: { onDone?: () => void }) {
                 {formatAgo(row.due_at)}
               </span>
             </div>
-            <p className="mt-1.5 whitespace-pre-wrap type-prose text-ink">
-              {row.content}
-            </p>
+            {/* ⭐ Rendered, ⭐ and a lesson's content is the whole point of reviewing it —
+                  ⭐ a `whitespace-pre-wrap` paragraph shows `##` to the reader who is being
+                asked to recall what it says. ⭐ And no `max-w` here: ⭐ `Markdown` carries
+            {/* its own measure, ⭐ and a second one on the wrapper is one more place the two
+                can disagree. */}
+            <div className="mt-1.5">
+              <Markdown source={row.content} />
+            </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {RATINGS.map((rating) => (
                 <Button

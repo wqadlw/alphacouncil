@@ -43,6 +43,7 @@ import { listLessons, promoteLesson, type Lesson } from '../../lessons'
 import { formatMoment } from '../../format'
 import { Badge, Button, Input, Rule } from '../ui'
 import { useResource } from '../../useResource'
+import { Markdown } from './Markdown'
 
 export default function LessonList() {
   const describe = useCallback(
@@ -114,9 +115,10 @@ export default function LessonList() {
               className="border-b border-rule-soft px-4 py-3 last:border-b-0"
               data-testid="lesson-row"
  >
-              <p className="whitespace-pre-wrap type-prose text-ink">
-                {lesson.content}
-              </p>
+              {/* ⭐ Rendered, ⭐ for the same reason: ⭐ a lesson row that shows its own
+                    markup is a file listing, and the lessons page is the one a reader opens
+                  to re-read what they wrote. */}
+              <Markdown source={lesson.content} />
               <p className="num mt-1 type-badge text-ink-faint">
                 写于 {formatMoment(lesson.created_at)}
               </p>

@@ -44,6 +44,7 @@ import { formatMoment } from '../../format'
 import { formatAgo } from './formatAgo'
 import { Button, Rule, Textarea } from '../ui'
 import { useResource } from '../../useResource'
+import { Markdown } from './Markdown'
 
 /** ⭐ The four answers, in the reader's own words.
  *
@@ -173,9 +174,15 @@ export default function RecallView({
           luck, not memory. A card's claim *is* a prompt, which is why the card
           review may hide it.
         */}
-        <pre className="whitespace-pre-wrap border-l-2 border-rule-soft py-2 pl-3 font-sans type-prose text-ink">
-          {active.note.body}
-        </pre>
+        {/* ⭐ **Rendered Markdown.** This was a `<pre>` of the raw body, ⭐ and the
+              review screen is where a note is read most carefully — ⭐ so it is the
+            worst place for a note to arrive looking like a file. ⭐ The 2px rule
+        {/* ⭐ stays ⭐ and moves to `border-l-rule-soft`: ⭐ the body now has its own
+            headings and lists, ⭐ and a rule around the whole thing would frame a page
+            rather than mark a record. */}
+        <div className="border-l-2 border-rule-soft py-2 pl-3">
+          <Markdown source={active.note.body} />
+        </div>
 
         <p className="type-prose text-ink-faint">
           这条当初是你自己说要「再看看」的。现在重读一遍，然后照实说。

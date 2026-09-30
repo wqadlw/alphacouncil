@@ -71,6 +71,7 @@ import {
   removeNoteTag,
 } from './notes'
 import { BacklinkCount, BacklinkList } from './components/knowledge/BacklinkList'
+import { Markdown } from './components/knowledge/Markdown'
 import LessonList from './components/knowledge/LessonList'
 import LessonRecallView from './components/knowledge/LessonRecallView'
 import RecallView from './components/knowledge/RecallView'
@@ -751,9 +752,16 @@ function NoteDetail({
           text you see back, and `test_the_markdown_comes_back_byte_for_byte`
           holds both ends.
         */}
-        <pre className="whitespace-pre-wrap font-sans type-prose text-ink" data-testid="note-preview">
-          {note.body}
-        </pre>
+        {/* ⭐ **Rendered, not source.** This was a `<pre>` of the raw body, ⭐ which
+            meant a note read as `## 观察` and `- 利率上行` — ⭐ the page said
+            「the body is still shown as source rather than rendered」 in its own header,
+            ⭐ and a knowledge base whose notes display their own markup is a text file
+            with a sidebar. ⭐ `Markdown` builds React nodes, ⭐ so nothing is parsed
+            as HTML, and the bytes the backend preserved are still exactly the bytes
+            the editor holds. */}
+        <div className="mt-1" data-testid="note-preview">
+          <Markdown source={note.body} />
+        </div>
 
         {/* ── backlinks (§8.2 · 「知识库像知识库的地方」) ─────────────────────
             ⭐ **Placed after the body and before the tags.** The body is what the
