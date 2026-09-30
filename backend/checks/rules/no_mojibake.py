@@ -141,7 +141,7 @@ _ROOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
 #: ⭐⭐ ⭐⭐ same line ⭐⭐ ⭐⭐. ⭐⭐ ⭐⭐ Two constants say what each one means.
 _ROOT_FILES: tuple[str, ...] = (
     "README.md",
-    "README.zh-CN.md",
+    "README.en.md",
     "CONTRIBUTING.md",
     "SECURITY.md",
 )

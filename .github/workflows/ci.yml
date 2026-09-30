@@ -186,6 +186,7 @@ jobs:
           set -euo pipefail
           required=(
             "README.md"
+            "README.en.md"
             "LICENSE"
             "CONTRIBUTING.md"
             "SECURITY.md"

@@ -1,274 +1,245 @@
 # AlphaCouncil
 
-> A knowledge system for people who trade A-shares. It puts **the data about one
-> instrument, the judgements you wrote down, and what happened to those judgements**
-> on the same page.
-> Append-only decision log · spaced repetition · a quality quadrant for decisions ·
-> **it optimises your process, never your return forecast**
+> 面向实战的股市知识管理系统 · 把一只股票的数据、你写下的判断、以及判断后来的结果放在同一页
+> · append-only 决策日志 + 间隔重复 + 决策质量四象限 · **只优化过程，不预测涨跌**
 
-**中文** | [English](README.md)
+[English](README.en.md) | **简体中文**
 
 [![CI](https://github.com/wqadlw/alphacouncil/actions/workflows/ci.yml/badge.svg)](https://github.com/wqadlw/alphacouncil/actions/workflows/ci.yml)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+blue.svg)](https://www.python.org/downloads/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-<!-- ⭐ The screenshots are real: a real backend, a real SQLite file, real quotes from
+<!-- The screenshots are real: a real backend, a real SQLite file, real quotes from
      tencent (600519.SH, 2026-09-30 19:47), and a K-line the product drew itself.
-     ⭐ The records in them are a seeded demo set, not the author's own positions, and
-     ⭐ the seed text deliberately obeys red line 1 (no price targets, no forecasts,
-     ⭐ no buy/sell advice) ⭐ — ⭐ because `S-03` is a gate, and a README's pictures
-     ⭐ should not be able to turn the build red.
-     ⭐ Full Chinese README with more screenshots: README.zh-CN.md -->
+     The records in them are a seeded demo set, not the author's own positions -
+     and the seed text deliberately obeys 红线 1 (no 目标价 / 涨跌预测 / 买卖建议).
+     See 「截图里的数据从哪来」 below. -->
 
-![The today page: your own kill criterion, evaluated](docs/screenshots/today.png)
+![今天页：你自己写的失效条件被求值了](docs/screenshots/today.png)
 
-> The first line of that screenshot reads: **「你写的失效条件『截至 2026-09-30,
-> close 小于 1280』已越过 —— 收盘价 现在 1258.62」** — *the invalidation condition you
-> wrote has been crossed; the close is now 1258.62.*
->
-> That one line is the product. **You write down the sentence that should
-> disprove you, and then it comes looking for you — not the price.**
+> 上面这张图里，第一行写着：**「你写的失效条件『截至 2026-09-30，close 小于 1280』已越过 —— 收盘价 现在 1258.62」**。
+> 这个产品最核心的一件事就是这一行：**你写下你期待被推翻的那句话，然后由它来找你，不是由价格来找你。**
 
 ---
 
-## 1. What it is
+## 一、这是什么
 
-Three things, one page:
+三样东西，一个页面：
 
-| | what it is | provenance |
+| | 是什么 | 出处 |
 |---|---|---|
-| **Card** | a judgement you are willing to sign | ⭐ **a source is required** |
-| **Note** | something you wrote down | may have none |
-| **Decision** | one action + rationale + counter-evidence + **an invalidation condition** | timestamped by the server |
+| **卡片** | 你愿意署名的判断 | **必须有出处** |
+| **笔记** | 你写下来的东西 | 可以没有 |
+| **决策** | 一次动作 + 理由 + 反面证据 + **失效条件** | 时间戳由服务端盖 |
 
-That asymmetry — a card needs a source, a note need not — is the premise of the
-whole knowledge base, so it lives in the **input's placeholder text** and not only
-in a document:
+「卡片必须有出处、笔记可以没有」这条不对称，是整个知识库的立足点 —— 所以它被写进了**输入框的提示里**，而不只是文档：
 
-![The vault](docs/screenshots/vault.png)
+![知识库：记一条](docs/screenshots/vault-compose.png)
 
-What a working investor actually lacks is not data. It is **nowhere to put "what
-I was thinking at the time"**. This puts those three things next to the quotes, so
-that *what you said* and *what happened afterwards* can be lined up.
+一个 A 股投资者真正缺的不是数据，是**「我当初是怎么想的」这件事没有地方放**。这个产品把这三样东西和行情放在同一页，
+让「我说的」和「后来发生的」能对上。
 
-## 2. The interface
+## 二、界面
 
-**A note** — rendered Markdown, plus who cites it and what it cites
+**知识库** —— 卡片与笔记并列，FTS5 全文检索（中文按 trigram 分词）
 
-![A note](docs/screenshots/note-detail.png)
+![知识库](docs/screenshots/vault.png)
 
-**One instrument** — answers five questions: where is it now, why do I follow it,
-what have I said about it, what have I done, what have I decided
+检索的语义写在了结果上方：**标签不参与这次搜索 —— 标签用它上面的按钮筛。**
 
-![Quote](docs/screenshots/instrument-quote.png)
+![检索](docs/screenshots/vault-search.png)
 
-The chart is drawn by the product (`lightweight-charts`), **A-share convention: red
-up, green down**
+笔记正文是**渲染后的 Markdown**，并列出谁引用了它、它引用了谁
 
-![K-line](docs/screenshots/instrument-chart.png)
+![笔记详情](docs/screenshots/note-detail.png)
 
-> **Prices do not refresh themselves — press once. This page is not a quote
-> terminal.**
-> Source and timestamp are stated per reading: `tencent` · `2026-09-30 19:47`.
-> ⭐ **No data renders empty, never `0`** (red line 6, guarded by `S-08`).
+**一只股票** —— 回答五个问题：现在是什么样 / 我为什么关注它 / 我对它说过什么 / 我对它做过什么 / 我对它下过什么判断
 
-**Watchlist** — the reason is mandatory, because a reason is not a note-to-self
+![行情](docs/screenshots/instrument-quote.png)
 
-![Watchlist](docs/screenshots/watchlist.png)
+K 线是产品自己画的（`lightweight-charts`），**A 股约定：红涨绿跌**
 
-> **You follow things, and why you follow them. The reason is not a comment — it
-> is the sentence you will have to face when someone asks you six months from now.**
+![K 线](docs/screenshots/instrument-chart.png)
 
-Revising the reason for the same ticker does not overwrite it. The watchlist is an
-**event log plus a current view** (`watchlist_current` is a VIEW, not a table).
+> **价格不会自动刷新 —— 需要你按一次。这一页不是行情终端。**
+> 数据源与时间逐项标出：来源 `tencent` · 数据时间 `2026-09-30 19:47`。**没有数据时显示空，不显示 0**（红线 6）。
 
-**Review** — FSRS spaced repetition, with copy that puts the reader first
+**关注池** —— 理由是必填的，因为理由不是备注
 
-![Review](docs/screenshots/review-queue.png)
+![关注池](docs/screenshots/watchlist.png)
 
-The four buttons are **忘了 / 有点难 / 记得 / 太简单 / 现在不是时候** — *forgot / hard /
-remembered / easy / not now.* ⭐ There is no "failed" and no "start over" here: those
-two words score the reader instead of describing what happened. ⭐ `again` is pinned
-by spec 028 to mean "**my mind changed**", not "I forgot".
+> **你关注什么，以及你为什么关注它。理由不是备注，是半年后你被追问时要面对的那句话。**
 
-**Command palette** — `Ctrl` + `K`
+同一只标的改过理由，旧的那条不会被覆盖 —— 关注池是**事件日志 + 当前视图**（`watchlist_current` 是一个 VIEW，不是表）。
 
-![Command palette](docs/screenshots/command-palette.png)
+**复习** —— FSRS 间隔重复，评分的措辞以读者为先
 
-> The nav behind the palette is dimmed ⭐ — that is the three things a modal owes
-> you: remember the original focus, keep Tab inside, mark the background `inert`.
-> ⭐ They live in one hook (`useModalFocus`) ⭐ because `CommandPalette` was the only
-> ⭐ component that needed them ⭐, ⭐ and an abstraction with one caller eventually
-> ⭐ gets inlined back.
+![复习](docs/screenshots/review-queue.png)
 
-## 3. Decisions specific enough to quote
+四个按钮是 **忘了 / 有点难 / 记得 / 太简单 / 现在不是时候**。
+这里没有「失败」和「重来」：那两个字是在给读者打分，而不是在描述发生了什么。
+`again` 的含义被 spec 028 钉死为「**我的想法变了**」，不是「我忘了」。
 
-`docs/` and `.ai/` say more about this project than the code does. Four of them,
-taken verbatim from the interface, because they *are* the design:
+**命令面板** —— `Ctrl` + `K`
 
-1. **An immature result renders empty, not `0` and not `—`** (red line 6, `S-08`).
-   An MA20 drawn from five bars is a line through the present that a chart will
-   happily render ⭐ so it is not drawn.
-2. **An invalidation condition cannot be a sentence, at the schema level.**
-   `metric` must match `lowercase letters, digits and underscores` ⭐ — a
-   **machine-readable field name** — plus an operator, a threshold and an `as_of`.
-   ⭐ The API rejects "sell if the fundamentals deteriorate".
-3. **Append-only is not a convention, it is 24 database triggers**:
-   `decisions_no_delete`, `note_reviews_no_delete`, … ⭐ A `DELETE` on an
-   append-only table is not a slow query, **it is an error**. ⭐ Changing your mind
-   appends a row too.
-4. **The home page does not push.** No red dot, no count, no "3 cards waiting" on a
-   nav item. ⭐ A badge turns "you owe three cards" into a number you can see and
-   climb. ⭐ The today page does not headline "you have 5 things to handle"; it
-   headlines **which invalidation condition you wrote has come due**.
+![命令面板](docs/screenshots/command-palette.png)
 
-## 4. Stack
+> 截图里左侧导航被压暗了 那是模态三件套：记住原焦点、Tab 陷阱在面板内、背景 `inert`。
+> 这三件事抽成了一个 hook（`useModalFocus`），因为 CommandPalette 曾经是唯一需要它的组件，
+> 而「只有一个人用的抽象」迟早会被内联回去。
+
+## 三、几个具体到可以引用的决定
+
+这个项目的文档（`.ai/`，22k 行）比代码更能说明它 下面四条都是从界面文案里原样拿的，因为它们**是**设计：
+
+1. **未成熟的结果显示空，不显示 `0` 或 `—`**（红线 6，`S-08` 门禁守着）。
+   一张还没长够 20 根 K 线的 MA20 画出来是一条线穿过的假象，所以它不画。
+2. **止损条件在 schema 层就不能是一句话**：`metric` 必须是
+   `lowercase letters, digits and underscores` —— 一个**机器可读的字段名**，
+   加一个比较符、一个阈值、一个 `as_of`。「基本面恶化则止损」这句话，API 直接拒收。
+3. **append-only 不是约定，是 24 个数据库触发器**：
+   `decisions_no_delete`、`note_reviews_no_delete`…… `DELETE` 一张 append-only 表
+   不是慢查询，**是报错**。连「改主意」也是追加一条新记录。
+4. **首页不推送。** 导航上没有红点、没有数字、没有「3 张卡片等着你」。
+   徽章会把「你欠三张卡片」变成一个你能看见并攀爬的数字。
+   今天的首页不显示「你还有 5 件事没处理」作为标题，它显示的是
+   **你写下的哪一条失效条件到期了**。
+
+## 四、技术栈
 
 | | |
 |---|---|
-| Backend | Python 3.12+ · FastAPI · Pydantic v2 · SQLAlchemy 2 · SQLite (FTS5 / trigram) · fsrs · structlog |
-| Frontend | React 19 · Vite · Tailwind CSS v4 · lucide-react · lightweight-charts |
-| Data | Tencent · Sina · Eastmoney (quotes and daily bars) |
-| Runtime deps | **9 Python packages · 10 npm packages** (named one by one by the `V-07` gate) |
-| Size | 74 commits · 41.9k lines of Python · 18.1k lines of frontend · 22.0k lines of `.ai/` · 12 migrations · schema v12 |
+| 后端 | Python 3.12+ · FastAPI · Pydantic v2 · SQLAlchemy 2 · SQLite（FTS5 / trigram）· fsrs · structlog |
+| 前端 | React 19 · Vite · Tailwind CSS v4 · lucide-react · lightweight-charts |
+| 数据源 | Tencent · Sina · Eastmoney（行情与日线） |
+| 运行时依赖 | **9 个 Python 包 · 10 个 npm 包**（`V-07` 门禁按名字点名守着） |
+| 规模 | 74 次提交 · Python 41.9k 行 · 前端 18.1k 行 · `.ai/` 22.0k 行 · 12 个迁移 · schema v12 |
 
-⭐ **No LLM dependency.** No `openai`, no `langchain`, no `langgraph` in
-`pyproject.toml` ⭐ — ⭐ and the `OPENAI_API_KEY` in `.env.example` is there for a
-future that has not arrived. ⭐ That is deliberate; ADR-0027 records LangGraph and
-fastmcp as **adopted, not built**.
+**没有 LLM 依赖。** `pyproject.toml` 里没有 `openai`、没有 `langchain`、没有 `langgraph`
+—— 而 `.env.example` 里的 `OPENAI_API_KEY` 是**为将来准备的**，当前代码不读它。
+这是一个刻意的选择，理由记在 ADR-0027：LangGraph 与 fastmcp **已采纳、未构建**。
 
-## 5. Run it
+## 五、跑起来
 
 ```bash
 git clone https://github.com/wqadlw/alphacouncil.git
 cd alphacouncil
 
-# backend
+# 后端
 python -m venv backend/.venv
 backend/.venv/Scripts/pip install -e "backend[dev]"      # Windows
 backend/.venv/bin/pip    install -e "backend[dev]"      # macOS / Linux
 
-# frontend
-cd frontend && npm install && cd ..
+# 前端
+cd frontend && npm install && cd..
 
-# two terminals
+# 两个终端
 backend/.venv/Scripts/python -m alphacouncil            # API → 127.0.0.1:8000
-cd frontend && npm run dev                              # → 127.0.0.1:5173 (/api proxied)
+cd frontend && npm run dev                              # → 127.0.0.1:5173（/api 已代理）
 ```
 
-The database lands in `%LOCALAPPDATA%\AlphaCouncil\`, is migrated on first run, and
-⭐ **the app starts with no network at all** ⭐ — the quotes are simply empty.
-Settings are in `.env.example`; never commit `.env`.
+数据库落在 `%LOCALAPPDATA%\AlphaCouncil\` 首次启动自动迁移 **不联网也能起**，
+只是行情会是空的。设置项见 `.env.example`；`.env` 不要提交。
 
-## 6. The gate
+## 六、门禁
 
-`dev.py check` runs **11 steps**, and locally it runs the same list CI does ⭐⭐ a
-missing step is a failure.
+`dev.py check` 跑 **11 步**，本地与 CI 跑的是同一份清单 少一步都算失败。
+
+| 步 | 是什么 |
+|---|---|
+| `lint` · `typecheck` | ruff · mypy strict |
+| `licenses` | 依赖许可扫描（ADR-0024 / L-06） |
+| `check-static` | **15 条静态规则** `S-01…S-15` |
+| `test` · `test-integration` | 单元 · 集成（**真迁移、真数据库**） |
+| `frontend-typecheck` · `-lint` · `-test` · `-build` | 前端四步 |
+| `e2e` | Playwright |
+
+当前状态（2026-09-30，本机全绿）：
 
 ```
 lint · typecheck · licenses · check-static · test · test-integration
 frontend-typecheck · frontend-lint · frontend-test · frontend-build · e2e
 → ran 11 · passed 11 · failed 0
+
+后端单元 1338 · 集成 43 · 前端 184 · E2E 102 · 静态检查 15/15（0 error 0 warning）
 ```
 
-Current numbers (2026-09-30, green on one machine):
-
-```
-backend unit 1333 · integration 43 · frontend 182 · E2E 101 · static checks 15/15
-```
-
-⭐ **The 15 static checks are not style checks.** They guard **code that should not
-exist** ⭐⭐ a test can prove the paths it walks behave, and can never prove that
-nobody added a second HTTP client ⭐⭐ so `S-01…S-15` guard, among other things: the
-single HTTP entry point, append-only on the decision log, error codes registered,
-⭐ **both directions of the dependency budget** (an approved package must be
-imported; an import must be declared) ⭐, ⭐ and **that no source file contains
-mojibake** ⭐.
+**`check-static` 里 15 条规则不是风格检查。** 它们守的是「**不该存在的代码**」
+测试可以证明它走过的路径是对的，**永远证明不了没有人加了第二个 HTTP 客户端**
+所以 `S-01…S-15` 分别守着：唯一的 HTTP 入口、决策日志的 append-only、
+错误的登记在册、**依赖预算的两个方向**（批准的必须有人 import；import 的必须被声明）、
+以及**源文件不能含乱码**。
 
 ```bash
 cd backend && .venv/Scripts/python scripts/dev.py check
 ```
 
-## 7. ⭐ Status, including what is missing
+## 七、项目现状（没做的也在这一节）
 
-The most convincing part of a README is the part that admits what it does not have.
+一个 README 最有说服力的部分，是它承认自己没有什么。
 
-**Built**: 5 pages · 12 migrations · 43 API endpoints · FTS5 search · the decision
-log and its quality quadrant · review scheduling for cards and notes · charts and
-quotes · the command palette · 15 static checks · an 11-step gate.
+**已建**：5 个页面 · 12 个迁移 · 43 个 API 端点 · FTS5 检索 · 决策日志与四象限复盘 ·
+卡片/笔记的复习排程 · K 线与行情 · 命令面板 · 15 条静态规则 · 11 步门禁。
 
-**Adopted, not built** (each recorded in `.ai/`, each with a reason):
+**已采纳、未构建**（都写在 `.ai/` 里，都有原因）：
 
-- ⭐ **Multi-agent orchestration** (LangGraph / fastmcp) — ADR-0027. ⭐⭐ *The
-  previous version of this README described exactly that* ⭐⭐ **and it is not what
-  this project is** ⭐⭐ ⭐ — ⭐ every screenshot on this page came from the current
-  code.
-- ⭐ **The desktop shell** (pywebview) — ⭐ **not a dependency** ⭐. The pages assume
-  the desktop shape (a static bundle, hash routing, one process); the shell is not
-  built.
-- ⭐ **Filings and financial-statement sources** (D4 / D5) — quotes and daily bars
-  are wired (Tencent / Sina / Eastmoney); ⭐ filings are not ⭐ ⭐, and the sentence
-  「公告与财务数据源尚未接入（D4 / D5）」 is a real line on the today page.
-- ⭐ **Four floating-layer components** (`Drawer`, `Popover`, `Toast`, `DatePicker`)
-  — in the spec, ⭐ surveyed, and with no callers** ⭐. `Drawer` and `Popover` do
-  not exist, `DatePicker` is two native `<input type="date">`, and all 16 of
-  `Toast`'s message sites are errors. ⭐⭐ Building four components nobody calls is
-  the exact failure mode this repository keeps writing down.
-- ⭐ **A WYSIWYG editor** — `@milkdown/*` is approved, installed, ⭐ **imported by no
-  source file** ⭐, and ships 0 bytes. ⭐ Measured cost of wiring it: **+362.82 kB
-  (gzip +110.59 kB), JavaScript up 68%** ⭐ — ⭐ and the three approved packages
-  ⭐ **cannot read Markdown back out** ⭐ without a fourth, undeclared one.
-  ⭐ Decision pending: `.ai/memory/decisions.md` ADR-0032.
-- ⭐ **5 of 15 red lines have a runnable verifier** (`dev.py eval`, ⭐ deliberately
-  ⭐ **not** in the gate ⭐ — ⭐ a permanently red gate trains everyone to ignore the
-  summary). Baseline in `.ai/eval/redlines.json`.
+- **多 agent 编排**（LangGraph / fastmcp）—— ADR-0027 记为「已采纳、未构建」。
+  旧版 README 描述的就是这个 **它不是这个项目现在的样子**
+  —— 本页所有截图都来自当前代码。
+- **桌面壳**（pywebview）—— `pyproject.toml` 里**没有这个依赖**
+  页面假设了桌面形态（静态包 + hash 路由 + 单进程），但壳本身没建。
+- **公告与财务数据源**（D4 / D5）—— 行情与日线已接（Tencent / Sina / Eastmoney），
+  公告与财报**没有** —— 首页那句「公告与财务数据源尚未接入（D4 / D5）」是页面上真实的一行字。
+- **四个浮层组件**（`Drawer` / `Popover` / `Toast` / `DatePicker`）—— 规格里有，
+  调查后**没有调用方** —— `Drawer` 与 `Popover` 根本不存在，
+  `DatePicker` 两处都是原生 `<input type="date">`，`Toast` 的 16 处消息点全是错误。
+  所以它们没建 —— 造四个没有调用方的组件，就是这个项目反复记录的那个失败模式。
+- **所见即所得编辑器** —— `@milkdown/*` 已批准、已装、**未被任何源文件 import**，
+  出货 0 字节。接上它的实测成本：**+362.82 kB / gzip +110.59 kB**（JS 涨 68%），
+  且已批准的三个包**单独凑不出「编辑器吐出 markdown」** ——
+  三条读法都在未声明的传递依赖里。决定待裁决，见 `.ai/memory/decisions.md` ADR-0032。
+- **15 条红线里 5 条有可运行的验证器**（`dev.py eval`，**故意不进门禁** ——
+  一个长期红的门禁会训练所有人忽略汇总）。基线在 `.ai/eval/redlines.json`。
 
-**Fixed while writing this README** (the previous version of this file listed it
-as outstanding): a note's **outgoing** link used to render the raw id while the
-**incoming** side rendered a title. The cause was not a missing title but the
-title's presence depending on the target happening to be in the list on screen —
-typing in the search box turned a link the reader had written into an id. The link
-row now carries the target's own name.
+**本轮修掉的缺陷**（README 上一版把它列在「没做的」里，现在不是了）：
+笔记的出向链接曾显示原始 id 而反链那侧显示标题。根因不是「没有标题」而是**标题的显示取决于
+当前列表里恰好有那一行** —— 读者在搜索框里打字，他自己写下的引用就变成一串 id。
+现在链接行自己带目标的名字，两侧一致。
 
-## 8. Where the screenshot data came from
+## 八、截图里的数据从哪来
 
-All of it is real ⭐ — a real backend, a real SQLite file, real quotes
-(`tencent`, 600519.SH, 2026-09-30 19:47), and a chart the product drew itself.
-⭐ **The record contents are seed data**, ⭐⭐ written so as not to breach red line 1
-⭐⭐ — ⭐ no price targets, no forecasts, no buy/sell advice ⭐⭐ ⭐, because
-`S-03` (`no-prediction-field`) is a gate and a README should not be able to turn it
-red. ⭐ The review schedule is generated by the product's **own** domain functions
-(`note_recall.enroll` / `record_review`), so the FSRS state is real ⭐ — "next
-2026-10-03" is not a string somebody typed.
+全部是真的 —— 真后端、真 SQLite、真行情（`tencent`，600519.SH，2026-09-30 19:47）、
+K 线是产品自己画的。**但记录内容是种子数据**，而且是**故意写成不违反红线 1** 的
+—— 里面没有目标价、没有涨跌预测、没有买卖建议
+否则 `S-03`（`no-prediction-field`）会让门禁变红 而一个 README 的配图不该让门禁变红。
 
-## 9. Documentation
+种子数据用**产品自己的 domain 函数**生成复习排程（`note_recall.enroll` / `record_review`），
+所以 FSRS 状态是真的 —— 「下次 2026-10-03」不是编出来的字符串。
 
-`docs/FRONTEND_STYLE_GUIDE.md` — the interface rules. Its 16 acceptance items
-(`V-01…V-16`) are **tests, not prose**, in `frontend/src/styleguide.test.ts` ⭐⭐
-because prose does not fail a build ⭐⭐ ⭐ and that is precisely how the twelve
-components the guide asked for once shipped as **zero built**.
+## 九、文档
 
-`.ai/` — 22k lines, and the real design record:
+`docs/FRONTEND_STYLE_GUIDE.md` —— 界面规范，12 项验收（`V-01…V-16`）在
+`frontend/src/styleguide.test.ts` 里是**测试而不是散文** 散文不会让构建失败，
+而这正是规范里那 12 个组件一度**一个都没建**的原因。
+
+`.ai/` —— 这个项目真正的设计记录，22k 行：
 
 | | |
 |---|---|
-| `.ai/constitution.md` | the red lines and the invariants |
-| `.ai/memory/decisions.md` | 32 ADRs, including the **pending** one |
-| `.ai/failure-modes.md` | **178** recorded failures ⭐ each with how it was found |
-| `.ai/specs/` | 45 specs, each with a plan and a record of what happened |
-| `.ai/status.md` | the current state, **including what is missing** |
+| `.ai/constitution.md` | 宪法：红线与不变量 |
+| `.ai/memory/decisions.md` | 32 条 ADR，含**待裁决**的那条 |
+| `.ai/failure-modes.md` | **178 条**失败模式 附「怎么发现的」 |
+| `.ai/specs/` | 45 个 spec，每个都有 plan 与执行记录 |
+| `.ai/status.md` | 现状，**包括没做的** |
 
-⭐ `failure-modes.md` is the most unusual file here ⭐ it does not record code, it
-records **where my judgement was wrong**, and each entry says how it was caught
-⭐⭐ — `F-154` for instance: a filter matched **zero files** because of a path
-separator, ⭐⭐ and the test still reported 「found 0」 ⭐⭐ which reads like
-"somebody deleted both adapters".
+`failure-modes.md` 是这个仓最特别的一个文件 它记的不是代码，是**我判断错过的地方**，
+每条都写清楚「怎么发现的」—— 比如 `F-154`：一条过滤器因为路径分隔符
+匹配到了 **0 个文件**，而测试仍然报告「found 0」读起来像是「有人删掉了两个适配器」。
 
-## 10. Licence
+## 十、许可
 
-[MIT](LICENSE) ⭐⭐ ⭐ Dependencies are licence-checked too ⭐ — the `licenses` step
-scans the whole tree (338 packages) and copyleft fails the gate ⭐⭐. ⭐ **No
-off-the-shelf knowledge manager is used as a base** ⭐ (Siyuan / Logseq / AppFlowy /
-AFFiNE / Joplin / Trilium are all AGPL/GPL/BSL) ⭐⭐ ⭐ — ⭐ building on one of
-them would oblige this product to be open source. The survey is in
-`references/research/09`.
+[MIT](LICENSE)
+依赖也全查过许可 —— `dev.py check` 的 `licenses` 步扫整个树（338 个包），
+拷贝性许可会让门禁变红。知识管理系统的**整体项目**一个都没用
+（思源 / Logseq / AppFlowy / AFFiNE / Joplin / Trilium 全部 AGPL/GPL/BSL）
+用它们当底座，这个产品就必须一起开源。调查记录在 `references/research/09`。
