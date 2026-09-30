@@ -75,9 +75,9 @@ export default function LessonList() {
   if (rows.error) {
     return (
       <p
-        className="px-4 py-3 text-[13px] text-[color:var(--color-up)]"
+        className="px-4 py-3 type-prose text-[color:var(--color-up)]"
         data-testid="lesson-list-error"
-      >
+ >
         {rows.error}
       </p>
     )
@@ -89,10 +89,10 @@ export default function LessonList() {
     return (
       <div data-testid="lesson-list-empty">
         <Rule />
-        <p className="px-4 py-3 text-[13px] text-ink-soft">
+        <p className="px-4 py-3 type-prose text-ink-soft">
           还没有教训。
         </p>
-        <p className="px-4 pb-3 text-[12px] text-ink-faint">
+        <p className="px-4 pb-3 type-prose text-ink-faint">
           在复盘页写完一条复盘之后，下面会出现「记一条教训」。
         </p>
       </div>
@@ -102,7 +102,7 @@ export default function LessonList() {
   return (
     <section className="mt-3" data-testid="lesson-list">
       <div className="flex items-baseline gap-2 px-4 pb-1.5">
-        <h2 className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">教训</h2>
+        <h2 className="type-meta caps text-ink-faint">教训</h2>
       </div>
       <Rule />
       <ul>
@@ -113,11 +113,11 @@ export default function LessonList() {
               key={lesson.lesson_id}
               className="border-b border-rule-soft px-4 py-3 last:border-b-0"
               data-testid="lesson-row"
-            >
-              <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">
+ >
+              <p className="whitespace-pre-wrap type-prose text-ink">
                 {lesson.content}
               </p>
-              <p className="num mt-1 text-[11px] text-ink-faint">
+              <p className="num mt-1 type-badge text-ink-faint">
                 写于 {formatMoment(lesson.created_at)}
               </p>
 
@@ -130,7 +130,7 @@ export default function LessonList() {
               {cardId ? (
                 <p className="mt-2" data-testid="lesson-promoted">
                   <Badge>已经是卡片了</Badge>
-                  <span className="num ml-1 text-[11px] text-ink-faint">{cardId}</span>
+                  <span className="num ml-1 type-badge text-ink-faint">{cardId}</span>
                 </p>
               ) : (
                 <PromoteForm
@@ -143,7 +143,7 @@ export default function LessonList() {
         })}
       </ul>
       {error ? (
-        <p className="px-4 py-2 text-[12px] text-ink-soft" data-testid="lesson-promote-error">
+        <p className="px-4 py-2 type-prose text-ink-soft" data-testid="lesson-promote-error">
           {error}
         </p>
       ) : null}
@@ -193,7 +193,7 @@ function PromoteForm({
 
   return (
     <div className="mt-2 flex flex-col gap-1.5" data-testid="lesson-promote-form">
-      <p className="text-[12px] text-ink-faint">
+      <p className="type-prose text-ink-faint">
         转成卡片要给出处 —— 一个链接和它的标题。拿不出出处就说明这条还只是一条教训，
         而它已经在这里了。
       </p>
@@ -222,15 +222,15 @@ function PromoteForm({
           disabled={!ready || busy}
           onClick={() => onSubmit(url.trim(), title.trim())}
           data-testid="lesson-promote-submit"
-        >
+ >
           {busy ? '写入中…' : '署名'}
         </Button>
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="text-[11px] text-ink-faint hover:text-ink-soft"
+          className="type-badge text-ink-faint hover:text-ink-soft"
           data-testid="lesson-promote-cancel"
-        >
+ >
           先不转
         </button>
       </div>

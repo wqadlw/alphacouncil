@@ -159,10 +159,14 @@ export default function PoolPage() {
       width: '150px',
       sortValue: (row) => row.entry.code,
       render: (row) => (
+        // No data-[motion=l1] here: the <tr> that DataTable renders already
+        // carries it, and a transition is inherited, so this link's underline
+        // fades together with the row's background. TodayPage's ticker column is
+        // the same shape and is marked the same way.
         <a
           href={instrumentHref(row.entry.market, row.entry.code)}
           className="num text-ink no-underline hover:text-navy hover:underline"
-        >
+ >
           {displayCode(row.entry.market, row.entry.code)}
         </a>
       ),
@@ -187,7 +191,7 @@ export default function PoolPage() {
       numeric: true,
       sortValue: (row) => row.entry.since,
       render: (row) => (
-        <span className="text-[12px] text-ink-faint">
+        <span className="type-meta text-ink-faint">
           {formatMoment(row.entry.since)}
           <span className="ml-1">#{row.entry.last_event_id}</span>
         </span>
@@ -218,7 +222,7 @@ export default function PoolPage() {
             size="sm"
             disabled={busy}
             onClick={() => void handleRemove(row.entry)}
-          >
+ >
             {busy ? '处理中…' : '不再关注'}
           </Button>
         )
@@ -231,7 +235,7 @@ export default function PoolPage() {
       {/* The frame header says 关注池. This line is the page's argument, which
           the header cannot carry: a reader who has not yet written a reason
           needs to know why this field is not optional. */}
-      <p className="border-b border-rule px-4 py-2.5 text-[13px] text-ink-soft">
+      <p className="border-b border-rule px-4 py-2.5 type-prose text-ink-soft">
         你关注什么，以及<span className="text-ink">你为什么关注它</span>。
         <span className="text-ink-faint">
           {' '}
@@ -242,7 +246,7 @@ export default function PoolPage() {
       <form onSubmit={handleSubmit} className="border-b border-rule px-4 py-3">
         <div className="flex flex-wrap items-end gap-2">
           <label className="flex w-[200px] flex-col gap-1">
-            <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+            <span className="type-meta caps text-ink-faint">
               标的代码
             </span>
             <Input
@@ -255,7 +259,7 @@ export default function PoolPage() {
           </label>
 
           <label className="flex min-w-[260px] flex-1 flex-col gap-1">
-            <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+            <span className="type-meta caps text-ink-faint">
               关注理由 <span className="text-[color:var(--color-up)]">必填</span>
             </span>
             <Input
@@ -270,7 +274,7 @@ export default function PoolPage() {
           </Button>
         </div>
 
-        <p className="mt-1.5 text-[12px] text-ink-faint">
+        <p className="mt-1.5 type-prose text-ink-faint">
           {reasonMissing
             ? '理由为空时按钮不可用 —— 这是唯一不能跳过的一步。'
             : '提交后理由会进入只增不改的事件日志：无法编辑，只能追加一条修改记录。'}
@@ -279,7 +283,7 @@ export default function PoolPage() {
         {formError ? (
           <div className="mark mt-2 border-l-2 border-l-[color:var(--color-up)] py-1">
             <p className="text-[color:var(--color-up)]">{formError.message}</p>
-            {formError.fix ? <p className="text-[12px] text-ink-soft">{formError.fix}</p> : null}
+            {formError.fix ? <p className="type-prose text-ink-soft">{formError.fix}</p> : null}
           </div>
         ) : null}
         {notice ? (
@@ -291,17 +295,17 @@ export default function PoolPage() {
 
       <section className="mt-4">
         <div className="flex items-baseline gap-2 px-4 pb-1.5">
-          <h2 className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">关注中</h2>
+          <h2 className="type-meta caps text-ink-faint">关注中</h2>
           {/* A count of what is on screen, not a target to climb (red line 11). */}
           {entries.length > 0 ? (
-            <span className="num text-[11px] text-ink-faint">{entries.length}</span>
+            <span className="num type-badge text-ink-faint">{entries.length}</span>
           ) : null}
           <Button
             size="sm"
             className="ml-auto"
             onClick={() => void refreshQuotes()}
             disabled={refreshingQuotes || entries.length === 0}
-          >
+ >
             {refreshingQuotes ? '读取中…' : '刷新行情'}
           </Button>
         </div>
@@ -309,14 +313,14 @@ export default function PoolPage() {
 
         {loading ? (
           <div className="px-4 py-3" data-testid="pool-loading">
-            <p className="text-[13px] text-ink-faint">读取中…</p>
+            <p className="type-prose text-ink-faint">读取中…</p>
           </div>
         ) : null}
 
         {loadError ? (
           <div className="mark border-l-2 border-l-[color:var(--color-up)] px-4 py-2">
-            <p className="text-[13px] text-[color:var(--color-up)]">{loadError}</p>
-            <p className="text-[12px] text-ink-soft">
+            <p className="type-prose text-[color:var(--color-up)]">{loadError}</p>
+            <p className="type-prose text-ink-soft">
               后端未启动时会出现这一行 —— 它不会静默显示成「空」。
             </p>
           </div>
@@ -324,15 +328,15 @@ export default function PoolPage() {
 
         {quotesError ? (
           <div className="mark border-l-2 border-l-[color:var(--color-up)] px-4 py-2">
-            <p className="text-[13px] text-[color:var(--color-up)]">{quotesError}</p>
-            <p className="text-[12px] text-ink-soft">
+            <p className="type-prose text-[color:var(--color-up)]">{quotesError}</p>
+            <p className="type-prose text-ink-soft">
               行情没能读取，但关注池本身不受影响 —— 记录与报价是两个请求。
             </p>
           </div>
         ) : null}
 
         {!loading && !loadError && entries.length === 0 ? (
-          <p className="px-4 py-3 text-[13px] text-ink-soft">
+          <p className="px-4 py-3 type-prose text-ink-soft">
             关注池是空的。你还没有关注任何标的 —— 上面加一个，并写下你为什么关注它。
           </p>
         ) : null}
@@ -344,13 +348,13 @@ export default function PoolPage() {
         />
 
         {!loading && entries.length > 0 ? (
-          <p className="px-4 pt-2 text-[12px] text-ink-faint">
+          <p className="px-4 pt-2 type-prose text-ink-faint">
             点代码进标的页 —— 那里有你写下过的每一句话。
           </p>
         ) : null}
       </section>
 
-      <footer className="mt-6 border-t border-rule px-4 pt-3 text-[12px] text-ink-faint">
+      <footer className="mt-6 border-t border-rule px-4 pt-3 type-meta text-ink-faint">
         这一页只显示事实：你关注了什么、为什么、什么时候、现在什么价。
         <span className="text-ink-soft"> 它不显示收益率，也不给你推荐。</span>
         <br />

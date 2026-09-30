@@ -164,7 +164,7 @@ export default function VaultPage() {
 
   return (
     <div className="pb-8">
-      <p className="border-b border-rule px-4 py-2.5 text-[12px] text-ink-faint">
+      <p className="border-b border-rule px-4 py-2.5 type-prose text-ink-faint">
         卡片是<span className="text-ink-soft">你愿意署名的判断</span>，必须有出处；
         笔记是<span className="text-ink-soft">你写下来的东西</span>，可以没有。
         <span className="text-ink-faint"> 两者都在这里，因为它们是一件事的两面。</span>
@@ -178,7 +178,7 @@ export default function VaultPage() {
             variant={view === entry.key ? 'primary' : 'ghost'}
             onClick={() => setView(entry.key)}
             data-testid={`vault-view-${entry.key}`}
-          >
+ >
             {entry.label}
           </Button>
         ))}
@@ -206,7 +206,7 @@ export default function VaultPage() {
             variant="ghost"
             onClick={() => setSearchText('')}
             data-testid="vault-search-clear"
-          >
+ >
             清除
           </Button>
         ) : null}
@@ -218,7 +218,7 @@ export default function VaultPage() {
           variant={tag === null ? 'primary' : 'ghost'}
           onClick={() => setTag(null)}
           data-testid="vault-tag-none"
-        >
+ >
           不限标签
         </Button>
         {(tags.data ?? []).map((name) => (
@@ -228,7 +228,7 @@ export default function VaultPage() {
             variant={tag === name ? 'primary' : 'ghost'}
             onClick={() => setTag(name)}
             data-testid={`vault-tag-${name}`}
-          >
+ >
             {name}
           </Button>
         ))}
@@ -244,13 +244,13 @@ export default function VaultPage() {
         someone conclude the note does not exist.
       */}
       {query !== '' ? (
-        <p className="px-4 pt-2 text-[12px] text-ink-faint" data-testid="vault-search-note">
+        <p className="px-4 pt-2 type-prose text-ink-faint" data-testid="vault-search-note">
           正在标题与正文里找「{query}」。标签不参与这次搜索 —— 标签用它上面的按钮筛。
         </p>
       ) : null}
 
       {notes.error ? (
-        <p className="px-4 py-2 text-[13px] text-[color:var(--color-up)]" data-testid="vault-error">
+        <p className="px-4 py-2 type-prose text-[color:var(--color-up)]" data-testid="vault-error">
           {notes.error}
         </p>
       ) : null}
@@ -283,7 +283,7 @@ export default function VaultPage() {
           <LessonRecallView onDone={() => void notes.reload()} />
         </>
       ) : notes.loading ? (
-        <p className="px-4 py-3 text-[13px] text-ink-faint">读取中…</p>
+        <p className="px-4 py-3 type-prose text-ink-faint">读取中…</p>
       ) : (
         <>
           {/*
@@ -419,7 +419,7 @@ function NoteComposer({
         <Button size="sm" onClick={onToggle} data-testid="note-compose-open">
           记一条
         </Button>
-        <p className="mt-1.5 text-[12px] text-ink-faint">
+        <p className="mt-1.5 type-prose text-ink-faint">
           宏观判断、方法、教训、读书笔记 —— 都不用出处。
         </p>
       </div>
@@ -429,7 +429,7 @@ function NoteComposer({
   return (
     <section className="max-w-[720px]" data-testid="note-composer">
       <div className="flex items-baseline gap-2 pb-1.5">
-        <h2 className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">记一条</h2>
+        <h2 className="type-meta caps text-ink-faint">记一条</h2>
         {/*
           The close control. Present even when the form opened by itself, because a
           reader who landed on it by accident needs a way out that is not "reload
@@ -438,9 +438,9 @@ function NoteComposer({
         <button
           type="button"
           onClick={onToggle}
-          className="text-[11px] text-ink-faint hover:text-ink-soft"
+          className="type-badge text-ink-faint hover:text-ink-soft data-[motion=l1]"
           data-testid="note-compose-close"
-        >
+ >
           收起
         </button>
       </div>
@@ -488,19 +488,19 @@ function NoteComposer({
         </div>
       </div>
 
-      <p className="mt-1 text-[12px] text-ink-faint">
+      <p className="mt-1 type-prose text-ink-faint">
         {titleMissing || bodyMissing
           ? '标题和正文都要有 —— 「我先记一句免得忘了」是可以的，正文不能全空。'
           : '没有出处也能记。卡片才需要出处，因为它是一条你愿意署名的判断。'}
       </p>
 
       {error ? (
-        <p className="mark mt-1.5 border-l-2 border-l-[color:var(--color-up)] py-1 text-[13px] text-[color:var(--color-up)]" data-testid="note-error">
+        <p className="mark mt-1.5 border-l-2 border-l-[color:var(--color-up)] py-1 type-prose text-[color:var(--color-up)]" data-testid="note-error">
           {error}
         </p>
       ) : null}
       {notice ? (
-        <p className="mark mt-1.5 border-l-2 border-l-navy py-1 text-[13px] text-navy" data-testid="note-notice">
+        <p className="mark mt-1.5 border-l-2 border-l-navy py-1 type-prose text-navy" data-testid="note-notice">
           {notice}
         </p>
       ) : null}
@@ -540,12 +540,12 @@ function NoteList({
       header: '标的',
       width: '120px',
       render: (n) => (
-        <span className="num text-[12px] text-ink-soft">
+        <span className="num type-meta text-ink-soft">
           {n.symbols.length === 0 ? '—' : n.symbols.map((s) => displayCode(s.market, s.code)).join(' ')}
         </span>
       ),
     },
-    { key: 'updated', header: '改于', numeric: true, sortValue: (n) => n.updated_at, render: (n) => <span className="text-[12px] text-ink-faint">{formatMoment(n.updated_at)}</span> },
+    { key: 'updated', header: '改于', numeric: true, sortValue: (n) => n.updated_at, render: (n) => <span className="type-meta text-ink-faint">{formatMoment(n.updated_at)}</span> },
   ]
 
   if (notes.length === 0) {
@@ -559,16 +559,16 @@ function NoteList({
         <Rule />
         {query !== '' ? (
           <div className="px-4 py-3" data-testid="vault-no-match">
-            <p className="text-[13px] text-ink-soft">
+            <p className="type-prose text-ink-soft">
               标题与正文里没有「{query}」。
             </p>
-            <p className="mt-1 text-[12px] text-ink-faint">
+            <p className="mt-1 type-prose text-ink-faint">
               搜索不读标签 —— 换个标签按钮试试，或者把词写得更长一点
               （两个字也能搜，但「流动性」比「流动」更容易命中）。
             </p>
           </div>
         ) : (
-          <p className="px-4 py-3 text-[13px] text-ink-soft" data-testid="vault-empty">
+          <p className="px-4 py-3 type-prose text-ink-soft" data-testid="vault-empty">
             这里还没有笔记。点下面的「记一条」—— 宏观判断、方法、教训、读书笔记，都不用出处。
           </p>
         )}
@@ -579,8 +579,8 @@ function NoteList({
   return (
     <section className="mt-3">
       <div className="flex items-baseline gap-2 px-4 pb-1.5">
-        <h2 className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">笔记</h2>
-        <span className="num text-[11px] text-ink-faint">{notes.length}</span>
+        <h2 className="type-meta caps text-ink-faint">笔记</h2>
+        <span className="num type-badge text-ink-faint">{notes.length}</span>
       </div>
       <Rule />
       <DataTable<Note>
@@ -599,10 +599,10 @@ function CardList() {
   return (
     <section className="mt-3">
       <div className="flex items-baseline gap-2 px-4 pb-1.5">
-        <h2 className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">卡片</h2>
+        <h2 className="type-meta caps text-ink-faint">卡片</h2>
       </div>
       <Rule />
-      <p className="px-4 py-3 text-[13px] text-ink-soft">
+      <p className="px-4 py-3 type-prose text-ink-soft">
         卡片在标的页上写 —— 那里知道它说的是哪只票。有出处的判断才进卡片层。
       </p>
     </section>
@@ -671,8 +671,8 @@ function NoteDetail({ note, onChanged }: { note: Note; onChanged: () => void }) 
   return (
     <section className="mt-4 border-t border-rule pt-3" data-testid="note-detail">
       <div className="flex flex-wrap items-baseline gap-2 px-4 pb-1.5">
-        <h2 className="serif text-[15px] text-ink">{note.title}</h2>
-        <span className="num ml-auto text-[11px] text-ink-faint">
+        <h2 className="serif type-claim text-ink">{note.title}</h2>
+        <span className="num ml-auto type-badge text-ink-faint">
           写于 {formatMoment(note.created_at)}
           {note.as_of ? ` · 数据截至 ${note.as_of}` : ''}
         </span>
@@ -690,21 +690,21 @@ function NoteDetail({ note, onChanged }: { note: Note; onChanged: () => void }) 
           text you see back, and `test_the_markdown_comes_back_byte_for_byte`
           holds both ends.
         */}
-        <pre className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-ink" data-testid="note-preview">
+        <pre className="whitespace-pre-wrap font-sans type-prose text-ink" data-testid="note-preview">
           {note.body}
         </pre>
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">标签</span>
+          <span className="type-meta caps text-ink-faint">标签</span>
           {note.tags.map((t) => (
             <button
               key={t}
               type="button"
               onClick={() => void dropTag(t)}
-              className="rounded-[2px] border border-rule px-1.5 py-px text-[11px] text-ink-soft data-[motion=l1] hover:border-[color:var(--color-up)] hover:text-[color:var(--color-up)]"
+              className="rounded-[2px] border border-rule px-1.5 py-px type-badge text-ink-soft data-[motion=l1] hover:border-[color:var(--color-up)] hover:text-[color:var(--color-up)]"
               title="点击移除"
               data-testid={`note-tag-${t}`}
-            >
+ >
               {t} ×
             </button>
           ))}
@@ -723,7 +723,7 @@ function NoteDetail({ note, onChanged }: { note: Note; onChanged: () => void }) 
         </div>
 
         {note.links.length > 0 ? (
-          <p className="mt-2 text-[12px] text-ink-soft">
+          <p className="mt-2 type-prose text-ink-soft">
             指向：
             {note.links.map((l) => (
               <span key={`${l.to_kind}:${l.to_id}`} className="num ml-1 text-ink-faint">
@@ -742,12 +742,12 @@ function NoteDetail({ note, onChanged }: { note: Note; onChanged: () => void }) 
             Two things this control deliberately lacks: a count of notes *not* yet
             enrolled (the vault never computes one, because computing it would
             mean inventing a tally in order to refuse to show it), and an
-            "enrol all" (which would undo the per-note decision the design is for).
+"enrol all" (which would undo the per-note decision the design is for).
           */}
           {enrolled === null ? (
-            <span className="text-[12px] text-ink-faint">在查它是不是在队列上…</span>
+            <span className="type-meta text-ink-faint">在查它是不是在队列上…</span>
           ) : enrolled ? (
-            <p className="text-[12px] text-ink-soft" data-testid="note-enrolled">
+            <p className="type-prose text-ink-soft" data-testid="note-enrolled">
               这条在复习队列上 —— 到时候它会自己回来找你。
             </p>
           ) : (
@@ -757,7 +757,7 @@ function NoteDetail({ note, onChanged }: { note: Note; onChanged: () => void }) 
           )}
         </div>
 
-        {error ? <p className="mt-1 text-[12px] text-[color:var(--color-up)]">{error}</p> : null}
+        {error ? <p className="mt-1 type-prose text-[color:var(--color-up)]">{error}</p> : null}
       </div>
     </section>
   )

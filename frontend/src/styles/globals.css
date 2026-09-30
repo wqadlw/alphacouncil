@@ -75,6 +75,135 @@ body {
   padding-left: 10px;
 }
 
+/* ── The type scale (guide §2.2) ─────────────────────────────────────────────
+   Authority: `docs/FRONTEND_STYLE_GUIDE.md` §2.2, the table that **adjudicated**
+   the conflict between this product's 11/12px chrome and a sibling project's
+   "body ≥ 13px". The ruling was not an average — it was a division of labour:
+
+   > 要读成段落的字不得小于 13px；表格与标签可以小，因为它们不是段落。
+
+   ⭐ **Why these are classes and not a comment.** The table was in the repo from
+   2026-09-28 and the project had **255** hand-written `text-[11px]` / `text-[12px]`
+   / `text-[13px]` against **one** `text-[17px]` — and that one was the page `<h1>`
+   at 17px, while §2.2 gives 页面标题 **22/30**. A rule violated 255 times is not a
+   rule; it is a document. And `grep` cannot grade `text-[11px]`, because a grep
+   cannot tell a table header from a paragraph.
+
+   So the mechanical rule is the other way round and much stronger:
+   **no component writes a font size at all.** Every size is one of the classes
+   below, which puts the judgement about what a given piece of text *is* here, once,
+   instead of at every call site. `V-12` in `styleguide.test.ts` enforces it.
+
+   ⭐ **These are `@utility`, not loose classes, and the difference is not cosmetic.**
+   The first version wrote `.type-prose { … }` here, plainly, and it worked — and
+   then `V-12`'s assertions, which matched a class, could not tell the two apart.
+   Registering them with Tailwind v4's `@utility` buys two concrete things:
+
+   1. **Variants.** `md:type-prose` and `hover:type-claim` become expressible. A
+      loose class in this file gets no variants at all — and losing a variant later
+      is the kind of gap nobody notices until someone tries `sm:` on something.
+   2. **The right cascade layer.** A loose rule written *after* the
+      `@import "tailwindcss"` at the top of this file sits **outside every cascade
+      layer**, so at equal specificity it outranks the entire utilities layer. ⭐
+      That is the source-order hazard the migration kept running into: a size class
+      silently beating a `leading-relaxed` next to it. Inside the layer they are
+      peers, and the conflict becomes a decision instead of an accident.
+
+   ⭐ **These are sizes. They are deliberately not families.** Putting
+   `font-family: var(--font-serif)` on `type-page-title` and `type-claim*` looks
+   right — §2.1 does say serif on 标题与主张 — and it was wrong for a reason the
+   migration found within the hour: **a claim is not always words.**
+   `RetrospectivePage` renders a score and `StopLossPrompt` renders a number of
+   years, both already carrying `num` (mono, tabular — rule 2), and a class
+   declaring both size and family wins over `num` at equal specificity. So three
+   numbers would have been set in Songti, with nothing in the diff to say so.
+
+   ⭐ So §2.1's rule stays where it already lived, in `.serif` (a plain class, used
+   34 times, and deliberately **not** an `@utility` because it is not a size): a
+   size says how big, `.serif` says who is speaking. Two questions, two homes.
+   ────────────────────────────────────────────────────────────────────────── */
+@utility type-page-title {
+  font-size: 22px;
+  line-height: 30px;
+}
+
+@utility type-claim {
+  /* The low end of §2.2's 「17–20 / 26」. A criterion sentence is one to two lines,
+     and 26px leading is what the table specifies for it. */
+  font-size: 17px;
+  line-height: 26px;
+}
+
+@utility type-claim-lg {
+  /* The high end of the same row: a quadrant judgement, or a card's own sentence
+     about the company, which is the longest claim in the product. */
+  font-size: 20px;
+  line-height: 28px;
+}
+
+/* ⭐ **An extension to §2.2, not a rule from it.** The table has seven rows and none
+   of them is 「本页最大的那个数字」 — the quote on an instrument page, which the
+   product has always rendered at 24px and which `.type-claim-lg` (20) would have made
+   *smaller*. ⭐ The alternative was to leave `text-[24px]` at the call site, which is
+   the exact thing the scale exists to end: one hand-written size, exempt because it
+   is inconvenient. So the row is written down, and `V-12` pins it.
+
+   §2.2 stays otherwise untouched — this is an addition the migration forced, and the
+   spec 045 changelog says so rather than leaving the table looking complete when it
+   never had this row. 28px leading rather than §2.2's absent answer: a quote is a
+   single line, and the tight leading is what stops it reading as a headline. */
+@utility type-display {
+  font-size: 24px;
+  line-height: 28px;
+}
+
+@utility type-prose {
+  /* The reader's own sentences: a reason, contrary evidence, a retrospective note.
+     §2.2 marks this row ⛔ — 11/12px is **not** allowed here. */
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+@utility type-cell {
+  /* A table cell. 13px because §2.2 gives it 13/18 — a cell is legible text, not
+     chrome, and rule 6's density licence does not cover making numbers unreadable. */
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+@utility type-meta {
+  /* Table headers, metadata and counts: 12/16. */
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+@utility type-badge {
+  /* 11/14 — a badge. The smallest size in the product. */
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 14px;
+}
+
+/* ⭐ `caps` is a **modifier, not a size**, and it is deliberately not folded into
+   `.type-meta`. §2.2's table has two columns — a size, and whether 11/12px is
+   allowed there — and 「全大写 + letter-spacing 0.06em」 belongs to the *look* of
+   chrome rather than to how big it is. Folding it in would have made "small
+   chrome" and "all-caps chrome" the same thing, so a 12px **input label** — which
+   is a control you read, not a table header — would come out shouted.
+
+   ⭐ And the measurement is why: of the 106 hand-written `text-[12px]` in the tree,
+   **53 were on a `<p>`**, which §2.2 marks ⛔ (prose may not be 11/12px). Those are
+   prose and they became `.type-prose`. The ones that are genuinely chrome are the
+   other half, and only some of *those* are table headers. One class could not have
+   been right for both groups — which is the whole reason the scale exists. */
+@utility caps {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 input,
 textarea,
 button,
@@ -115,20 +244,50 @@ select {
 }
 
 /* ── Motion (§7) ────────────────────────────────────────────────────────────
-   Two levels only. L1 micro-feedback at 100ms, L2 state transition at 200ms.
-   There is deliberately **no entrance animation**: the product spec forbids it
-   by name ("每次打开都等 = 浪费时间，且像 Landing Page"), so there is no keyframe
-   here to reach for by accident.
+   Two levels only, and the guide is explicit about what each is for:
+
+   - **L0 · none** — the data itself. Table numbers, charts and card bodies never
+     move. ⭐ This is the level rule 7 is really about: 动效只用来「说明状态变了」.
+   - **L1 · 100–120ms** — hover / focus / press. You caused it, you see it.
+   - **L2 · 180–220ms** — a state transition: a Drawer arriving, a panel opening.
+
+   ⭐ **A Drawer sliding in is not a banned 「入场动画」.** §7.2 names what it bans —
+   stagger, fade-in-up, shimmer, count-up, overshoot, parallax — and those are all
+   *decorative* motion on a page the reader did not ask to change. §7.1 lists
+   「Drawer 滑入 / 面板展开」 as **the** L2 use case by name. So a state change the
+   reader triggered may be transitioned, and a page that arrives by itself may not.
+   That distinction is the whole of §7, and it is why this file has no `@keyframes`
+   (V-06) — an entrance animation is the shape you build when you want one.
+
+   ⭐ **L2 does not say `transition: all`.** `all` animates every property that later
+   becomes animatable, including ones a later edit adds: a `max-height`, a `grid-
+   template-rows`, a custom property. Layout and paint properties are expensive and
+   they are exactly the ones §7 never had in mind. The properties are named.
    ────────────────────────────────────────────────────────────────────────── */
 [data-motion='l1'] {
   transition:
     background-color 100ms cubic-bezier(0.2, 0, 0.2, 1),
     border-color 100ms cubic-bezier(0.2, 0, 0.2, 1),
-    color 100ms cubic-bezier(0.2, 0, 0.2, 1);
+    color 100ms cubic-bezier(0.2, 0, 0.2, 1),
+    /* ⭐ `text-decoration-color`, added by the A5 pass. Not decoration — the
+       underline is how this product marks a link (eleven of the fourteen `hover:`
+       sites are a bare `hover:underline`), and ⭐ **`text-decoration-color` is what
+       makes an underline fade at all**: `text-decoration` itself is not animatable,
+       so the underline used to appear at full opacity on the first frame while the
+       text colour was still easing, and the two read as two separate events.
+
+       ⭐ It matters here because A股 convention and this guide put **meaning in
+       colour** (规则 3, §2.3), and the guide is equally firm that the product is a
+       printed object. An underline that fades in over 100ms is what a printed page
+       does when your eye moves to a word; one that snaps is what a web page does.
+       Same 100ms, same easing as the other three, no new token. */
+    text-decoration-color 100ms cubic-bezier(0.2, 0, 0.2, 1);
 }
 
 [data-motion='l2'] {
-  transition: all 200ms cubic-bezier(0.2, 0, 0.2, 1);
+  transition:
+    opacity 200ms cubic-bezier(0.2, 0, 0.2, 1),
+    transform 200ms cubic-bezier(0.2, 0, 0.2, 1);
 }
 
 /* ⭐ 禁止 count-up（guide §7.2）：把"看数据"变成"看表演"，而且暗示收益。 */

@@ -177,7 +177,7 @@ export default function ReviewPage() {
       <div className={`px-4 py-6 ${READING_COLUMN}`}>
         {/* The whole confirmation. A date and a button. Nothing about the user. */}
         <div data-testid="review-receipt">
-          <p className="text-[13px] text-ink-soft">记下了。下次 {returnedAt.slice(0, 10)} 再来。</p>
+          <p className="type-prose text-ink-soft">记下了。下次 {returnedAt.slice(0, 10)} 再来。</p>
           <Button className="mt-4" onClick={next} data-testid="review-next">
             {index + 1 >= queue.length ? '看看还有没有' : '下一张'}
           </Button>
@@ -194,7 +194,7 @@ export default function ReviewPage() {
     <div className={`px-4 py-4 ${READING_COLUMN}`}>
       {/* A count, not a progress bar. Red line 11: there is no "1 / 8", and
           deliberately no list of what is left — see the file's header. */}
-      <h2 className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+      <h2 className="type-meta caps text-ink-faint">
         今天要过一遍的 <span className="num">{queue.length}</span> 张
       </h2>
 
@@ -204,11 +204,15 @@ export default function ReviewPage() {
               place in the product where large serif is unambiguously right: it
               is a quotation, not interface text. */}
           <div className="border-l-2 border-l-navy pl-4">
-            <p className="serif text-[20px] leading-relaxed">{claim.content}</p>
+            {/* ⭐ 象限判语 — the quadrant's own sentence, which §2.2 puts at the top of the
+          「卡片/主张/象限判语」 row (17–20 serif). It was already serif and already
+          larger than the page, at 20px, so this is the one claim site the migration
+          confirms rather than corrects. */}
+      <p className="serif type-claim-lg">{claim.content}</p>
           </div>
 
           {/* Always visible. Not folded, not hover-only (provenance rule). */}
-          <div className="mt-4 flex items-baseline gap-3 text-[12px] text-ink-soft">
+          <div className="mt-4 flex items-baseline gap-3 type-meta text-ink-soft">
             <span>来源 {claim.source_title}</span>
             <a
               href={claim.source_url}
@@ -216,13 +220,13 @@ export default function ReviewPage() {
               target="_blank"
               rel="noreferrer"
               data-testid="review-source"
-            >
+ >
               [打开]
             </a>
           </div>
         </article>
       ) : (
-        <p className="mt-5 text-[13px] text-ink-faint">读取这条主张…</p>
+        <p className="mt-5 type-prose text-ink-faint">读取这条主张…</p>
       )}
 
       {/*
@@ -254,7 +258,7 @@ export default function ReviewPage() {
       </div>
 
       {answerError ? (
-        <p className="mt-4 text-[12px] text-ink-soft" data-testid="answer-error">
+        <p className="mt-4 type-prose text-ink-soft" data-testid="answer-error">
           {answerError}
         </p>
       ) : null}

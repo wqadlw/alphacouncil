@@ -71,7 +71,7 @@ export default function LessonComposer({
           <Button size="sm" onClick={() => setOpen(true)} data-testid="lesson-open">
             记一条教训
           </Button>
-          <span className="text-[12px] text-ink-faint">
+          <span className="type-meta text-ink-faint">
             这次复盘教出来的东西 —— 记下就入队。
           </span>
         </div>
@@ -82,15 +82,15 @@ export default function LessonComposer({
   return (
     <section className="mt-5" data-testid="lesson-composer-open-panel">
       <div className="flex items-baseline gap-2 pb-1.5">
-        <h2 className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+        <h2 className="type-meta caps text-ink-faint">
           记一条教训
         </h2>
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="text-[11px] text-ink-faint hover:text-ink-soft"
+          className="type-badge text-ink-faint hover:text-ink-soft"
           data-testid="lesson-close"
-        >
+ >
           收起
         </button>
       </div>
@@ -110,10 +110,10 @@ export default function LessonComposer({
             disabled={blank || busy}
             onClick={() => void submit()}
             data-testid="lesson-submit"
-          >
+ >
             {busy ? '写入中…' : '记下'}
           </Button>
-          <span className="text-[12px] text-ink-faint">
+          <span className="type-meta text-ink-faint">
             {blank ? '一句话就够 —— 「下次先看批价」是可以的。' : '没有出处也能记。'}
           </span>
         </div>
@@ -126,24 +126,24 @@ export default function LessonComposer({
         is on the queue will look for the queue and not find a control. Saying why
         costs one line and removes the only question this screen can raise.
       */}
-      <p className="mt-1 text-[12px] text-ink-faint" data-testid="lesson-auto-note">
+      <p className="mt-1 type-prose text-ink-faint" data-testid="lesson-auto-note">
         记下就入队 —— 这是红线 7 要求的，所以没有「入队」这个按钮可点。
         队列在知识库页的「该复习」里。
       </p>
 
       {error ? (
         <p
-          className="mark mt-1.5 border-l-2 border-l-[color:var(--color-up)] py-1 text-[13px] text-[color:var(--color-up)]"
+          className="mark mt-1.5 border-l-2 border-l-[color:var(--color-up)] py-1 type-prose text-[color:var(--color-up)]"
           data-testid="lesson-error"
-        >
+ >
           {error}
         </p>
       ) : null}
       {notice ? (
         <p
-          className="mark mt-1.5 border-l-2 border-l-navy py-1 text-[13px] text-navy"
+          className="mark mt-1.5 border-l-2 border-l-navy py-1 type-prose text-navy"
           data-testid="lesson-notice"
-        >
+ >
           {notice}
         </p>
       ) : null}

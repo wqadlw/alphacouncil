@@ -239,7 +239,7 @@ export default function RetrospectivePage() {
           data-testid="retro-verdict"
           data-quadrant={verdict.quadrant}
           data-active="false"
-        >
+ >
           {/*
             The verdict, in the domain's words. Rendered, never composed here. In
             the dangerous quadrant this is the *only* line: there is no figure to
@@ -250,7 +250,7 @@ export default function RetrospectivePage() {
             The count is a fact about the reader and would still be a digit in a
             quadrant where the whole body must contain none.
           */}
-          <p className="serif text-[18px] leading-relaxed" data-testid="retro-guidance">
+          <p className="serif type-claim-lg" data-testid="retro-guidance">
             {verdict.guidance}
           </p>
           <Button className="mt-4" onClick={next} data-testid="retro-next">
@@ -280,7 +280,7 @@ export default function RetrospectivePage() {
       {/* A count in a sentence, not a progress bar (red line 11). This state is
           allowed digits: the assertion only covers the dangerous-quadrant
           verdict, where there is nothing to count. */}
-      <h2 className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+      <h2 className="type-meta caps text-ink-faint">
         到期要看的 <span className="num">{queue.length}</span> 条决策
       </h2>
 
@@ -289,11 +289,19 @@ export default function RetrospectivePage() {
           {/* The reader's own words, in serif (rule 1). The graded text is the
               point of this page, so it is the largest thing in it. */}
           <div className="border-l-2 border-l-navy pl-4">
-            <p className="serif text-[18px] leading-relaxed" data-testid="retro-rationale">
+            {/* ⭐ The **rationale**, not the judgement. §2.2 keeps those apart: 判语 is the
+          17–20 serif claim row, 正文散文 (理由) is 13/20 with ⛔ on 11/12px — and §2.1
+          puts sans on everything that is not a title or a claim. This was
+          `serif text-[18px]`, i.e. one step *larger* than the guidance above it and
+          in the wrong face, which inverted the hierarchy of the section. ⭐ It gets
+          smaller, and `serif` comes off rather than being overridden, so the diff
+          says what happened instead of leaving a class that no longer does
+          anything. */}
+      <p className="type-prose" data-testid="retro-rationale">
               {decision.rationale}
             </p>
           </div>
-          <div className="mt-4 space-y-1.5 text-[13px] text-ink-soft">
+          <div className="mt-4 space-y-1.5 type-prose text-ink-soft">
             <p data-testid="retro-counter">反面：{decision.counter_evidence}</p>
             {decision.kill_criteria.map((criterion, i) => (
               <p key={i} data-testid="retro-kill">
@@ -304,13 +312,13 @@ export default function RetrospectivePage() {
           </div>
           <a
             href={instrumentHref(decision.market, decision.code)}
-            className="mt-3 inline-block text-[12px] text-navy no-underline hover:underline"
-          >
+            className="mt-3 inline-block type-meta text-navy no-underline hover:underline data-[motion=l1]"
+ >
             {decision.display} →
           </a>
         </article>
       ) : (
-        <p className="mt-5 text-[13px] text-ink-faint">读取这条决策…</p>
+        <p className="mt-5 type-prose text-ink-faint">读取这条决策…</p>
       )}
 
       {/*
@@ -333,14 +341,19 @@ export default function RetrospectivePage() {
       */}
       {graded ? (
         <div className="mt-7" data-testid="retro-score-given">
-          <p className="text-[12px] text-ink-faint">你当时给的过程分</p>
-          <p className="serif mt-1 text-[20px] text-ink num" data-testid="retro-score-value">
+          <p className="type-prose text-ink-faint">你当时给的过程分</p>
+          {/* A score is a **claim in numbers**, so it takes the claim's size — and keeps
+          `num` (mono, tabular, rule 2) because §2.2's row is about size, not face.
+          ⭐ Had `.type-claim-lg` also declared the family, this would be set in
+          Songti: a custom class declared after Tailwind's utilities wins at equal
+          specificity over `.num`. See the note on the scale in `globals.css`. */}
+      <p className="serif type-claim-lg mt-1 text-ink num" data-testid="retro-score-value">
             {(previous ?? verdict)?.process_score}
           </p>
         </div>
       ) : (
         <div className="mt-7" data-testid="retro-scores">
-          <p className="text-[12px] text-ink-faint">过程分：当时这个推理有多站得住？</p>
+          <p className="type-prose text-ink-faint">过程分：当时这个推理有多站得住？</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {[1, 2, 3, 4, 5].map((value) => (
               <Button
@@ -349,7 +362,7 @@ export default function RetrospectivePage() {
                 onClick={pickScore(value)}
                 data-testid={`retro-score-${value}`}
                 className="num w-11"
-              >
+ >
                 {value}
               </Button>
             ))}
@@ -359,12 +372,12 @@ export default function RetrospectivePage() {
 
       {current?.is_due ? (
         picked === null ? (
-          <p className="mt-5 text-[12px] text-ink-faint" data-testid="retro-pick-first">
+          <p className="mt-5 type-prose text-ink-faint" data-testid="retro-pick-first">
             先给过程分，再看结果。
           </p>
         ) : (
           <div className="mt-5" data-testid="retro-outcome">
-            <p className="text-[12px] text-ink-faint">然后：结果如何？</p>
+            <p className="type-prose text-ink-faint">然后：结果如何？</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {(['good', 'bad', 'failed'] as const).map((outcome) => (
                 <Button
@@ -372,12 +385,12 @@ export default function RetrospectivePage() {
                   disabled={submitting}
                   onClick={() => void submit({ process_score: picked, outcome })}
                   data-testid={`retro-outcome-${outcome}`}
-                >
+ >
                   {outcome === 'good' ? '结果好' : outcome === 'bad' ? '结果不好' : '失败了'}
                 </Button>
               ))}
             </div>
-            <p className="mt-2 text-[12px] text-ink-faint">
+            <p className="mt-2 type-prose text-ink-faint">
               只有「好 / 不好 / 失败」三档。系统不记金额，也不算收益率。
             </p>
           </div>
@@ -394,7 +407,7 @@ export default function RetrospectivePage() {
          * reader lands on a claim the page has just contradicted, and *then* finds a
          * form for writing a lesson.
          */
-        <p className="mt-5 text-[12px] text-ink-faint" data-testid="retro-already-done">
+        <p className="mt-5 type-prose text-ink-faint" data-testid="retro-already-done">
           你已经复盘过了。过程分和结果都不会再变 —— 复盘是只追加的。
         </p>
       ) : (
@@ -403,13 +416,13 @@ export default function RetrospectivePage() {
          * The process score above already submitted itself; there is nothing left
          * to fill in, so there is nothing to invite.
          */
-        <p className="mt-5 text-[12px] text-ink-faint" data-testid="retro-not-due">
+        <p className="mt-5 type-prose text-ink-faint" data-testid="retro-not-due">
           没到期，所以结果那一栏不存在 —— 提前打分会用结果污染过程分。
         </p>
       )}
 
       {previous ? (
-        <p className="mt-4 text-[12px] text-ink-faint" data-testid="retro-previous">
+        <p className="mt-4 type-prose text-ink-faint" data-testid="retro-previous">
           你在 {previous.reviewed_at.slice(0, 10)} 写过一条。
         </p>
       ) : null}
@@ -435,7 +448,7 @@ export default function RetrospectivePage() {
       ) : null}
 
       {submitError ? (
-        <p className="mt-4 text-[12px] text-ink-soft" data-testid="retro-error">
+        <p className="mt-4 type-prose text-ink-soft" data-testid="retro-error">
           {submitError}
         </p>
       ) : null}

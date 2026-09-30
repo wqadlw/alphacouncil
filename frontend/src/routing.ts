@@ -31,6 +31,13 @@
 
 import { useEffect, useState } from 'react'
 
+// ⭐ Type-only, so `routing.ts` does not pull the icon table (and therefore
+// `lucide-react`) into every module that reads a route. ⭐ `import type` matters
+// here beyond tidiness: this module is imported by `AppShellFrame`, the palette and
+// `api.ts`-adjacent code, and a value import would make the 4236-icon barrel a
+// dependency of the routing layer for every consumer.
+import type { IconName } from './components/ui/Icon'
+
 /**
  * A view the app can be on. Instrument pages are parsed, not enumerated.
  *
@@ -61,6 +68,18 @@ export interface RouteDef {
   label: string
   /** `document.title` suffix. Also digit-free. */
   title: string
+  /**
+   * ⭐ The nav glyph, by its **product** name rather than Lucide's — so this file
+   * reads 「复盘 = retrospective」 and not 「复盘 = History」. See `ui/Icon.tsx` for why
+   * the registry is keyed by meaning.
+   *
+   * ⭐ It lives here rather than in `AppShellFrame` because `ROUTES` is already the
+   * **single declaration of what a view is** (see this file's header), and a second
+   * table pairing names to glyphs would be the same fact in two homes — with the
+   * failure mode that someone adds a view, updates the nav, forgets the glyph table,
+   * and the row renders with a blank square.
+   */
+  icon: IconName
 }
 
 /**
@@ -71,11 +90,17 @@ export interface RouteDef {
  * when something has come due — which is the point of the product.
  */
 export const ROUTES: readonly RouteDef[] = [
-  { name: 'today', href: '#/', label: '今天', title: '今天' },
-  { name: 'pool', href: '#/pool', label: '关注池', title: '关注池' },
-  { name: 'review', href: '#/review', label: '复习', title: '复习' },
-  { name: 'retrospective', href: '#/retrospective', label: '复盘', title: '复盘' },
-  { name: 'vault', href: '#/vault', label: '知识库', title: '知识库' },
+  { name: 'today', href: '#/', label: '今天', title: '今天', icon: 'today' },
+  { name: 'pool', href: '#/pool', label: '关注池', title: '关注池', icon: 'pool' },
+  { name: 'review', href: '#/review', label: '复习', title: '复习', icon: 'review' },
+  {
+    name: 'retrospective',
+    href: '#/retrospective',
+    label: '复盘',
+    title: '复盘',
+    icon: 'retrospective',
+  },
+  { name: 'vault', href: '#/vault', label: '知识库', title: '知识库', icon: 'vault' },
 ]
 
 /**

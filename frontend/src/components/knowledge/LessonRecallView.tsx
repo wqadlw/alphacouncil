@@ -78,7 +78,7 @@ export default function LessonRecallView({ onDone }: { onDone?: () => void }) {
 
   if (rows.error) {
     return (
-      <p className="px-4 py-3 text-[13px] text-[color:var(--color-up)]" data-testid="lesson-queue-error">
+      <p className="px-4 py-3 type-prose text-[color:var(--color-up)]" data-testid="lesson-queue-error">
         {rows.error}
       </p>
     )
@@ -90,10 +90,10 @@ export default function LessonRecallView({ onDone }: { onDone?: () => void }) {
     return (
       <div data-testid="lesson-queue-empty">
         <Rule />
-        <p className="px-4 py-3 text-[13px] text-ink-soft" data-testid="lesson-queue-empty-text">
+        <p className="px-4 py-3 type-prose text-ink-soft" data-testid="lesson-queue-empty-text">
           教训这边没有到期的。
         </p>
-        <p className="px-4 pb-3 text-[12px] text-ink-faint">
+        <p className="px-4 pb-3 type-prose text-ink-faint">
           记一条教训就会自己进来 —— 不用点「入队」，那是红线 7 要求的。
         </p>
       </div>
@@ -103,7 +103,7 @@ export default function LessonRecallView({ onDone }: { onDone?: () => void }) {
   return (
     <section className="mt-3" data-testid="lesson-queue">
       <div className="flex items-baseline gap-2 px-4 pb-1.5">
-        <h2 className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">教训</h2>
+        <h2 className="type-meta caps text-ink-faint">教训</h2>
         {/*
           ⭐ No count next to the heading. A tally of how many are waiting is the
           number this product refuses, and putting it here would be the easiest
@@ -117,14 +117,14 @@ export default function LessonRecallView({ onDone }: { onDone?: () => void }) {
             key={row.lesson_id}
             className="border-b border-rule-soft px-4 py-3 last:border-b-0"
             data-testid="lesson-queue-item"
-          >
+ >
             <div className="flex items-baseline gap-2">
               <Badge>从一次复盘来的</Badge>
-              <span className="num shrink-0 text-[12px] text-ink-faint">
+              <span className="num shrink-0 type-meta text-ink-faint">
                 {formatAgo(row.due_at)}
               </span>
             </div>
-            <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-ink">
+            <p className="mt-1.5 whitespace-pre-wrap type-prose text-ink">
               {row.content}
             </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -136,7 +136,7 @@ export default function LessonRecallView({ onDone }: { onDone?: () => void }) {
                   onClick={() => void rate(row.lesson_id, rating.value)}
                   title={rating.hint}
                   data-testid={`lesson-rate-${rating.value}`}
-                >
+ >
                   {rating.label}
                 </Button>
               ))}
@@ -145,7 +145,7 @@ export default function LessonRecallView({ onDone }: { onDone?: () => void }) {
         ))}
       </ul>
       {error ? (
-        <p className="px-4 py-2 text-[12px] text-[color:var(--color-up)]">{error}</p>
+        <p className="px-4 py-2 type-prose text-[color:var(--color-up)]">{error}</p>
       ) : null}
     </section>
   )

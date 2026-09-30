@@ -31,7 +31,15 @@ import { cn } from '../../lib/cn'
 const buttonVariants = cva(
   // `data-motion="l1"` is the only transition in the system: a hover/focus
   // change. There is no press-scale or slide, because there is no press animation.
-  'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-[2px] border text-[13px] leading-none disabled:pointer-events-none disabled:text-ink-faint data-[motion=l1]',
+  // ⭐ No `leading-*` on any of the type classes' users, and that is deliberate
+  // rather than tidy. A size class declares its own line-height (§2.2 gives both),
+  // `globals.css` is declared after the `@import "tailwindcss"` that emits the
+  // utilities, and two single-class selectors are the same specificity — so a
+  // `leading-none` here would lose and then go on looking like it was still doing
+  // something. These were load-bearing before the scale existed; keeping them now is
+  // a lie with no visible cost, which is the worst kind, and `V-12` cannot see this
+  // one, so the diff had to.
+  'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-[2px] border type-prose disabled:pointer-events-none disabled:text-ink-faint data-[motion=l1]',
   {
     variants: {
       variant: {
@@ -45,7 +53,7 @@ const buttonVariants = cva(
         danger: 'border-[color:var(--color-up)] bg-transparent text-[color:var(--color-up)] hover:bg-[color:var(--color-up)] hover:text-paper',
       },
       size: {
-        sm: 'h-7 px-2 text-[12px]',
+        sm: 'h-7 px-2 type-meta',
         md: 'h-8 px-3',
         lg: 'h-9 px-4',
         icon: 'h-7 w-7 p-0',
@@ -74,7 +82,7 @@ Button.displayName = 'Button'
 /* ── Input ───────────────────────────────────────────────────────────────── */
 
 const inputVariants = cva(
-  'w-full rounded-[2px] border border-rule bg-surface px-2 py-1.5 text-[13px] text-ink outline-none placeholder:text-ink-faint focus:border-navy data-[motion=l1]',
+  'w-full rounded-[2px] border border-rule bg-surface px-2 py-1.5 type-prose text-ink outline-none placeholder:text-ink-faint focus:border-navy data-[motion=l1]',
   { variants: { size: { sm: 'h-7', md: 'h-8' } }, defaultVariants: { size: 'md' } },
 )
 
@@ -104,7 +112,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
     ref={ref}
     data-motion="l1"
     className={cn(
-      'w-full resize-y rounded-[2px] border border-rule bg-surface px-2 py-1.5 text-[13px] leading-relaxed text-ink outline-none placeholder:text-ink-faint focus:border-navy',
+      'w-full resize-y rounded-[2px] border border-rule bg-surface px-2 py-1.5 type-prose text-ink outline-none placeholder:text-ink-faint focus:border-navy',
       className,
     )}
     {...props}
@@ -117,7 +125,7 @@ Textarea.displayName = 'Textarea'
 const badgeVariants = cva(
   // ⛔ No `rounded-full` variant exists. §4.4: a row of coloured pills reads as a
   // generic BI tool, and this product is not one.
-  'inline-flex items-center gap-1 rounded-[2px] border px-1.5 py-px text-[11px] leading-[16px]',
+  'inline-flex items-center gap-1 rounded-[2px] border px-1.5 py-px type-badge',
   {
     variants: {
       tone: {
@@ -234,11 +242,17 @@ export function EmptyState({
 }) {
   return (
     <div className="px-4 py-10" data-testid="empty-state">
-      <p className="text-[13px] text-ink">{title}</p>
-      <p className="mt-1 text-[13px] text-ink-soft">{body}</p>
+      <p className="type-prose text-ink">{title}</p>
+      <p className="mt-1 type-prose text-ink-soft">{body}</p>
       {typeof action === 'object' && action !== null && 'href' in action ? (
         <p className="mt-3">
-          <a href={action.href} className="text-[13px] text-navy hover:underline">
+          {/* ⭐ L1 because this is the shape this product uses for every link it
+              cannot afford a border on, and `text-decoration-color` is the property
+              that makes the underline fade (see the A5 note in `globals.css`).
+              ⭐ Empty states are the least-hurried surface in the product — a reader
+              arrives after their library came up empty — so this is the one link that
+              most needs to look like an invitation rather than a jump. */}
+          <a href={action.href} className="type-prose text-navy hover:underline data-[motion=l1]">
             {action.label}
           </a>
         </p>
@@ -268,8 +282,8 @@ export function ErrorNote({ message, className }: { message: string; className?:
     <div
       className={cn('mark border-l-2 border-l-[color:var(--color-up)] py-1', className)}
       data-testid="error-note"
-    >
-      <p className="text-[13px] text-[color:var(--color-up)]">{message}</p>
+ >
+      <p className="type-prose text-[color:var(--color-up)]">{message}</p>
     </div>
   )
 }

@@ -134,23 +134,23 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
   return (
     <section className="mt-4 border-t border-rule pt-4">
       <div className="flex items-baseline gap-2 px-4 pb-1.5">
-        <h2 className="text-[11px] font-normal uppercase tracking-[0.06em] text-ink-faint">
+        <h2 className="type-meta font-normal caps text-ink-faint">
           我对它说过什么
         </h2>
         {cards.length > 0 ? (
-          <span className="num text-[11px] text-ink-faint">{cards.length} 张卡片</span>
+          <span className="num type-badge text-ink-faint">{cards.length} 张卡片</span>
         ) : null}
       </div>
       <div className="border-b border-rule" />
 
       {cards.length === 0 ? (
-        <p className="px-4 pt-2 text-[13px] text-ink-soft">
+        <p className="px-4 pt-2 type-prose text-ink-soft">
           还没有为它写过卡片。卡片是<strong className="text-ink">有来源的主张</strong> ——
           不是随手记，是「我这么说过，出处在这里」。
         </p>
       ) : (
         <div className="px-4 pt-2">
-          <p className="text-[12px] text-ink-faint">
+          <p className="type-prose text-ink-faint">
             新的在前。来源和主张一起留底，每一张都可以回去核对 ——
             来源打不开的卡片，主张也就失去了重量。
           </p>
@@ -171,10 +171,10 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
                   `getByRole('heading', { name: '已收敛的主张' })`, and a dimmed
                   region is exactly the kind of thing someone navigating by
                   region needs to be able to jump to. */}
-              <h3 className="text-[11px] font-normal uppercase tracking-[0.06em] text-ink-faint">
+              <h3 className="type-meta font-normal caps text-ink-faint">
                 已收敛的主张
               </h3>
-              <p className="mt-0.5 text-[12px] text-ink-faint">
+              <p className="mt-0.5 type-prose text-ink-faint">
                 已退出当前观点，保留留痕，方便回看当时为什么放弃。
               </p>
               <ol className="mt-1.5">
@@ -194,7 +194,7 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
 
       <form className="mt-4 px-4" onSubmit={handleSubmit}>
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+          <span className="type-meta caps text-ink-faint">
             记一张卡片（主张 + 出处）{' '}
             <span className="text-up">主张、出处标题、出处链接必填</span>
           </span>
@@ -208,7 +208,7 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
 
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">出处标题</span>
+            <span className="type-meta caps text-ink-faint">出处标题</span>
             <Input
               value={sourceTitle}
               onChange={(event) => setSourceTitle(event.target.value)}
@@ -216,7 +216,7 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+            <span className="type-meta caps text-ink-faint">
               出处链接（http/https）
             </span>
             <Input
@@ -236,25 +236,25 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
             screen-reader semantics for free and looks out of place; a hand-rolled
             one without that plumbing would be worse than out of place. */}
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-1.5 text-[12px] text-ink-soft">
+          <label className="flex items-center gap-1.5 type-meta text-ink-soft">
             立场
             <select
               value={claimType}
               onChange={(event) => setClaimType(event.target.value as ClaimType)}
-              className="rounded-[2px] border border-rule bg-surface px-1.5 py-1 text-[13px] outline-none focus:border-navy"
-            >
+              className="rounded-[2px] border border-rule bg-surface px-1.5 py-1 type-prose outline-none focus:border-navy"
+ >
               <option value="supporting">支持</option>
               <option value="challenging">质疑</option>
               <option value="neutral">中性</option>
             </select>
           </label>
-          <label className="flex items-center gap-1.5 text-[12px] text-ink-soft">
+          <label className="flex items-center gap-1.5 type-meta text-ink-soft">
             权重
             <select
               value={priority}
               onChange={(event) => setPriority(event.target.value)}
-              className="num rounded-[2px] border border-rule bg-surface px-1.5 py-1 text-[13px] outline-none focus:border-navy"
-            >
+              className="num rounded-[2px] border border-rule bg-surface px-1.5 py-1 type-prose outline-none focus:border-navy"
+ >
               {[1, 2, 3, 4, 5].map((value) => (
                 <option key={value} value={String(value)}>
                   {value}
@@ -262,13 +262,13 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
               ))}
             </select>
           </label>
-          <label className="flex items-center gap-1.5 text-[12px] text-ink-soft">
+          <label className="flex items-center gap-1.5 type-meta text-ink-soft">
             数据截至（可选）
             <input
               type="date"
               value={asOf}
               onChange={(event) => setAsOf(event.target.value)}
-              className="num rounded-[2px] border border-rule bg-surface px-1.5 py-1 text-[13px] outline-none focus:border-navy"
+              className="num rounded-[2px] border border-rule bg-surface px-1.5 py-1 type-prose outline-none focus:border-navy"
             />
           </label>
         </div>
@@ -277,7 +277,7 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
           <Button type="submit" variant="primary" disabled={!complete || busy}>
             {busy ? '写入中…' : '记下这张卡片'}
           </Button>
-          <span className="text-[12px] text-ink-faint">
+          <span className="type-meta text-ink-faint">
             {complete
               ? '卡片只增不改 —— 改主意是写一张新的，不是擦掉旧的。'
               : '主张、出处标题、出处链接缺一不可：没有出处的断言，过一个月连你自己都不知道它从哪来。'}
@@ -286,13 +286,13 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
 
         {error && (
           <div className="mark mt-2 border-l-2 border-l-up py-1">
-            <p className="text-[13px] text-up">{error.message}</p>
-            {error.fix && <p className="text-[12px] text-ink-soft">{error.fix}</p>}
+            <p className="type-prose text-up">{error.message}</p>
+            {error.fix && <p className="type-prose text-ink-soft">{error.fix}</p>}
           </div>
         )}
         {notice && (
           <div className="mark mt-2 border-l-2 border-l-navy py-1">
-            <p className="text-[13px] text-navy">{notice}</p>
+            <p className="type-prose text-navy">{notice}</p>
           </div>
         )}
       </form>
@@ -335,19 +335,19 @@ function CardItem({
   return (
     <li className={`mark border-b border-[color:var(--color-rule-soft)] border-l-2 py-1.5 ${tone}`}>
       <div className="flex flex-wrap items-baseline gap-x-3">
-        <span className="text-[13px] text-ink">
+        <span className="type-prose text-ink">
           {converged ? '已收敛' : (CLAIM_LABEL[card.claim_type] ?? card.claim_type)}
         </span>
-        <span className="num text-[12px] text-ink-faint">{formatMoment(card.created_at)}</span>
-        <span className="num text-[12px] text-ink-faint">权重 {card.priority}</span>
+        <span className="num type-meta text-ink-faint">{formatMoment(card.created_at)}</span>
+        <span className="num type-meta text-ink-faint">权重 {card.priority}</span>
         {card.as_of && (
-          <span className="num text-[12px] text-ink-faint">数据截至 {card.as_of}</span>
+          <span className="num type-meta text-ink-faint">数据截至 {card.as_of}</span>
         )}
         {!converged &&
           (aiGenerated ? (
-            <span className="text-[12px] text-warn">AI 生成 · 待核实</span>
+            <span className="type-meta text-warn">AI 生成 · 待核实</span>
           ) : (
-            <span className="text-[12px] text-ink-faint">本人核对过</span>
+            <span className="type-meta text-ink-faint">本人核对过</span>
           ))}
       </div>
 
@@ -355,23 +355,36 @@ function CardItem({
           16px; the step down is because a card row now carries a status line, a
           provenance line and up to two event lines, and 16px made a page of cards
           feel like a page of headlines. */}
-      <p className="serif mt-0.5 text-[15px] leading-relaxed">{card.content}</p>
+      {/* ⭐ THE claim. §2.2's 「卡片/主张/象限判语 17–20 / 26，衬线」 row, and it was
+          rendered at `text-[15px] leading-relaxed` — three pixels under the low end of
+          the range the guide adjudicated, and at 1.625 leading rather than the 26px
+          the table gives. A card is a piece of printed argument whose payload is a
+          sentence the reader wrote about a company, and at 15px it was reading as
+          another row of metadata. */}
+      <p className="serif type-claim mt-0.5">{card.content}</p>
 
-      <div className="mt-0.5 text-[12px] text-ink-soft">
+      <div className="mt-0.5 type-meta text-ink-soft">
         出处：
+        {/* ⭐ L1, and this one has a second reason beyond the underline. A source link
+            is the one link in this product that **leaves the product**, and it is the
+            link whose absence would quietly turn a claim into an assertion. ⭐ So the
+            hover state has to say 「this is a place you can go check」 — and the mark
+            for that in this guide is a 2px left rule or a border (规则 5), not colour.
+            Underline + fade is the compromise available for an inline source, and the
+            fade is what separates it from a printed citation. */}
         <a
-          className="text-navy no-underline hover:underline"
+          className="text-navy no-underline hover:underline data-[motion=l1]"
           href={card.source_url}
           target="_blank"
           rel="noreferrer"
-        >
+ >
           {card.source_title}
         </a>
         <span className="num text-ink-faint"> · 采集于 {formatMoment(card.captured_at)}</span>
       </div>
 
       {card.events.length > 0 && (
-        <ul className="mt-1 space-y-0.5 text-[12px] text-ink-faint">
+        <ul className="mt-1 space-y-0.5 type-meta text-ink-faint">
           {card.events.map((event) => (
             <li key={event.id} className="num">
               {event.event_type === 'verified' ? (
@@ -400,7 +413,7 @@ function CardItem({
               setShowForm((value) => !value)
               setFormError(null)
             }}
-          >
+ >
             收敛这张卡
           </Button>
         </div>
@@ -410,9 +423,9 @@ function CardItem({
         <form
           className="mark mt-1.5 border-l-2 border-l-rule py-1.5 pl-3"
           onSubmit={submitConverge}
-        >
+ >
           <label className="flex flex-col gap-1">
-            <span className="text-[12px] text-ink-faint">
+            <span className="type-meta text-ink-faint">
               为什么它不再代表你当前的主张？
             </span>
             <Textarea
@@ -430,7 +443,7 @@ function CardItem({
               取消
             </Button>
           </div>
-          {formError && <p className="mt-1 text-[12px] text-up">{formError}</p>}
+          {formError && <p className="mt-1 type-prose text-up">{formError}</p>}
         </form>
       )}
     </li>

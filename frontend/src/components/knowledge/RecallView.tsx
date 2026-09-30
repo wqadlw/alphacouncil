@@ -142,9 +142,9 @@ export default function RecallView({
   if (queue.error) {
     return (
       <p
-        className="px-4 py-3 text-[13px] text-[color:var(--color-up)]"
+        className="px-4 py-3 type-prose text-[color:var(--color-up)]"
         data-testid="recall-error"
-      >
+ >
         {queue.error}
       </p>
     )
@@ -154,8 +154,10 @@ export default function RecallView({
     return (
       <section className="px-4 py-3" data-testid="recall-active">
         <div className="flex flex-wrap items-baseline gap-2 pb-1">
-          <h2 className="serif text-[15px] text-ink">{active.note.title}</h2>
-          <span className="num ml-auto text-[11px] text-ink-faint">
+          {/* A note's title is its claim — it is the reader's own sentence about
+              something, which is §2.2's 17–20 serif row, not a 15px heading. */}
+          <h2 className="serif type-claim text-ink">{active.note.title}</h2>
+          <span className="num ml-auto type-badge text-ink-faint">
             写于 {formatMoment(active.note.created_at)}
             {active.note.as_of ? ` · 数据截至 ${active.note.as_of}` : ''}
           </span>
@@ -171,11 +173,11 @@ export default function RecallView({
           luck, not memory. A card's claim *is* a prompt, which is why the card
           review may hide it.
         */}
-        <pre className="whitespace-pre-wrap border-l-2 border-rule-soft py-2 pl-3 font-sans text-[13px] leading-relaxed text-ink">
+        <pre className="whitespace-pre-wrap border-l-2 border-rule-soft py-2 pl-3 font-sans type-prose text-ink">
           {active.note.body}
         </pre>
 
-        <p className="text-[12px] text-ink-faint">
+        <p className="type-prose text-ink-faint">
           这条当初是你自己说要「再看看」的。现在重读一遍，然后照实说。
         </p>
 
@@ -189,7 +191,7 @@ export default function RecallView({
               title={entry.hint}
               onClick={() => void answerWith(entry.value)}
               data-testid={`recall-${entry.value}`}
-            >
+ >
               {entry.label}
             </Button>
           ))}
@@ -200,7 +202,7 @@ export default function RecallView({
             disabled={busy}
             onClick={() => void postpone()}
             data-testid="recall-defer"
-          >
+ >
             还没想清楚，先放一放
           </Button>
         </div>
@@ -226,9 +228,9 @@ export default function RecallView({
 
         {error ? (
           <p
-            className="mark mt-1.5 border-l-2 border-l-[color:var(--color-up)] py-1 text-[13px] text-[color:var(--color-up)]"
+            className="mark mt-1.5 border-l-2 border-l-[color:var(--color-up)] py-1 type-prose text-[color:var(--color-up)]"
             data-testid="recall-answer-error"
-          >
+ >
             {error}
           </p>
         ) : null}
@@ -238,7 +240,7 @@ export default function RecallView({
 
   if (queue.loading) {
     return (
-      <p className="px-4 py-3 text-[13px] text-ink-faint" data-testid="recall-loading">
+      <p className="px-4 py-3 type-prose text-ink-faint" data-testid="recall-loading">
         读取中…
       </p>
     )
@@ -251,7 +253,7 @@ export default function RecallView({
     return (
       <section>
         <Rule />
-        <p className="px-4 py-3 text-[13px] text-ink-soft" data-testid="recall-empty">
+        <p className="px-4 py-3 type-prose text-ink-soft" data-testid="recall-empty">
           现在没有该复习的笔记。
           {/*
             Saying nothing about how many notes are *waiting to be enrolled* is
@@ -266,7 +268,7 @@ export default function RecallView({
   return (
     <section>
       <div className="flex items-baseline gap-2 px-4 pb-1.5">
-        <h2 className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+        <h2 className="type-meta caps text-ink-faint">
           该重读的笔记
         </h2>
       </div>
@@ -278,7 +280,7 @@ export default function RecallView({
           onClick={() => void open(schedule)}
           className="flex w-full items-baseline gap-3 border-b border-rule-soft px-4 py-2 text-left data-[motion=l1] hover:bg-paper-soft"
           data-testid="recall-item"
-        >
+ >
           {/*
             ⭐ Relative, and the only number in the row. An absolute date made the
             reader subtract from today to learn what it meant.
@@ -288,10 +290,10 @@ export default function RecallView({
             is an information source — you are meant to be interrupted by
             something you wrote, not to work through a list.
           */}
-          <span className="num shrink-0 text-[12px] text-ink-faint">
+          <span className="num shrink-0 type-meta text-ink-faint">
             {formatAgo(schedule.due_at)}
           </span>
-          <span className="text-[13px] text-ink">
+          <span className="type-prose text-ink">
             {schedule.state === 'deferred' ? '先放一着的' : '该重读了'}
           </span>
         </button>

@@ -20,8 +20,12 @@
  *   **zero shadow and a 1px rule**, which is why §3.2's blanket ban has to carve
  *   out this one element: it is the only thing in the product that leaves the
  *   document plane.
- * - group headings are **uppercase 11px**, because a list of thirty items with no
- *   grouping is a list of thirty items.
+ * - group headings are **12px all-caps**, because a list of thirty items with no
+ *   grouping is a list of thirty items. ⭐ `.type-meta .caps`, per §2.2's 表头/元数据
+ *   row — this comment said 11px until spec 045, because the idiom was
+ *   `type-badge uppercase tracking-[0.06em]` on **44 lines** and 11px is what
+ *   `type-badge` is. A number written down next to a copy-pasted class is how the
+ *   wrong number survives a spec.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -127,7 +131,7 @@ export function CommandPalette({
       style={{ background: 'rgb(251 250 248 / 0.72)' }}
       onClick={onClose}
       data-testid="palette-scrim"
-    >
+ >
       <div
         role="dialog"
         aria-modal="true"
@@ -138,14 +142,14 @@ export function CommandPalette({
         onClick={(event) => event.stopPropagation()}
         onKeyDown={onKeyDown}
         data-testid="palette"
-      >
+ >
         <div className="border-b border-rule p-2">
           <input
             ref={inputRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索标的、卡片、决策，或输入命令"
-            className="w-full bg-transparent text-[13px] text-ink outline-none placeholder:text-ink-faint"
+            className="w-full bg-transparent type-prose text-ink outline-none placeholder:text-ink-faint"
             data-testid="palette-input"
             aria-label="搜索"
           />
@@ -154,7 +158,7 @@ export function CommandPalette({
         <div className="pane-scroll max-h-[46vh] py-1" data-testid="palette-list">
           {rows.length === 0 ? (
             // Rule 8 again: a fact and what to do. Not "no results".
-            <p className="px-3 py-6 text-center text-[13px] text-ink-soft">
+            <p className="px-3 py-6 text-center type-prose text-ink-soft">
               没有匹配项。按 Esc 关闭。
             </p>
           ) : (
@@ -165,7 +169,7 @@ export function CommandPalette({
               return (
                 <div key={command.id}>
                   {showGroup ? (
-                    <div className="px-3 pb-1 pt-2 text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+                    <div className="px-3 pb-1 pt-2 type-meta caps text-ink-faint">
                       {command.group}
                     </div>
                   ) : null}
@@ -176,18 +180,18 @@ export function CommandPalette({
                     // The 2px brass rule, not a row fill. A fill reads as a
                     // button; a rule reads as a cursor.
                     className={cn(
-                      'block w-full border-l-2 px-3 py-1.5 text-left text-[13px] data-[motion=l1]',
+                      'block w-full border-l-2 px-3 py-1.5 text-left type-prose data-[motion=l1]',
                       active
                         ? 'border-l-[color:var(--color-brass)] bg-paper-soft text-ink'
                         : 'border-l-transparent text-ink-soft hover:bg-paper-soft',
                     )}
                     data-testid="palette-item"
                     data-active={active ? 'true' : 'false'}
-                  >
+ >
                     <span className="flex items-baseline justify-between gap-3">
                       <span>{command.label}</span>
                       {command.hint ? (
-                        <span className="num text-[11px] text-ink-faint">{command.hint}</span>
+                        <span className="num type-badge text-ink-faint">{command.hint}</span>
                       ) : null}
                     </span>
                   </button>
@@ -197,7 +201,7 @@ export function CommandPalette({
           )}
         </div>
 
-        <div className="flex items-center gap-3 border-t border-rule px-3 py-1.5 text-[11px] text-ink-faint">
+        <div className="flex items-center gap-3 border-t border-rule px-3 py-1.5 type-badge text-ink-faint">
           <span>↑↓ 选择</span>
           <span>⏎ 执行</span>
           <span>Esc 关闭</span>

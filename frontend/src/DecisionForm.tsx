@@ -132,17 +132,17 @@ export default function DecisionForm({ market, code, onRecorded }: Props) {
         event.preventDefault()
         void handleSubmit()
       }}
-    >
-      <h3 className="text-[11px] font-normal uppercase tracking-[0.06em] text-ink-faint">
+ >
+      <h3 className="type-meta font-normal caps text-ink-faint">
         记录一个决策
       </h3>
-      <p className="mt-1 text-[12px] text-ink-faint">
+      <p className="mt-1 type-prose text-ink-faint">
         写下来之后不能改、不能删 —— 「改变想法」是再写一条。这三项都是必填，
         因为一条缺了反面证据的决策，事后会被记忆补全成它从来不是的样子。
       </p>
 
       <fieldset className="mt-2.5">
-        <legend className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">做了什么</legend>
+        <legend className="type-meta caps text-ink-faint">做了什么</legend>
         <div className="mt-1 flex flex-wrap gap-1.5">
           {ACTIONS.map((value) => (
             <Button
@@ -157,7 +157,7 @@ export default function DecisionForm({ market, code, onRecorded }: Props) {
               // by giving all five ratings identical weight.
               variant={action === value ? 'primary' : 'default'}
               onClick={() => setAction(value)}
-            >
+ >
               {ACTION_LABEL[value]}
             </Button>
           ))}
@@ -165,7 +165,7 @@ export default function DecisionForm({ market, code, onRecorded }: Props) {
       </fieldset>
 
       <label className="mt-3 flex flex-col gap-1">
-        <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+        <span className="type-meta caps text-ink-faint">
           为什么 <span className="text-up">必填</span>
           <span className="normal-case text-ink-faint"> —— 你以后会被这句话审问</span>
         </span>
@@ -178,7 +178,7 @@ export default function DecisionForm({ market, code, onRecorded }: Props) {
       </label>
 
       <label className="mt-2.5 flex flex-col gap-1">
-        <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+        <span className="type-meta caps text-ink-faint">
           反面证据 <span className="text-up">必填</span>
           <span className="normal-case text-ink-faint">
             {' '}
@@ -195,7 +195,7 @@ export default function DecisionForm({ market, code, onRecorded }: Props) {
 
       <div className="mt-3">
         <div className="flex items-baseline gap-2">
-          <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+          <span className="type-meta caps text-ink-faint">
             失效条件 <span className="text-up">至少一条</span>
             <span className="normal-case text-ink-faint"> —— 什么能证明我错了</span>
           </span>
@@ -204,7 +204,7 @@ export default function DecisionForm({ market, code, onRecorded }: Props) {
             variant="ghost"
             className="ml-auto"
             onClick={() => setRows((c) => [...c, blankRow()])}
-          >
+ >
             + 再加一条
           </Button>
         </div>
@@ -222,7 +222,7 @@ export default function DecisionForm({ market, code, onRecorded }: Props) {
           ))}
         </ol>
 
-        <p className="mt-1 text-[12px] text-ink-faint">
+        <p className="mt-1 type-prose text-ink-faint">
           写成四段而不是一句话，是为了让数据将来能<strong className="text-ink">自己来</strong>
           告诉你条件触发了。一句话没人能计算，也就永远不会来找你。
         </p>
@@ -232,7 +232,7 @@ export default function DecisionForm({ market, code, onRecorded }: Props) {
         <Button type="submit" variant="primary" disabled={blocked || busy}>
           {busy ? '写入中…' : '记下来'}
         </Button>
-        <span className="text-[12px] text-ink-faint">
+        <span className="type-meta text-ink-faint">
           {blocked
             ? `还差：${[
                 rationaleMissing ? '为什么' : null,
@@ -247,8 +247,8 @@ export default function DecisionForm({ market, code, onRecorded }: Props) {
 
       {error && (
         <div className="mark mt-2 border-l-2 border-l-up py-1">
-          <p className="text-[13px] text-up">{error.message}</p>
-          {error.fix && <p className="text-[12px] text-ink-soft">{error.fix}</p>}
+          <p className="type-prose text-up">{error.message}</p>
+          {error.fix && <p className="type-prose text-ink-soft">{error.fix}</p>}
         </div>
       )}
     </form>
@@ -280,7 +280,7 @@ function CriterionEditor({
     <li className="mark mt-1.5 border-l-2 border-l-rule py-1.5">
       <div className="flex flex-wrap items-end gap-x-2 gap-y-1.5">
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+          <span className="type-meta caps text-ink-faint">
             指标 #{index + 1}
           </span>
           <Input
@@ -293,15 +293,15 @@ function CriterionEditor({
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">关系</span>
+          <span className="type-meta caps text-ink-faint">关系</span>
           {/* Native, for the same reason as the pool page's selects: a real
               listbox needs `aria-activedescendant` and focus management, and
               hand-rolling that badly is worse than looking slightly plain. */}
           <select
             value={row.operator}
             onChange={(event) => onChange({ operator: event.target.value as ComparisonOperator })}
-            className="h-8 rounded-[2px] border border-rule bg-surface px-2 text-[13px] outline-none focus:border-navy"
-          >
+            className="h-8 rounded-[2px] border border-rule bg-surface px-2 type-prose outline-none focus:border-navy"
+ >
             {OPERATORS.map((operator) => (
               <option key={operator} value={operator}>
                 {OPERATOR_LABEL[operator]}
@@ -311,7 +311,7 @@ function CriterionEditor({
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">阈值</span>
+          <span className="type-meta caps text-ink-faint">阈值</span>
           <Input
             type="number"
             inputMode="decimal"
@@ -324,7 +324,7 @@ function CriterionEditor({
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+          <span className="type-meta caps text-ink-faint">
             按截至哪天公布的数据
           </span>
           <Input
@@ -343,7 +343,7 @@ function CriterionEditor({
       </div>
 
       {isComplete(row) && (
-        <p className="mt-0.5 text-[12px] text-ink-soft">
+        <p className="mt-0.5 type-prose text-ink-soft">
           读作：截至 {row.asOf}，{row.metric.trim()} {OPERATOR_LABEL[row.operator]} {row.threshold}
         </p>
       )}

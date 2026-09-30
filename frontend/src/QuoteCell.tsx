@@ -19,9 +19,9 @@ export default function QuoteCell({ result }: { result: QuoteResult | undefined 
   if (cell.note) {
     return (
       <p
-        className={`shrink-0 self-center text-[13px] ${cell.emphasis === 'warn' ? 'text-warn' : 'text-ink-faint'}`}
+        className={`shrink-0 self-center type-prose ${cell.emphasis === 'warn' ? 'text-warn' : 'text-ink-faint'}`}
         title={cell.detail ?? undefined}
-      >
+ >
         {cell.note}
       </p>
     )
@@ -29,8 +29,14 @@ export default function QuoteCell({ result }: { result: QuoteResult | undefined 
 
   return (
     <div className="num shrink-0 self-center text-right" title={cell.detail ?? undefined}>
-      <p className="text-[15px] leading-tight">{cell.price}</p>
-      <p className="text-[12px] leading-tight">
+      {/* §2.2's cell row: 13 / 18. It was `text-[15px] leading-tight` — 15 is not a
+          row in the table, and a pool cell is legible text rather than chrome, so
+          rule 6's density licence does not apply to it. ⭐ `leading-tight` is gone
+          rather than left in place: `.type-cell` declares 18px, the two are the same
+          specificity, and `globals.css` comes after Tailwind's utilities, so the
+          class would silently win and the utility would be a lie. */}
+      <p className="type-cell">{cell.price}</p>
+      <p className="type-prose">
         <span className={cell.change ? TONE_CLASS[cell.change.tone] : undefined}>
           {cell.change?.text}
         </span>

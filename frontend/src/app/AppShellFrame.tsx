@@ -26,6 +26,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { CommandPalette, useCommandPalette, type Command } from '../components/nav/CommandPalette'
 import { Input, Rule } from '../components/ui'
+import { Icon } from '../components/ui/Icon'
 import { ROUTES, type RouteName } from '../routing'
 import { cn } from '../lib/cn'
 
@@ -110,7 +111,7 @@ export function AppShellFrame({
     <div className="flex h-full flex-col" data-testid="app-shell">
       {/* ── Top bar: identity, the search front door, the palette hint ─────── */}
       <header className="flex shrink-0 items-center gap-4 border-b border-rule bg-surface px-4 py-2">
-        <a href="#/" className="serif text-[15px] text-ink no-underline" data-testid="brand">
+        <a href="#/" className="serif type-claim text-ink no-underline" data-testid="brand">
           AlphaCouncil
         </a>
         <div className="relative max-w-[420px] flex-1">
@@ -124,7 +125,7 @@ export function AppShellFrame({
             aria-label="搜索"
             data-testid="search-box"
           />
-          <kbd className="num pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-ink-faint">
+          <kbd className="num pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 type-badge text-ink-faint">
             ⌘K
           </kbd>
         </div>
@@ -136,8 +137,8 @@ export function AppShellFrame({
           className="w-[176px] shrink-0 border-r border-rule bg-paper-soft/40 py-3"
           aria-label="主导航"
           data-testid="nav"
-        >
-          <div className="px-3 pb-1 text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+ >
+          <div className="px-3 pb-1 type-meta caps text-ink-faint">
             视图
           </div>
           {ROUTES.map((entry) => {
@@ -153,12 +154,21 @@ export function AppShellFrame({
                   // 2px left rule for selection, matching the table and the
                   // palette. Three places now use the same mark, which is what
                   // makes it read as a system rather than a set of decisions.
-                  'block border-l-2 px-3 py-1.5 text-[13px] no-underline data-[motion=l1]',
+                  'flex items-center gap-2 border-l-2 px-3 py-1.5 type-prose no-underline data-[motion=l1]',
                   isActive
                     ? 'border-l-[color:var(--color-brass)] text-ink'
                     : 'border-l-transparent text-ink-soft hover:text-ink',
                 )}
-              >
+ >
+                {/* Icon, at sm, and text-ink-faint while inactive.
+
+                    sm because 14px is the tier §5 assigns to a glyph this small,
+                    and the sidebar column is 176px. ink-faint because the glyph is
+                    the LEAST important thing in the row - it repeats the label that
+                    sits beside it - so it must not draw the eye off the words. That
+                    is 规则 7 again, about contrast rather than hue: an icon at full
+                    ink competes with a 13px label it is merely annotating. */}
+                <Icon name={entry.icon} size="sm" className="text-ink-faint" />
                 {entry.label}
               </a>
             )
@@ -174,8 +184,12 @@ export function AppShellFrame({
                 that was written when a page filled the window. In a three-pane
                 frame the title labels a pane, and a 26px serif over a 400-row
                 table is the layout this spec exists to replace. */}
-            <h1 className="serif text-[17px] leading-tight text-ink">{title}</h1>
-            {subtitle ? <div className="mt-0.5 text-[12px] text-ink-soft">{subtitle}</div> : null}
+            {/* ⭐ The page title, at the size §2.2 gives it: 22 / 30 serif. It was
+          `text-[17px] leading-tight` — the **only** `text-[17px]` in the tree, five
+          pixels under its own row, and the single reason a screenshot of any page
+          looked like a panel header rather than the top of a document. */}
+      <h1 className="serif type-page-title text-ink">{title}</h1>
+            {subtitle ? <div className="mt-0.5 type-meta text-ink-soft">{subtitle}</div> : null}
           </div>
           <div className="pane-scroll min-h-0 flex-1">
             {listLoading && listSkeleton ? listSkeleton : (list ?? children)}
@@ -188,7 +202,7 @@ export function AppShellFrame({
             className="flex min-w-0 flex-1 flex-col border-l border-rule bg-surface/60"
             aria-label="详情"
             data-testid="detail-pane"
-          >
+ >
             <div className="pane-scroll min-h-0 flex-1">{detail}</div>
           </section>
         ) : null}

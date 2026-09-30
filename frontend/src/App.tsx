@@ -82,12 +82,12 @@ export default function App() {
 function UnknownRoute({ raw }: { raw: string }) {
   return (
     <div className="p-6">
-      <p className="text-[13px] text-ink-soft">
+      <p className="type-prose text-ink-soft">
         没有一条路由匹配 <code className="num text-ink">{raw}</code>。标的页的地址形如{' '}
         <code className="num text-ink">#/i/sh/600519</code>，或按 <kbd className="num">⌘K</kbd> 搜索。
       </p>
-      <p className="mt-3 text-[13px]">
-        <a href={POOL_HREF} className="text-navy hover:underline">
+      <p className="mt-3 type-prose">
+        <a href={POOL_HREF} className="text-navy hover:underline data-[motion=l1]">
           回到关注池
         </a>
       </p>

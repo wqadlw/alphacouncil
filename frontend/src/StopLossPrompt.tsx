@@ -60,7 +60,7 @@ export default function StopLossPrompt({ criteria, onClose }: Props) {
   return (
     <section className="mt-3 border border-rule border-l-2 border-l-warn bg-paper-soft px-4 py-3">
       <div className="flex items-baseline gap-2">
-        <h3 className="text-[11px] font-normal uppercase tracking-[0.06em] text-ink-faint">
+        <h3 className="type-meta font-normal caps text-ink-faint">
           算一下「再等等」要等多久
         </h3>
         <Button size="sm" variant="ghost" className="ml-auto" onClick={onClose}>
@@ -68,13 +68,13 @@ export default function StopLossPrompt({ criteria, onClose }: Props) {
         </Button>
       </div>
 
-      <p className="mt-1.5 text-[13px] text-ink-soft">
+      <p className="mt-1.5 type-prose text-ink-soft">
         亏损的百分比是记不住的。要多少年才能回到成本，是能记住的。
       </p>
 
       <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-2">
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">当前亏损</span>
+          <span className="type-meta caps text-ink-faint">当前亏损</span>
           <span className="flex items-baseline gap-1">
             <Input
               type="number"
@@ -87,12 +87,12 @@ export default function StopLossPrompt({ criteria, onClose }: Props) {
               placeholder="32"
               className="num w-[86px]"
             />
-            <span className="text-[12px] text-ink-faint">%</span>
+            <span className="type-meta text-ink-faint">%</span>
           </span>
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+          <span className="type-meta caps text-ink-faint">
             假定年化 <span className="normal-case">（这是假设，不是事实）</span>
           </span>
           <span className="flex items-baseline gap-1">
@@ -106,7 +106,7 @@ export default function StopLossPrompt({ criteria, onClose }: Props) {
               placeholder="15"
               className="num w-[86px]"
             />
-            <span className="text-[12px] text-ink-faint">%</span>
+            <span className="type-meta text-ink-faint">%</span>
           </span>
         </label>
       </div>
@@ -114,15 +114,18 @@ export default function StopLossPrompt({ criteria, onClose }: Props) {
       {usable && rateUsable ? (
         <>
           <div className="mark mt-3 border-l-2 border-l-up py-1">
-            <p className="text-[13px]">
+            <p className="type-prose">
               恢复所需年数：约{' '}
-              {/* Serif at 18px, and the largest number in the product. It is a
-                  quotation of the reader's own two inputs rather than
-                  interface text, so rule 1 applies; 20px read as a headline. */}
-              <span className="num serif text-[18px]">{formatYears(years)}</span> 年
+              {/* Serif, and the largest number in the product. It is a quotation of the
+                  reader's own two inputs rather than interface text, so rule 1 applies.
+                  ⭐ §2.2's claim row tops out at 20, so 18 becomes 20 — and `num` stays
+                  in charge of the face, because a size class that also picked a family
+                  would set this in Songti. 20px still reads as a figure and not a
+                  headline, which is what the old comment was actually asking for. */}
+              <span className="num serif type-claim-lg">{formatYears(years)}</span> 年
               <span className="text-ink-soft">（按年化 {formatRate(rate)} 计）</span>
             </p>
-            <p className="num mt-0.5 text-[12px] text-ink-soft">
+            <p className="num mt-0.5 type-prose text-ink-soft">
               需要先涨回 {formatGain(gain)} 才能回到成本 —— 亏损是不对称的。
             </p>
           </div>
@@ -130,14 +133,14 @@ export default function StopLossPrompt({ criteria, onClose }: Props) {
           <DepthTable rate={rate} highlight={loss} />
         </>
       ) : (
-        <p className="mt-3 text-[13px] text-ink-faint">
+        <p className="mt-3 type-prose text-ink-faint">
           填一个 0 到 99 之间的亏损比例，这里会给出年数。空着就不给 —— 猜一个数字比不给更糟。
         </p>
       )}
 
       <CriteriaReadback criteria={criteria} />
 
-      <p className="mt-3 text-[12px] text-ink-faint">
+      <p className="mt-3 type-prose text-ink-faint">
         这里没有「要不要卖」。上面的条件是<strong className="text-ink">你自己写的</strong>
         —— 它触发没有，你比我清楚。要改主意，把理由写进下面的表单，它会留下时间戳。
       </p>
@@ -155,18 +158,28 @@ export default function StopLossPrompt({ criteria, onClose }: Props) {
  * actually bears on the decision.
  */
 function DepthTable({ rate, highlight }: { rate: number; highlight: number }) {
+  // ⭐ The table carries `type-meta`, the header row's size, and every `<td>` below
+  // overrides it with `type-cell`. Before this it was a table with **no** size on it
+  // and three columns of figures for the reader to compare across rows — the one
+  // place in this prompt where a wrong digit is most expensive, because it is a loss
+  // estimate they are about to act on. ⭐ §2.2's 「表格与标签可以小」 is a licence for
+  // chrome, not for numbers a reader compares.
   return (
-    <table className="mt-3 w-full text-[12px]">
+    <table className="mt-3 w-full type-meta">
       <thead>
         <tr className="border-b border-rule text-left text-ink-faint">
-          {/* Uppercase chrome at 11px, like `DataTable`'s headers, and the two
-              numeric columns right-aligned so the figures line up on the
+          {/* Table-header chrome at 12px, all-caps — §2.2's 表头 row, which is what
+              `DataTable`'s headers use. ⭐ This said 11px because the idiom it
+              described (`type-badge uppercase tracking-[0.06em]`) was on 11px; the
+              size is now `.type-meta` and the look is `.caps`, and the number in a
+              comment has to move with it or it is just a wrong number in the file.
+              The two numeric columns go right-aligned so the figures line up on the
               decimal — otherwise the eye has to re-find each number. */}
-          <th className="py-1 text-[11px] font-normal uppercase tracking-[0.06em]">亏损</th>
-          <th className="py-1 text-right text-[11px] font-normal uppercase tracking-[0.06em]">
+          <th className="py-1 type-meta font-normal caps">亏损</th>
+          <th className="py-1 text-right type-meta font-normal caps">
             回到成本需要涨
           </th>
-          <th className="py-1 text-right text-[11px] font-normal uppercase tracking-[0.06em]">
+          <th className="py-1 text-right type-meta font-normal caps">
             按年化 {formatRate(rate)} 需要
           </th>
         </tr>
@@ -178,13 +191,22 @@ function DepthTable({ rate, highlight }: { rate: number; highlight: number }) {
             <tr
               key={depth}
               className={`border-b border-[color:var(--color-rule-soft)] ${isMine ? 'text-ink' : 'text-ink-soft'}`}
-            >
-              <td className="num py-1">
+ >
+              {/* ⭐ §2.2's 表格单元格 row: 13 / 18, applied here rather than left to
+                  the `<table>`'s own class. `DataTable` does the same thing for the
+                  same reason — a cell is legible text, not a paragraph, and §2.2
+                  keeps those two rows apart. This table had **no** class on any of
+                  its `<td>`s, so they inherited whatever the table element set, which
+                  is exactly the 「表格与标签可以小」 licence being taken for a column
+                  of numbers a reader has to compare across rows. */}
+              <td className="num type-cell py-1">
                 {isMine && <span className="text-up">▸ </span>}
                 {Math.round(depth * 100)}%
               </td>
-              <td className="num py-1 text-right">{formatGain(gainNeeded(depth))}</td>
-              <td className="num py-1 text-right">{formatYears(yearsToRecover(depth, rate))} 年</td>
+              <td className="num type-cell py-1 text-right">{formatGain(gainNeeded(depth))}</td>
+              <td className="num type-cell py-1 text-right">
+                {formatYears(yearsToRecover(depth, rate))} 年
+              </td>
             </tr>
           )
         })}
@@ -203,7 +225,7 @@ function DepthTable({ rate, highlight }: { rate: number; highlight: number }) {
 function CriteriaReadback({ criteria }: { criteria: KillCriterion[] }) {
   if (criteria.length === 0) {
     return (
-      <p className="mt-4 text-[13px] text-ink-soft">
+      <p className="mt-4 type-prose text-ink-soft">
         你还没有为这个标的写下失效条件 —— 所以没有任何东西能在将来提醒你。
       </p>
     )
@@ -211,15 +233,15 @@ function CriteriaReadback({ criteria }: { criteria: KillCriterion[] }) {
 
   return (
     <div className="mt-4">
-      <p className="text-[12px] text-ink-faint">
+      <p className="type-prose text-ink-faint">
         你当初为它写下的失效条件（{criteria.length} 条）：
       </p>
       <ol className="mt-1">
         {criteria.map((criterion, index) => (
           <li
             key={`${criterion.metric}-${criterion.as_of}-${index}`}
-            className="mark border-l-2 border-l-brass py-1 text-[13px]"
-          >
+            className="mark border-l-2 border-l-brass py-1 type-prose"
+ >
             {formatPredicate(criterion)}
           </li>
         ))}

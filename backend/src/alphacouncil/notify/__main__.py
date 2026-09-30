@@ -27,6 +27,7 @@ import structlog
 from pydantic import SecretStr
 
 from alphacouncil.core.config import Settings, get_settings
+from alphacouncil.core.console import use_utf8
 from alphacouncil.notify.dispatch import send_due_criteria
 from alphacouncil.notify.webhook import ChannelConfig
 from alphacouncil.storage import db as storage_db
@@ -90,8 +91,12 @@ def _prepare(database_path: object) -> None:
 
 def main(argv: Annotated[list[str] | None, None] = None) -> int:
     """Entry point. Returns the process exit code."""
-    from _console import use_utf8
-
+    # ⭐ From the **package**, not from `scripts/`. ⭐ `scripts/_console.py` is a forwarding
+    # import to this same place, ⭐ and the first version of this file reached for the
+    # scripts one -- ⭐ which is not on `sys.path` when this runs as `python -m`, ⭐ so the
+    # command died with ``ModuleNotFoundError: No module named '_console'`` ⭐ after the
+    # missing-`__main__` guard above was fixed. ⭐ Product code importing a dev script is the
+    # kind of dependency that only fails when it is actually run.
     use_utf8()
     args = sys.argv[1:] if argv is None else argv
     if args and args[0] in {"-h", "--help"}:
@@ -112,6 +117,32 @@ def main(argv: Annotated[list[str] | None, None] = None) -> int:
 
     print(report.summary())
     return 0
+
+
+if __name__ == "__main__":
+    # ⭐⭐ **This line was missing, and nothing caught it.**
+    #
+    # ⭐ ``python -m alphacouncil.notify`` **imports** this module — ⭐ it does not call
+    # ``main()``. ⭐ Without this block the command exits **0**, prints nothing, and sends
+    # nothing, ⭐ which is the worst shape a command can have: ⭐ a scheduled task would
+    # report success forever while the reader heard nothing at all.
+    #
+    # ⭐ And the gate was green throughout, ⭐ because ⭐ **no test ever ran this entry
+    # point** — ⭐ the same 「机制齐了但入口没有」 that `spec 020` diagnosed for J3, ⭐ and the
+    # reason there is now a test that runs the module as a subprocess.
+    #
+    # ⭐ One phrase above uses 「但」 where the natural Chinese wants a full-width
+    # comma, because `RUF003` rejects that character in a **comment**. ⭐ And the
+    # second half is the part worth keeping: ⭐ a comment about avoiding a character
+    # cannot quote the character, ⭐ so this note has now failed on that twice, and
+    # the only honest way to write it is to describe the character and move on.
+    # ⭐ The full-width comma is still everywhere it belongs — this repository's own
+    # docs, and every Chinese sentence in them.
+    #
+    # ⭐ ``sys.exit`` rather than ``SystemExit(main())``: ⭐ it matches the sibling
+    # ``alphacouncil/__main__.py``, ⭐ and 「两个入口长得不一样」 is a small thing that costs
+    # a reader a minute every time.
+    sys.exit(main())
 
 
 __all__ = ["main"]

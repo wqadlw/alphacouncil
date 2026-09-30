@@ -80,7 +80,7 @@ export function DataTable<T>({
   if (rows.length === 0 && empty) return <>{empty}</>
 
   return (
-    <table className="w-full border-collapse text-[13px]" data-testid="data-table">
+    <table className="w-full border-collapse" data-testid="data-table">
       <thead>
         <tr className="border-b border-rule">
           {columns.map((column) => (
@@ -88,10 +88,10 @@ export function DataTable<T>({
               key={column.key}
               style={column.width ? { width: column.width } : undefined}
               className={cn(
-                'px-3 py-1.5 text-[11px] font-normal uppercase tracking-[0.06em] text-ink-faint',
+                'type-meta caps px-3 py-1.5 font-normal text-ink-faint',
                 column.numeric ? 'text-right' : 'text-left',
               )}
-            >
+ >
               {column.sortValue ? (
                 <button
                   type="button"
@@ -99,18 +99,24 @@ export function DataTable<T>({
                   className="inline-flex items-center gap-0.5 data-[motion=l1] hover:text-ink"
                   data-testid={`sort-${column.key}`}
                   aria-sort={sort?.key === column.key ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none'}
-                >
+ >
                   {column.header}
                   {/* A caret is punctuation here, not an icon (§5 forbids emoji
                       as functional icons, but says nothing about text). `↕` marks
-                      "sortable"; the active column shows its actual direction.
+"sortable"; the active column shows its actual direction.
 
                       The first draft used `⌨` for the unsorted state, which was a
                       guess that turned out to be unreadable in context — at 9px in
                       a table header it reads as a keyboard shortcut, and a reader
                       has no way to guess it means "click to sort". `↕` is the
-                      conventional mark for exactly this. */}
-                  <span className="text-[9px] leading-none">
+                      conventional mark for exactly this.
+
+                      ⭐ And 9px is now `.type-badge` — 11px, §2.2's smallest row. 9
+                      was below *every* floor in the table, including the 11px badge
+                      row, so no class could describe it and `V-12` caught it. A caret
+                      one pixel taller in a column header costs nothing and stops the
+                      product having a size the style guide has never approved. */}
+                  <span className="type-badge">
                     {sort?.key === column.key ? (sort.dir === 1 ? '▲' : '▼') : '↕'}
                   </span>
                 </button>
@@ -149,15 +155,20 @@ export function DataTable<T>({
               )}
               data-testid="data-row"
               data-selected={selected ? 'true' : 'false'}
-            >
+ >
               {columns.map((column) => (
                 <td
                   key={column.key}
                   className={cn(
-                    'px-3 align-middle',
+                    // ⭐ §2.2's 表格单元格 row: 13 / 18. The cells previously took
+                    // the table's `type-prose` (13/20) by inheritance, which is the
+                    // **prose** row — a cell is legible text, not a paragraph, and
+                    // §2.2 keeps them apart for exactly this reason. §8.2's 行高
+                    // 32/40 lives on the `<tr>` above, so this is only the measure.
+                    'type-cell px-3 align-middle',
                     column.numeric ? 'num text-right text-ink' : 'text-ink-soft',
                   )}
-                >
+ >
                   {column.render(row)}
                 </td>
               ))}

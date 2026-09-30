@@ -82,7 +82,7 @@ export default function TodayPage() {
           what the frame cannot know: whether the market is open, and why the
           prices below will therefore not move. */}
       {today.data?.market_status.verdict === 'non_trading_day' ? (
-        <p className="border-b border-rule bg-paper-soft px-4 py-2 text-[12px] text-ink-soft">
+        <p className="border-b border-rule bg-paper-soft px-4 py-2 type-prose text-ink-soft">
           休市 · 最后交易日 {formatDay(today.data.market_status.last_trading_date)}
           <span className="text-ink-faint"> —— 下列价格不会变化，这不是故障，也不是过期的数据。</span>
         </p>
@@ -94,7 +94,7 @@ export default function TodayPage() {
         title="需要你处理的"
         count={today.data?.attention.length ?? 0}
         note="观察期已到不代表判据成立；成立不成立、以及我们能不能算，看下面每一行自己怎么说。"
-      >
+ >
         {/*
           Rule 8: an empty state is a statement of fact plus what it means, and
           this one keeps the promise the reader is owed. 「今天没有到期的失效条件」
@@ -112,7 +112,7 @@ export default function TodayPage() {
           and the row below is which one you are looking at.
         */}
         {today.data && today.data.attention.length === 0 ? (
-          <p className="px-4 py-2 text-[13px] text-ink-soft">
+          <p className="px-4 py-2 type-prose text-ink-soft">
             今天没有到期的失效条件。你写下的每个条件都会在它该被看的那天出现在这里。
           </p>
         ) : null}
@@ -125,14 +125,14 @@ export default function TodayPage() {
         title="我关注的"
         count={entries.length}
         action={{ href: POOL_HREF, label: '管理关注池' }}
-      >
+ >
         <DataTable<PoolRow>
           dense
           columns={poolColumns()}
           rows={entries.map((entry) => ({ entry, quote: quoteByKey.get(`${entry.market}:${entry.code}`) ?? null }))}
           rowKey={(row) => `${row.entry.market}:${row.entry.code}`}
           empty={
-            <p className="px-4 py-3 text-[13px] text-ink-soft">
+            <p className="px-4 py-3 type-prose text-ink-soft">
               关注池是空的 —— 到关注池加一个，并写下你为什么关注它。
             </p>
           }
@@ -140,18 +140,18 @@ export default function TodayPage() {
       </Section>
 
       <Section title="今天的数据变化">
-        <p className="px-4 py-2 text-[13px] text-ink-soft">
+        <p className="px-4 py-2 type-prose text-ink-soft">
           公告与财务数据源尚未接入（D4 / D5）—— 所以今天的价格变化就在上面「我关注的」里。
         </p>
       </Section>
 
       <Section title="你在重复自己">
-        <p className="px-4 py-2 text-[13px] text-ink-soft">
+        <p className="px-4 py-2 type-prose text-ink-soft">
           重复检测的判定算法尚未定义（J4）—— 这里以后会指出你对同一只票写下的同一句话。
         </p>
       </Section>
 
-      <footer className="mt-6 border-t border-rule px-4 pt-3 text-[12px] text-ink-faint">
+      <footer className="mt-6 border-t border-rule px-4 pt-3 type-meta text-ink-faint">
         这一页只陈列事实，不陈列成绩：没有收益率、没有排行、没有打卡。
         <span className="text-ink-soft"> 它安静，是因为催促会让你动作变多。</span>
       </footer>
@@ -183,18 +183,28 @@ function Section({
   return (
     <section className="mt-4">
       <div className="flex items-baseline gap-2 px-4 pb-1.5">
-        <h2 className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">{title}</h2>
+        <h2 className="type-meta caps text-ink-faint">{title}</h2>
         {count !== undefined && count > 0 ? (
-          <span className="num text-[11px] text-ink-faint">{count}</span>
+          <span className="num type-badge text-ink-faint">{count}</span>
         ) : null}
         {action ? (
-          <a href={action.href} className="ml-auto text-[11px] text-navy hover:underline">
+          // ⭐ `data-[motion=l1]` — see the A5 note in `globals.css`:
+          // `text-decoration-color` is what makes an underline fade, and this is
+          // the shape this product uses for every link it can afford a border on.
+          //
+          // ⭐ A **JS** comment, not a JSX one, for the reason that has now bitten
+          // twice in this migration: the `(` after `?` puts the parser in an
+          // expression position, where a brace opens an object literal — so a
+          // brace-comment becomes an empty `{}` followed by a JSX element, which is
+          // a syntax error. The other one was a comment that quoted its own closing
+          // delimiter and ended itself mid-sentence.
+          <a href={action.href} className="ml-auto type-badge text-navy hover:underline data-[motion=l1]">
             {action.label} →
           </a>
         ) : null}
       </div>
       <Rule />
-      {note ? <p className="px-4 pt-2 text-[12px] text-ink-faint">{note}</p> : null}
+      {note ? <p className="px-4 pt-2 type-prose text-ink-faint">{note}</p> : null}
       {children}
     </section>
   )
@@ -211,11 +221,11 @@ function AttentionRow({ item }: { item: AttentionItem }) {
       data-testid="attention-row"
       data-crossed={sentence.crossed ? 'true' : 'false'}
       data-adjudicable={sentence.adjudicable ? 'true' : 'false'}
-    >
+ >
       <div className="flex items-baseline gap-2">
-        <span className="num text-[12px] text-ink">{display}</span>
+        <span className="num type-meta text-ink">{display}</span>
         <Badge tone="neutral">{ACTION_LABEL[action]}</Badge>
-        <span className="text-[12px] text-ink-faint">· 决策 {formatMoment(decisionId)}</span>
+        <span className="type-meta text-ink-faint">· 决策 {formatMoment(decisionId)}</span>
       </div>
       {/* ⭐ One sentence, five states, and the state is carried by the clause.
 
@@ -239,9 +249,32 @@ function AttentionRow({ item }: { item: AttentionItem }) {
           screen. The three 「we don't know」 states keep the neutral treatment, because a
           louder rendering of 「we could not check」 would be the page presenting its own
           gap as news about the reader's decision. */}
+      {/* The largest sentence in the product, and it was .type-prose until the
+          A6 pass. It is the whole point of spec 040 - the one line the reader
+          wrote themselves and then has to adjudicate against - and the
+          guide's card / claim / quadrant-verdict row is 17-20 serif. At 13px
+          sans it rendered as another field of a table row.
+
+          serif is deliberate, and it took two readings. The clause carrying the
+          state is the product's finding, not the reader's words, and the guide
+          puts serif on titles and claims. But the sentence IS the reader's claim
+          about their own position: the criterion in the quotes is theirs, and
+          what follows is the answer to it. The ruling: the sentence takes the
+          claim's size, and serif is what marks a claim in this product - the
+          same treatment CardSection's own sentence gets, because that is the
+          same kind of thing.
+
+          And the accent colour now applies to a whole claim, which is new:
+          the sentence goes --color-warn when crossed, not just the clause. That
+          is a change in what the reader sees and it is intentional - a crossed
+          kill criterion is the loudest thing this product can say about a
+          position, and half-emphasising it would say it quietly. --color-warn,
+          never --color-up: that token means up on every chart here, and reusing
+          it would render your-own-criterion-failed in the colour the reader
+          reads as up. */}
       <div
-        className={`mt-0.5 text-[13px] ${sentence.crossed ? 'text-[color:var(--color-warn)]' : 'text-ink'}`}
-      >
+        className={`serif type-claim mt-0.5 ${sentence.crossed ? 'text-[color:var(--color-warn)]' : 'text-ink'}`}
+ >
         你写的失效条件「{formatPredicate(criterion)}」{sentence.verdict}
       </div>
     </a>
@@ -282,12 +315,24 @@ function DueLine({ due }: { due: Today['due'] | undefined }) {
   if (parts.length === 0) return null
 
   return (
-    <p className="border-b border-rule px-4 py-2 text-[13px] text-ink-soft" data-testid="today-due">
+    <p className="border-b border-rule px-4 py-2 type-prose text-ink-soft" data-testid="today-due">
       到期要看的：
       {parts.map((part, index) => (
         <span key={part.queue}>
           {index > 0 ? ' · ' : ''}
-          <a href={queueHref(part.queue)} className="text-navy hover:underline" data-testid={`today-due-${part.queue}`}>
+          {/* ⭐ `data-[motion=l1]`, and this is the A5 pass: eleven of the
+              fourteen `hover:` sites in this product are a `hover:underline` on a
+              text link. ⭐ **A colour-only transition cannot help there** — the
+              underline appears instantly, so the text either jumps to underlined or
+              the underline fades in while the colour eases, and the two read as two
+              different things. Putting these on L1 means the underline is the thing
+              that moves, which is the whole of §7.1's 「hover 底色 / focus 环 / 按下」
+              applied to the shape this product actually uses for its links. */}
+          <a
+            href={queueHref(part.queue)}
+            className="text-navy hover:underline data-[motion=l1]"
+            data-testid={`today-due-${part.queue}`}
+          >
             {part.count} {part.label}
           </a>
         </span>
@@ -308,11 +353,16 @@ function poolColumns(): Column<PoolRow>[] {
       header: '标的',
       width: '32%',
       sortValue: (row) => row.entry.code,
+      // ⭐ No `data-[motion=l1]` on this link, and that is deliberate. The `<tr>`
+      // already carries it and the cell **inherits** the transition — and a
+      // transition is inherited, so `text-decoration-color` is covered either way.
+      // ⭐ Marking every link would be one class written eleven times for a single
+      // effect: the row is the thing being hovered, so the row owns the motion.
       render: (row) => (
         <a
           href={instrumentHref(row.entry.market, row.entry.code)}
           className="text-ink no-underline hover:text-navy hover:underline"
-        >
+ >
           {/* ⭐ `displayCode`, not the bare code, and this is a consistency fix
               rather than a prettiness one: the attention rows above already show
               `600519.SH` because the server hands them a `display` field, so a

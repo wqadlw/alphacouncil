@@ -191,10 +191,14 @@ export default function InstrumentPage({ market, code }: Props) {
         still follows it, so those go on one quiet line beneath it: the same
         information as before, at chrome size rather than headline size.
       */}
-      <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-rule px-4 py-2.5 text-[12px] text-ink-faint">
+      <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-rule px-4 py-2.5 type-prose text-ink-faint">
         {detail ? (
           <>
-            <span className="text-[15px] text-ink">{detail.name ?? '—'}</span>
+            {/* ⭐ A company's name beside its code **is** the heading of this page, and
+                §2.1 puts serif on titles. It was `text-[15px]` with no `serif` — which
+                left the quote below it as the largest thing on the page, so the page
+                led with a number instead of with a name. */}
+            <span className="serif type-claim text-ink">{detail.name ?? '—'}</span>
             <span>{detail.asset_type}</span>
             <span className="text-ink-soft">
               · {FOLLOW_LABEL[detail.follow.status] ?? detail.follow.status}
@@ -205,7 +209,7 @@ export default function InstrumentPage({ market, code }: Props) {
         )}
       </p>
 
-      <p className="px-4 py-2 text-[12px] text-ink-faint">
+      <p className="px-4 py-2 type-prose text-ink-faint">
         这一页回答五个问题：
         <span className="text-ink-soft">
           {' '}
@@ -215,8 +219,8 @@ export default function InstrumentPage({ market, code }: Props) {
 
       {loadError && (
         <div className="mark border-l-2 border-l-[color:var(--color-up)] px-4 py-2">
-          <p className="text-[13px] text-[color:var(--color-up)]">{loadError}</p>
-          <p className="text-[12px] text-ink-soft">
+          <p className="type-prose text-[color:var(--color-up)]">{loadError}</p>
+          <p className="type-prose text-ink-soft">
             后端未启动时会出现这一行 —— 它不会静默显示成「空标的」。
           </p>
         </div>
@@ -237,9 +241,9 @@ export default function InstrumentPage({ market, code }: Props) {
               <button
                 type="button"
                 data-testid="kline-retry"
-                className="text-[12px] text-ink-faint underline"
+                className="type-meta text-ink-faint underline"
                 onClick={daily.reload}
-              >
+ >
                 重新读取
               </button>
             )}
@@ -249,21 +253,43 @@ export default function InstrumentPage({ market, code }: Props) {
             title={followed ? '我为什么关注它' : '我当初为什么关注它'}
             aside={
               detail.follow.since ? (
-                <span className="num text-[11px] text-ink-faint">
+                <span className="num type-badge text-ink-faint">
                   {followed ? '当前理由写于' : '最后一条写于'} {formatMoment(detail.follow.since)}
                 </span>
               ) : null
             }
-          >
+ >
             {detail.follow.reason ? (
-              /* Serif at 16px: a quotation of what the reader wrote, so rule 1
-                 applies squarely. It is the one block on this page that earns a
-                 measure larger than the 13px body floor. */
+              /* ⭐ 「我为什么关注它」 — a **quote of what the reader wrote**, set off by
+                 the brass mark (rule 5). It was `serif text-[16px] leading-relaxed`
+                 and the old comment here argued for exactly that: 「a quotation … so
+                 rule 1 applies squarely」.
+
+                 ⭐ **That argument does not survive §2.2.** The table has a row for
+                 理由 — 正文散文, 13 / 20, sans, with a ⛔ on 11/12px — and rule 1's
+                 list is 「标题与主张」. A reason is neither: it is the reader's prose,
+                 and prose in this product is sans. It gets smaller, not larger, and
+                 `serif` comes off rather than being silently overridden, so this
+                 diff says what changed instead of leaving a class that no longer
+                 does anything. The brass mark is what makes it a quotation; the type
+                 was doing a job the mark already does.
+
+                 ⭐ **This is a JS comment, not a JSX comment.** Rewriting it as one
+                 while expanding it is what broke the build: the `(` after `?` puts
+                 the parser in an **expression** position, where a brace opens an
+                 object literal — so a brace-comment became an empty `{}` immediately
+                 followed by a JSX element, which is a syntax error. Inside an
+                 element's children a JSX comment is right; inside a ternary arm it
+                 is a JS comment, and the two spellings are not interchangeable.
+
+                 ⭐ And the note has to describe it *without* writing the closing
+                 delimiter, because writing it here ends this comment on that
+                 character and turns the rest of the sentence into code. */
               <blockquote className="mark border-l-2 border-l-[color:var(--color-brass)] py-1">
-                <p className="serif text-[16px] leading-relaxed">{detail.follow.reason}</p>
+                <p className="type-prose">{detail.follow.reason}</p>
               </blockquote>
             ) : (
-              <p className="text-[13px] text-ink-soft">
+              <p className="type-prose text-ink-soft">
                 {detail.follow.status === 'never'
                   ? '你还没有关注这个标的，所以还没有理由。下面写一句，它会被记下来。'
                   : '当初离开时你没有留下说明 —— 那是允许的，离开不需要理由。'}
@@ -275,19 +301,19 @@ export default function InstrumentPage({ market, code }: Props) {
             title="我对它做过什么"
             aside={
               detail.history.length > 0 ? (
-                <span className="num text-[11px] text-ink-faint">
+                <span className="num type-badge text-ink-faint">
                   {detail.follow.event_count} 条记录
                 </span>
               ) : null
             }
-          >
+ >
             {detail.history.length === 0 ? (
-              <p className="text-[13px] text-ink-soft">
+              <p className="type-prose text-ink-soft">
                 没有任何记录。这个标的还不在你的关注池里。
               </p>
             ) : (
               <>
-                <p className="text-[12px] text-ink-faint">
+                <p className="type-prose text-ink-faint">
                   按写入顺序排列 —— 这是不可修改的记录，读下来是「加入 → 改口 → 离开 → 再来」的过程，
                   倒着排就只剩四条互不相干的行。
                 </p>
@@ -310,7 +336,7 @@ export default function InstrumentPage({ market, code }: Props) {
                 months — it deserves a width a person can actually read.
               */}
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
+                <span className="type-meta caps text-ink-faint">
                   {followed ? '改成什么（会追加一条记录，原句不会消失）' : '写下你为什么关注它'}{' '}
                   <span className="text-[color:var(--color-up)]">必填</span>
                 </span>
@@ -331,7 +357,7 @@ export default function InstrumentPage({ market, code }: Props) {
                     不再关注
                   </Button>
                 )}
-                <span className="text-[12px] text-ink-faint">
+                <span className="type-meta text-ink-faint">
                   {reasonMissing
                     ? '理由为空时按钮不可用 —— 这是唯一不能跳过的一步。'
                     : '理由进入只增不改的日志：无法编辑，只能追加。'}
@@ -341,13 +367,13 @@ export default function InstrumentPage({ market, code }: Props) {
 
             {actionError && (
               <div className="mark mt-2.5 border-l-2 border-l-[color:var(--color-up)] py-1">
-                <p className="text-[13px] text-[color:var(--color-up)]">{actionError.message}</p>
-                {actionError.fix && <p className="text-[12px] text-ink-soft">{actionError.fix}</p>}
+                <p className="type-prose text-[color:var(--color-up)]">{actionError.message}</p>
+                {actionError.fix && <p className="type-prose text-ink-soft">{actionError.fix}</p>}
               </div>
             )}
             {notice && (
               <div className="mark mt-2.5 border-l-2 border-l-navy py-1">
-                <p className="text-[13px] text-navy">{notice}</p>
+                <p className="type-prose text-navy">{notice}</p>
               </div>
             )}
           </section>
@@ -370,7 +396,7 @@ export default function InstrumentPage({ market, code }: Props) {
         </>
       )}
 
-      <footer className="mt-6 border-t border-rule px-4 pt-3 text-[12px] text-ink-faint">
+      <footer className="mt-6 border-t border-rule px-4 pt-3 type-meta text-ink-faint">
         这一页显示的是事实：价格、时间、你自己写下的句子。
         <span className="text-ink-soft">
           {' '}
@@ -402,7 +428,7 @@ function Section({
   return (
     <section className="mt-4">
       <div className="flex items-baseline gap-2 px-4 pb-1.5">
-        <h2 className="text-[11px] font-normal uppercase tracking-[0.06em] text-ink-faint">
+        <h2 className="type-meta font-normal caps text-ink-faint">
           {title}
         </h2>
         {aside ? <span className="ml-auto">{aside}</span> : null}
@@ -434,7 +460,7 @@ function QuoteStrip({
   return (
     <section className="mt-4">
       <div className="flex items-baseline gap-2 px-4 pb-1.5">
-        <h2 className="text-[11px] font-normal uppercase tracking-[0.06em] text-ink-faint">
+        <h2 className="type-meta font-normal caps text-ink-faint">
           现在是什么样
         </h2>
         <Button size="sm" className="ml-auto" onClick={onRefresh}>
@@ -446,7 +472,7 @@ function QuoteStrip({
       <div className="px-4 pt-2">
         {error && (
           <div className="mark border-l-2 border-l-[color:var(--color-up)] py-1">
-            <p className="text-[13px] text-[color:var(--color-up)]">{error}</p>
+            <p className="type-prose text-[color:var(--color-up)]">{error}</p>
           </div>
         )}
 
@@ -454,7 +480,7 @@ function QuoteStrip({
 
         {quote && <QuoteBody quote={quote} />}
 
-        <p className="mt-1.5 text-[12px] text-ink-faint">
+        <p className="mt-1.5 type-prose text-ink-faint">
           价格不会自动刷新 —— 需要你按一次。这一页不是行情终端。
         </p>
       </div>
@@ -467,16 +493,21 @@ function QuoteBody({ quote }: { quote: QuoteResult }) {
     const change = formatChange(quote.value.change_pct)
     return (
       <div className="mt-1">
-        {/* 24px, not 28px: this is the largest number in the product, and rule 1
-            is about *serif*, not about size. A quote in the same sans/mono as
-            every other number on screen reads as a figure in a table row rather
-            than as a headline, which is the correct register for it. */}
+        {/* The quote is the largest number on the page, and it stays in `num` (mono,
+            tabular — rule 2): the old comment here argued 「rule 1 is about *serif*,
+            not about size」 and that is exactly why the size class must not also pick
+            a face. ⭐ `.type-display` is an **extension to §2.2**, not a row from it:
+            24px is above the claim row's 17–20, so the scale had no name for this and
+            `.type-claim-lg` would have shrunk the one figure the page is built
+            around. */}
         <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <span className={`num text-[24px] leading-none ${TONE_CLASS[change.tone]}`}>
+          <span className={`num type-display ${TONE_CLASS[change.tone]}`}>
             {formatPrice(quote.value.price)}
           </span>
-          <span className={`num text-[15px] ${TONE_CLASS[change.tone]}`}>{change.text}</span>
-          <span className="num text-[12px] text-ink-faint">
+          {/* The change, under the price. §2.2's cell row: 13/18, sans — it is a
+              secondary figure, and at 15px it outranked the name above it. */}
+          <span className={`num type-cell ${TONE_CLASS[change.tone]}`}>{change.text}</span>
+          <span className="num type-meta text-ink-faint">
             昨收 {formatPrice(quote.value.prev_close)}
           </span>
         </div>
@@ -510,13 +541,13 @@ function QuoteBody({ quote }: { quote: QuoteResult }) {
           <Field label="成交额" value={formatAmount(quote.value.amount)} />
         </dl>
 
-        <p className="num mt-1.5 text-[12px] text-ink-faint">
+        <p className="num mt-1.5 type-prose text-ink-faint">
           来源 {quote.source} · 数据时间 {formatMoment(quote.fetched_at)}
         </p>
 
         {quote.stale && (
           <div className="mark mt-2 border-l-2 border-l-[color:var(--color-warn)] py-1">
-            <p className="text-[13px] text-[color:var(--color-warn)]">
+            <p className="type-prose text-[color:var(--color-warn)]">
               这个价格是旧的 —— 所有实时来源都没有应答，显示的是最后一次成功取到的值。
             </p>
           </div>
@@ -527,10 +558,10 @@ function QuoteBody({ quote }: { quote: QuoteResult }) {
 
   return (
     <div className="mark mt-1 border-l-2 border-l-[color:var(--color-warn)] py-1">
-      <p className="text-[13px] text-[color:var(--color-warn)]">{QUOTE_FAILURE[quote.status]}</p>
-      {quote.reason && <p className="text-[12px] text-ink-soft">{quote.reason}</p>}
+      <p className="type-prose text-[color:var(--color-warn)]">{QUOTE_FAILURE[quote.status]}</p>
+      {quote.reason && <p className="type-prose text-ink-soft">{quote.reason}</p>}
       {quote.error_code && (
-        <p className="num text-[12px] text-ink-faint">
+        <p className="num type-prose text-ink-faint">
           {quote.error_code}
           {quote.detail ? ` · ${quote.detail}` : ''}
           {quote.source ? ` · 最后尝试的来源：${quote.source}` : ''}
@@ -550,8 +581,8 @@ const QUOTE_FAILURE: Record<DataStatus, string> = {
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-2 border-b border-[color:var(--color-rule-soft)] py-1">
-      <dt className="text-[12px] text-ink-faint">{label}</dt>
-      <dd className="num text-[13px]">{value}</dd>
+      <dt className="type-meta text-ink-faint">{label}</dt>
+      <dd className="num type-prose">{value}</dd>
     </div>
   )
 }
@@ -565,19 +596,19 @@ function TimelineRow({ event }: { event: WatchlistEvent }) {
           ? 'border-l-2 border-l-[color:var(--color-ink-faint)]'
           : 'border-l-2 border-l-navy'
       }`}
-    >
+ >
       <div className="flex flex-wrap items-baseline gap-x-3">
-        <span className="text-[13px] text-ink">{EVENT_LABEL[event.kind] ?? event.kind}</span>
-        <span className="num text-[12px] text-ink-faint">{formatMoment(event.occurred_at)}</span>
-        <span className="num text-[12px] text-ink-faint">事件 #{event.event_id}</span>
+        <span className="type-prose text-ink">{EVENT_LABEL[event.kind] ?? event.kind}</span>
+        <span className="num type-meta text-ink-faint">{formatMoment(event.occurred_at)}</span>
+        <span className="num type-meta text-ink-faint">事件 #{event.event_id}</span>
         {event.supersedes_id !== null && (
-          <span className="num text-[12px] text-ink-faint">取代 #{event.supersedes_id}</span>
+          <span className="num type-meta text-ink-faint">取代 #{event.supersedes_id}</span>
         )}
       </div>
       {event.reason ? (
-        <p className="mt-0.5 text-[13px] text-ink">{event.reason}</p>
+        <p className="mt-0.5 type-prose text-ink">{event.reason}</p>
       ) : (
-        <p className="mt-0.5 text-[12px] text-ink-faint">（离开时没有留下说明）</p>
+        <p className="mt-0.5 type-prose text-ink-faint">（离开时没有留下说明）</p>
       )}
     </li>
   )
@@ -598,18 +629,18 @@ function TimelineRow({ event }: { event: WatchlistEvent }) {
 function NotBuiltYet() {
   return (
     <section className="mt-4 border-t border-rule pt-4">
-      <h2 className="px-4 pb-1.5 text-[11px] font-normal uppercase tracking-[0.06em] text-ink-faint">
+      <h2 className="px-4 pb-1.5 type-meta font-normal caps text-ink-faint">
         还没有的部分
       </h2>
       <div className="border-b border-rule" />
       <div className="px-4 pt-2">
-        <p className="text-[13px] text-ink-soft">
+        <p className="type-prose text-ink-soft">
           这一页最终要同时装下三层：<span className="text-ink">数据</span>、
           <span className="text-ink">知识卡片</span>、<span className="text-ink">决策记录</span>。
           三层里的<strong className="text-ink">记录</strong>都已经有了 ——
           卡片能记能查（K1），决策能记（J1）—— 决策的<strong className="text-ink">对质</strong>还没有。
         </p>
-        <ul className="mt-1.5 text-[12px] text-ink-faint">
+        <ul className="mt-1.5 type-meta text-ink-faint">
           <li className="mark border-l-2 border-l-[color:var(--color-rule)] py-1">
             卡片复习与淘汰（K2）—— 卡片只有「记」没有「复习」；「哪张卡可以淘汰」还要靠人眼。
           </li>
@@ -627,7 +658,7 @@ function NotBuiltYet() {
             教训转卡（J5）—— 教训还不能变成复习卡片，所以「不再重犯」暂时还不是日程。
           </li>
         </ul>
-        <p className="mt-1.5 text-[12px] text-ink-faint">
+        <p className="mt-1.5 type-prose text-ink-faint">
           写在这里而不是留空白：一个看起来像加载失败的空白区，会让人以为是 bug 而不是缺口。
         </p>
       </div>

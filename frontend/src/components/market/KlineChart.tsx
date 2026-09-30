@@ -93,9 +93,9 @@ function StateNotice({ title, detail }: { title: string; detail: string }) {
     <div
       data-testid="kline-state"
       className="rounded-[4px] border border-[color:var(--color-rule-soft)] p-4"
-    >
-      <p className="text-[13px] text-ink-soft">{title}</p>
-      <p className="text-[12px] text-ink-faint">{detail}</p>
+ >
+      <p className="type-prose text-ink-soft">{title}</p>
+      <p className="type-prose text-ink-faint">{detail}</p>
     </div>
   )
 }
@@ -155,7 +155,7 @@ function Legend({
               style={{ background: item.color }}
             />
           )}
-          <span className="text-[12px] text-ink-faint">{item.label}</span>
+          <span className="type-meta text-ink-faint">{item.label}</span>
         </li>
       ))}
     </ul>
@@ -340,7 +340,7 @@ export function KlineChart({ result }: KlineChartProps) {
   return (
     <div>
       {result.stale && (
-        <p data-testid="kline-stale" className="text-[12px] text-[color:var(--color-up)]">
+        <p data-testid="kline-stale" className="type-prose text-[color:var(--color-up)]">
           ⭐ 数据源此刻拿不到，下面是缓存里那一份
           {result.fetched_at ? `（${result.fetched_at}）` : ''}。
         </p>
@@ -350,25 +350,25 @@ export function KlineChart({ result }: KlineChartProps) {
       {pane.length > 0 && (
         <>
           <div ref={paneHost} data-testid="kline-indicator-pane" />
-          <p className="text-[11px] text-ink-faint" data-testid="kline-pane-caption">
+          <p className="type-badge text-ink-faint" data-testid="kline-pane-caption">
             ⭐ MACD 12/26/9，与上图同一时间轴
           </p>
         </>
       )}
       {indicators.length === 0 && (
-        <p className="text-[12px] text-ink-faint" data-testid="kline-no-indicators">
+        <p className="type-prose text-ink-faint" data-testid="kline-no-indicators">
           ⭐ 这 {bars.length} 根日线不够算任何一条指标 —— 每条指标都有预热段，比这更短的
           区间算不出它。数据本身是全的。
         </p>
       )}
       {unplaced.length > 0 && (
-        <p className="text-[12px] text-ink-faint" data-testid="kline-unplaced">
+        <p className="type-prose text-ink-faint" data-testid="kline-unplaced">
           ⭐ 服务端算了 {indicators.length} 条指标，本页只画 {overlay.length + pane.length}{' '}
           条；未画的是 {unplaced.map((item) => item.label).join('、')}。图例里没有它们，
           因为图例只列画出来的东西。
         </p>
       )}
-      <p className="text-[12px] text-ink-faint" data-testid="kline-caption">
+      <p className="type-prose text-ink-faint" data-testid="kline-caption">
         {bars.length} 根日线 · {bars[0].trade_date} 至 {bars[bars.length - 1].trade_date}
         {result.source ? ` · 来源 ${result.source}` : ''} · 前复权口径 · 成交量单位为股，
         成交额该源不提供
