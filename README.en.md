@@ -1,10 +1,12 @@
 # AlphaCouncil
 
-> A knowledge system for people who trade A-shares. It puts **the data about one
-> instrument, the judgements you wrote down, and what happened to those judgements**
+> **Investing is a practice, not a prediction.**
+>
+> A knowledge system for people who trade A-shares. It puts the data about one
+> instrument, the judgements you wrote down, and what happened to those judgements
 > on the same page.
 > Append-only decision log · spaced repetition · a quality quadrant for decisions ·
-> **it optimises your process, never your return forecast**
+> it optimises your process, never your return forecast
 
 **中文** | [English](README.en.md)
 

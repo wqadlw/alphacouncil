@@ -26,10 +26,34 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-const SRC = new URL('.', import.meta.url).pathname.replace(/^\//, '').replace(/\/$/, '')
-const SRC_DIR = SRC === '' ? '.' : SRC
+/**
+ * The `src` directory, as an absolute path.
+ *
+ * **Was `new URL('.', import.meta.url).pathname` with a leading-slash strip, and
+ * that silently resolved to nothing on Windows.** `URL.pathname` is percent-encoded
+ * and always begins with `/`, so on this machine it produced
+ * `/D:/AAA/.../frontend/src`; stripping the slash left `D:/AAA/.../frontend/src`,
+ * which is an *absolute Windows path being used as relative* — it does not throw,
+ * it just does not exist relative to the cwd vitest runs in. The `? : '.'`
+ * fallback then quietly turned every scan into a scan of `frontend/`, and
+ * `FILES.filter((f) => f.endsWith('.css'))` came back **empty**, because the one
+ * stylesheet is at `src/styles/globals.css` and there is no `.css` at the
+ * frontend root.
+ *
+ * The consequence was not a red build. It was **V-06's first assertion never
+ * running**: `for (const file of CSS)` over an empty array, thirty-seven tests
+ * green, and a deliberate `@keyframes` in the stylesheet detected by nothing.
+ * This repository already has the rule for that shape — "if the scan stops finding
+ * things, every rule passes by having checked nothing" — written above the
+ * duration checks. It was simply not applied to the file walk.
+ *
+ * `fileURLToPath` is the supported way to go from a `file:` URL to a path, on
+ * every platform, and it does not need the caller to know which platform it is on.
+ */
+const SRC_DIR = fileURLToPath(new URL('.', import.meta.url))
 
 /** Every `.ts` / `.tsx` / `.css` under `src`, skipping tests. */
 function sourceFiles(dir: string = SRC_DIR): string[] {
@@ -50,6 +74,17 @@ function sourceFiles(dir: string = SRC_DIR): string[] {
 
 const FILES = sourceFiles()
 
+/**
+ * The stylesheet, on its own.
+ *
+ * **Hoisted here on 2026-09-30, and it used to sit 240 lines further down** — past
+ * the block that now asserts it is non-empty. A guard that has to be written after
+ * the thing it guards is a guard nobody writes, so the list and its assertion are
+ * now together, and the eleven `for (const file of CSS)` loops below can all reach
+ * a list that is known to hold something.
+ */
+const CSS = FILES.filter((f) => f.endsWith('.css'))
+
 /** ⭐ The E2E specs, ⭐ and the vitest/vite config files ⭐ - ⭐ everything under
  * ⭐ `e2e/` plus the two configs at the frontend root that import packages.
  * ⭐ ⭐ Derived from the filesystem ⭐ rather than a literal path ⭐ - ⭐ the
@@ -61,7 +96,21 @@ const E2E_FILES: string[] = existsSync(E2E_DIR)
       .filter((entry) => entry.endsWith('.spec.ts'))
       .map((entry) => join(E2E_DIR, entry))
   : []
-const RELATIVE = (file: string) => file.slice(SRC_DIR.length + 1).replace(/\\/g, '/')
+/**
+ * A path relative to `src`, for a message a person can act on.
+ *
+ * **The `+ 1` was a bug the new guard caught on its first run.** It assumed
+ * `SRC_DIR` ends in a separator, which the old expression's trailing-slash strip
+ * happened to provide: `new URL(...).pathname` is `/D:/…/src/`, and removing the
+ * final `/` left the separator between `src` and the file name intact. That was
+ * accidental — the old `SRC_DIR` *was* `D:/…/src`, with no trailing slash, so the
+ * `+ 1` was already eating the first character of every relative path, and no
+ * assertion was reading one closely enough to notice. `tyles/globals.css` is what
+ * a reader would have been shown in every failure message.
+ *
+ * `fileURLToPath` does not add a trailing separator, so the slice is now exact.
+ */
+const RELATIVE = (file: string) => file.slice(SRC_DIR.length).replace(/^[\\/]/, '').replace(/\\/g, '/')
 
 /**
  * Strip comments, preserving line numbering.
@@ -144,6 +193,34 @@ describe('the file list is not empty', () => {
   it('actually found the source tree', () => {
     expect(FILES.length).toBeGreaterThan(20)
     expect(FILES.some((f) => f.endsWith('globals.css'))).toBe(true)
+  })
+
+  /**
+   * The stylesheet is a **separate list** and it needs its own assertion.
+   *
+   * `actually found the source tree` above was green while `CSS` was empty,
+   * because the walk resolved to the frontend root: it found 60-odd `.tsx` and
+   * zero `.css`. So every rule written as `for (const file of CSS)` iterated
+   * nothing and reported clean. This file has eleven such loops and not one of
+   * them had a guard — the shape the comment above warns about, sitting in the
+   * same file as the warning.
+   *
+   * A list that a rule iterates and a rule that never iterates it are
+   * indistinguishable from the outside, so the list itself is asserted here, once,
+   * next to where it is built.
+   */
+  it('found the stylesheet, so the rules that read it are not vacuous', () => {
+    expect(
+      CSS.length,
+      'CSS is empty: every rule written as `for (const file of CSS)` is iterating ' +
+        'nothing and reporting clean. This is what happened on 2026-09-30 — SRC_DIR ' +
+        'resolved to the frontend root, and the one stylesheet is at ' +
+        '`src/styles/globals.css`.',
+    ).toBeGreaterThan(0)
+    expect(
+      CSS.map(RELATIVE).join(', '),
+      'the stylesheet list should name the file that holds every token in §2.2',
+    ).toContain('styles/globals.css')
   })
 })
 
@@ -236,24 +313,188 @@ describe('V-05 · numbers are tabular', () => {
   })
 })
 
-describe('V-06 · no decorative motion', () => {
-  it('has no keyframes, so nothing can shimmer or count up', () => {
-    // Stronger than grepping for `animate-` or `transition`: if the stylesheet
-    // defines no `@keyframes` at all, then shimmer, count-up, fade-in-up and
-    // slide-in are all impossible by construction rather than by review. The
-    // guide's §7.2 bans six named effects; this makes the whole class
-    // unrepresentable.
-    for (const file of FILES.filter((f) => f.endsWith('.css'))) {
+describe('V-06 · decorative motion is allowed, decorative motion is accountable', () => {
+  /**
+   * **Reversed 2026-09-30 by ADR-0033.** The owner's decision: a deliberately
+   * aesthetic product, which the guide's own §5.2 ("the interface is the product,
+   * not a landing page") and §7.2's six bans had ruled out.
+   *
+   * What changed is the *scope*, not the *teeth*. The first version of this rule
+   * asserted that the stylesheet defines no `@keyframes` at all, and its own
+   * comment said why that shape was chosen:
+   *
+   * > Stronger than grepping: if the stylesheet defines no `@keyframes` at all,
+   * > then shimmer, count-up, fade-in-up and slide-in are all impossible **by
+   * > construction rather than by review.**
+   *
+   * That sentence is the reason this block is not simply deleted. Making a class
+   * of effect unrepresentable is a stronger guarantee than reviewing each use, and
+   * this repository's whole claim is that it prefers construction to review. A
+   * reversed rule that leaves nothing behind is a *weaker* repository, so the two
+   * assertions below take over the job:
+   *
+   * 1. every keyframe animation must be reachable by `prefers-reduced-motion`
+   * 2. motion may not be applied to the data itself (§7.1's L0)
+   *
+   * Between them they still stop the specific things §7.2 named, and the reduced
+   * -motion rule is the one that matters for a person who gets motion sick.
+   */
+
+  // `CSS` is the module-level list, asserted non-empty in the block above.
+  const keyframeRules = (): { where: string; name: string }[] => {
+    const found: { where: string; name: string }[] = []
+    for (const file of CSS) {
       const css = stripComments(readFileSync(file, 'utf8'), true)
-      expect(css, `${RELATIVE(file)} defines @keyframes`).not.toMatch(/@keyframes/)
+      for (const m of css.matchAll(/@keyframes\s+([\w-]+)/g)) {
+        found.push({ where: RELATIVE(file), name: m[1] })
+      }
     }
+    return found
+  }
+
+  it('every keyframe animation is switched off under prefers-reduced-motion', () => {
+    const reduced = CSS.map((f) => stripComments(readFileSync(f, 'utf8'), true))
+      .join('\n')
+
+    /**
+     * Two shapes are accepted, and the difference matters.
+     *
+     * **Whole-tree.** A `prefers-reduced-motion` block that sets
+     * `animation-duration` (or `animation: none`) on `*` — or on `[data-motion]`,
+     * or any selector matching the tree — switches off *everything*, including
+     * keyframes declared later in the file. This stylesheet already has one.
+     *
+     * **Per-name.** Otherwise the animation has to be named in the block.
+     *
+     * The first version of this assertion tested `reduced.includes('prefers-reduced-motion')`
+     * and treated that as proof every animation was covered. **It is not**, and the
+     * stylesheet's own existing block is what exposed it: that block was present, so
+     * the flag was true, so a `@keyframes` with no name in it passed. The rule was
+     * satisfied by a block that had been there before motion was allowed at all.
+     *
+     * So the question is not "is there a reduced-motion block" but "does the block
+     * reach this animation" — which is a question about selectors, answered below.
+     */
+    const wholeTree = /@media[^{]*prefers-reduced-motion[^{]*\{[\s\S]*?\}/.test(reduced)
+      ? /@media[^{]*prefers-reduced-motion[^{]*\{([\s\S]*?)\n\}/.exec(reduced)?.[1] ?? ''
+      : ''
+    // A block that reaches the tree: `*`, `:root`, `html`, `body`, or a
+    // `[data-motion]`-style attribute selector that the components already carry.
+    const blanket = /(^|[,{}])\s*(\*|:root|html|body|\[[\w-]+\])\s*(,|\{)/.test(wholeTree)
+    const named = (name: string) =>
+      new RegExp(`animation[^;{}]*\\b${name}\\b`).test(wholeTree)
+
+    const names = keyframeRules()
+    const unguarded = names.filter((n) => !(blanket || named(n.name)))
+
+    expect(
+      unguarded.map((n) => `${n.where}  @keyframes ${n.name}`),
+      'each @keyframes must be switched off by a prefers-reduced-motion block, either ' +
+        'by a selector that reaches the tree or by naming the animation:\n' +
+        unguarded.map((n) => `${n.where}  ${n.name}`).join('\n'),
+    ).toEqual([])
+
+    /**
+     * A blanket block does **not** cover an `animation` shorthand that carries
+     * `!important`.
+     *
+     * This is real CSS and it was found by trying to break the rule rather than
+     * by reading it. The stylesheet's own block is
+     * `[data-motion], * { animation-duration: 0.01ms !important }`, which beats a
+     * plain `animation: name 700ms` — the longhand is what the shorthand expands
+     * to, and the override arrives later with equal specificity. But a shorthand
+     * written as `animation: name 700ms linear !important` out-ranks it, and the
+     * animation runs at full duration for a reader who asked for less.
+     *
+     * So a `!important` on an `animation` shorthand is a keyframe the blanket
+     * block does not reach, and it is the one shape where "there is a
+     * reduced-motion block" and "the motion is switched off" come apart.
+     */
+    const importantAnimations = CSS.flatMap((file) => {
+      const css = stripComments(readFileSync(file, 'utf8'), true)
+      const out: string[] = []
+      for (const m of css.matchAll(/animation\s*:[^;{}]*!important/g)) {
+        out.push(`${RELATIVE(file)}  ${m[0].trim()}`)
+      }
+      return out
+    })
+    expect(
+      importantAnimations,
+      'an `animation` shorthand with !important out-ranks the blanket ' +
+        '`animation-duration: 0.01ms !important` in the reduced-motion block, so the ' +
+        'animation still runs at full length. Use a longhand, or drop the !important.',
+    ).toEqual([])
+
+    // And the substrate: a stylesheet with keyframes and no reduced-motion block at
+    // all is the failure this assertion exists to catch, so it is checked rather
+    // than assumed.
+    expect(
+      names.length === 0 || wholeTree.length > 0,
+      'the stylesheet declares @keyframes but has no prefers-reduced-motion block',
+    ).toBe(true)
+    expect(
+      names.length === 0 || blanket || names.every((n) => named(n.name)),
+      'the prefers-reduced-motion block does not reach any animation — a block that ' +
+        'names a selector nothing uses is the same as no block at all',
+    ).toBe(true)
   })
 
-  it('has no animation utility in any component', () => {
-    const hits = occurrences(/\banimate-(?!none)|duration-\d/)
-    expect(describeHits(hits), `animation utility:\n${describeHits(hits)}`).toBe('')
+  it('never animates the data itself — §7.1 L0 still holds', () => {
+    // This is the one ban from §7.2 that survives the reversal, because it is the
+    // one about product meaning rather than decoration: an animated number is a
+    // number the reader has to watch settle, and the guide's own note is that it
+    // implies a return. A row of figures, a chart, a price — those are L0.
+    //
+    // Scanned in the **stylesheet**, not in JSX. The first version matched
+    // `animate-*` in component source, which is the wrong artefact twice over: it
+    // can only see a Tailwind class name and never the `animation` declaration
+    // that actually moves a thing, and it would fire on a class that is written
+    // but never applied. The selectors in the stylesheet are where the animation
+    // meets the element it moves, so that is where the question belongs.
+    // ⭐ **Substring, not a word boundary, and that was found by failing to catch
+    // `.ticker-price`.** ⭐ A boundary pattern with `[^\w-]` on both sides
+    // ⭐ deliberately excludes a hyphen, because `close` must not fire on
+    // ⭐ `disclose` ⭐ — ⭐ and the same exclusion means `ticker-price` never matches
+    // ⭐ `price` ⭐, ⭐⭐ which is precisely a price ⭐⭐. ⭐
+    //: ⭐ So the word list is matched inside the identifier, split on hyphen and
+    //: ⭐ underscore first, and each part compared whole. ⭐ `.ticker-price`
+    //: ⭐ splits to `['ticker', 'price']` ⭐⭐ and `price` is in the list ⭐⭐;
+    //: ⭐ `.disclose` ⭐ is one part ⭐, ⭐ not in the list ⭐, ⭐ and stays legal ⭐⭐.
+    const DATA_WORDS = new Set([
+      'count', 'countup', 'figure', 'figures', 'price', 'prices', 'value', 'values',
+      'number', 'numbers', 'total', 'totals', 'amount', 'amounts', 'pnl',
+      'quote', 'quotes', 'close', 'closes', 'volume', 'volumes', 'candle', 'candles',
+      'ohlc', 'change', 'changes', 'pct', 'nav', 'equity', 'drawdown', 'sharpe',
+    ])
+    /** Every identifier part in a selector that names a figure. */
+    const dataParts = (selector: string): string[] =>
+      [...selector.matchAll(/[A-Za-z][\w-]*/g)]
+        .flatMap((w) => w[0].split(/[-_]+/))
+        .map((w) => w.toLowerCase())
+        .filter((w) => DATA_WORDS.has(w))
+
+    const offenders: string[] = []
+    for (const file of CSS) {
+      const css = stripComments(readFileSync(file, 'utf8'), true)
+      // A rule block: selector, declarations, and — if it has one — an animation.
+      for (const m of css.matchAll(/([^{}]+)\{([^{}]*animation[^{}]*)\}/g)) {
+        const [, selector, body] = m
+        const parts = dataParts(selector)
+        if (parts.length > 0) {
+          offenders.push(
+            `${RELATIVE(file)}  ${selector.trim()} → ${body.trim().slice(0, 60)}` +
+              `   (${[...new Set(parts)].join(', ')})`,
+          )
+        }
+      }
+    }
+    expect(
+      offenders,
+      `an animation on a data-bearing selector (§7.1 L0 — data does not move):\n${offenders.join('\n')}`,
+    ).toEqual([])
   })
 })
+
 
 describe('V-07 · the dependency budget', () => {
   it('has only the approved runtime packages', () => {

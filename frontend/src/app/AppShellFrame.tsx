@@ -123,8 +123,30 @@ export function AppShellFrame({
     <div className="flex h-full flex-col" id={SHELL_ID} data-testid="app-shell">
       {/* ── Top bar: identity, the search front door, the palette hint ─────── */}
       <header className="flex shrink-0 items-center gap-4 border-b border-rule bg-surface px-4 py-2">
-        <a href="#/" className="serif type-claim text-ink no-underline" data-testid="brand">
-          AlphaCouncil
+        <a
+          href="#/"
+          className="group flex shrink-0 items-baseline gap-2 no-underline"
+          data-testid="brand"
+        >
+          <span className="serif type-claim text-ink">AlphaCouncil</span>
+          {/*
+            The slogan, 2026-09-30. The owner's words, 「投资是一场修行」, replacing
+            the older line 「只优化过程，不预测涨跌」 as the thing a reader sees first.
+
+            Both sentences are true and only one of them is a promise about the
+            *user* rather than about the product, which is why it earns the top
+            bar. The old one describes a feature boundary; this one describes what
+            the reader is doing here, and it is also the reason the product refuses
+            to score them: a practice has no percentage.
+
+            `type-meta` and `text-ink-faint` deliberately, not `type-claim`: the
+            serif claim face is reserved for what the *reader* wrote, per §2.1,
+            and the brand's own name is the one place that rule has an exception.
+            The slogan is not a claim and must not be set as one.
+          */}
+          <span className="type-meta hidden text-ink-faint sm:inline">
+            投资是一场修行
+          </span>
         </a>
         <div className="relative max-w-[420px] flex-1">
           <Input
