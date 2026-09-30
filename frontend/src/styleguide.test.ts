@@ -934,10 +934,17 @@ describe('V-14 — an append-only log has one rendering', () => {
  * panel a **sibling** of `#root` rather than a descendant of the shell.
  */
 describe('V-15 — the modal escapes the subtree it disables', () => {
+  // ⭐ **Two files, and the split is the point.** The three behaviours live in
+  // `useModalFocus` (so a Drawer can reuse them) and the one thing only the palette
+  // does is the portal. ⭐ The first version of this rule read only
+  // `CommandPalette`, and it passed while the hook carried all four claims ⭐ — so a
+  // rule that follows a refactor has to be pointed at the file that ended up owning
+  // the thing.
   const palette = readFileSync(
     [SRC_DIR, 'components', 'nav', 'CommandPalette.tsx'].join('/'),
     'utf8',
   )
+  const hook = readFileSync([SRC_DIR, 'useModalFocus.ts'].join('/'), 'utf8')
   const shell = readFileSync([SRC_DIR, 'app', 'AppShellFrame.tsx'].join('/'), 'utf8')
 
   it('portals the panel to document.body, not into the shell', () => {
@@ -959,15 +966,57 @@ describe('V-15 — the modal escapes the subtree it disables', () => {
     ).toMatch(/createPortal\([\s\S]*?document\.body\s*[,)]/)
   })
 
+  it('the palette delegates the three behaviours instead of re-implementing them', () => {
+    // ⭐ **The two-homes rule, applied to a refactor.** A Drawer is a modal that
+    // arrives from the side and needs the same three things, ⭐ so 「reuse the
+    // palette's mechanism」 is only true while the mechanism is not inside the
+    // palette. ⭐ This asserts the delegation and the *absence* of the logic, ⭐ and
+    // the second half is the one that would catch a paste.
+    //
+    // ⭐ **Two things the first version got wrong, both found by mutation, and both
+    // the same mistake: a regex cannot tell code from prose.**
+    //
+    // 1. it matched `/useModalFocus\(\{[^}]*open[^}]*panelRef[^}]*\}\)/` against
+    //    the **raw** source, ⭐ so commenting the call out satisfied it — the text
+    //    `// useModalFocus({ open, panelRef })` still contains every token. ⭐ A
+    //    delegation that has been commented out is the most likely way for a
+    //    refactor to be silently undone.
+    // 2. `[^}]*open[^}]*` also matches `useModalFocus({ open: !open, panelRef })`, ⭐
+    //    which is a call with the flag **inverted** — ⭐ exactly the mistake a
+    //    refactor makes while moving code, and it type-checks because both are
+    //    objects with the same keys. ⭐ The compiler is no help here.
+    //
+    // ⭐ So the assertion is the **exact** call on **comment-stripped** source.
+    // `stripComments` is this file's own helper and its whole reason for existing.
+    const paletteCode = stripComments(palette, false)
+    expect(paletteCode, 'the palette does not call the shared hook').toMatch(
+      /useModalFocus\(\{\s*open,\s*panelRef\s*\}\)/,
+    )
+    for (const [label, pattern] of [
+      ['its own focus recording', 'previousFocus.current'],
+      ['its own inert write', '.inert ='],
+      // ⭐ **`panel`-scoped, and this narrowing is the third time on this rule.**
+      // The first version banned the bare string `addEventListener('keydown'`, ⭐ and
+      // the palette legitimately has one: `useCommandPalette` binds ⌘K on `window`,
+      // ⭐ which is the shortcut and has nothing to do with a focus trap. ⭐ A
+      // negative assertion written wider than the thing it forbids fails on correct
+      // code, ⭐ and the reflex to narrow it must not become 「delete the assertion」 —
+      // so the pattern names the panel, which is what would actually be duplicated.
+      ['its own panel-scoped keydown listener', "panel.addEventListener('keydown'"],
+    ] as const) {
+      expect(paletteCode, `the palette still has ${label}`).not.toContain(pattern)
+    }
+  })
+
   it('makes the shell inert while open, and undoes it on close', () => {
     // ⭐ **Three claims, because the two halves fail differently.** Setting `inert`
     // and never clearing it produces a page that looks fine and cannot be clicked;
     // ⭐ clearing it to a hard-coded `false` produces the same bug the moment
     // something else wants the shell inert, ⭐ so the restore must assign the value
     // it read.
-    expect(palette, 'the palette never sets inert on anything').toMatch(/\.inert = true/)
-    expect(palette, 'the palette restores inert to a literal instead of the value it read')
-      .toMatch(/shell\.inert = wasInert/)
+    expect(hook, 'the hook never sets inert on anything').toMatch(/\.inert = true/)
+    expect(hook, 'the hook restores inert to a literal instead of the value it read')
+      .toMatch(/target\.inert = wasInert/)
   })
 
   it('records what had focus, and gives it back', () => {
@@ -975,25 +1024,70 @@ describe('V-15 — the modal escapes the subtree it disables', () => {
     // ref's existence, ⭐ so the assertion is on the *recording* — `activeElement` —
     // and on the `isConnected` check that keeps a restore from silently becoming a
     // no-op against a detached node.
-    expect(palette, 'nothing records where focus came from').toMatch(
+    expect(hook, 'nothing records where focus came from').toMatch(
       /previousFocus\.current[\s\S]{0,120}activeElement/,
     )
     expect(
-      palette,
+      hook,
       'the restore does not check the element is still in the document',
     ).toContain('isConnected')
   })
 
-  it('has one id contract between the shell and the palette', () => {
+  it('traps Tab on the panel, not on the document', () => {
+    // ⭐ **The placement, because it is the whole finding.** A `window` listener sees
+    // `Tab` only when nothing above it handled the event, ⭐ and a `keydown` on the
+    // focused input is handled by React's root listener first ⇒ **backward Tab would
+    // work and forward Tab would silently not.** `F-164`.
+    //
+    // ⭐ **Comment-stripped, for the same reason as the delegation assertion above** —
+    // ⭐ a comment that says 「the trap is installed on `panel.addEventListener`」 would
+    // otherwise satisfy this test, ⭐ and that sentence is exactly what someone
+    // writing a comment about a refactor would write.
+    const hookCode = stripComments(hook, false)
+    expect(hookCode, 'the trap is not installed on the panel itself').toContain(
+      "panel.addEventListener('keydown'",
+    )
+    expect(hookCode, 'the trap is installed on the document or the window').not.toMatch(
+      /window\.addEventListener\('keydown'|document\.addEventListener\('keydown'/,
+    )
+    // ⭐ **Both directions, as two conditions.** One condition traps one direction,
+    // ⭐ and a half-trap passes any test that only walks forwards.
+    expect(hookCode, 'the forward wrap is missing').toMatch(
+      /!event\.shiftKey && current === last/,
+    )
+    expect(hookCode, 'the backward wrap is missing').toMatch(
+      /event\.shiftKey && current === first/,
+    )
+    // ⭐ **And the "no stops at all" branch, which is the one an empty result list
+    // reaches.** ⭐ The palette's list is `rows.length === 0` or `rows.length`
+    // buttons, ⭐ so a query with no matches leaves the panel with **one focusable
+    // thing — the input**. ⭐ A branch that assumes at least two stops, ⭐ or that
+    // falls back to focusing a `div` with no `tabindex` (a silent no-op), ⭐ leaves the
+    // reader on the page behind with the panel still open. ⭐ Asserted because the
+    // E2E trap test only ever walks a *populated* panel.
+    expect(hookCode, 'the empty-panel branch is missing').toMatch(
+      /stops\.length === 0[\s\S]{0,200}panel\.focus\(\)/,
+    )
+    expect(
+      stripComments(palette, false),
+      'the panel cannot take programmatic focus without a tabindex',
+    ).toMatch(/tabIndex=\{-1\}/)
+  })
+
+  it('has one id contract between the shell and the hook', () => {
     // ⭐ Both sides use the same constant, so a rename is a type error in
     // `AppShellFrame` rather than a runtime no-op where the page silently stops
     // going inert. ⭐ Asserting the *contract* rather than the literal id means the
-    // test does not have to be edited when the id is.
-    expect(palette, 'the palette does not export the shell id it looks up').toMatch(
+    // test does not have to be edited when the id is, ⭐ and the constant lives with
+    // the code that uses it — the hook, which is what has to find the element.
+    expect(hook, 'the hook does not export the shell id it looks up').toMatch(
       /export const SHELL_ID/,
     )
-    expect(shell, 'the shell does not set the id the palette looks for').toMatch(
+    expect(shell, 'the shell does not set the id the hook looks for').toMatch(
       /id=\{SHELL_ID\}/,
+    )
+    expect(palette, 'the palette still owns the id it no longer uses').not.toContain(
+      'SHELL_ID',
     )
   })
 })

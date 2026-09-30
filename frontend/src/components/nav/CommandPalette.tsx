@@ -31,40 +31,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '../../lib/cn'
-
-/**
- * The focusable things inside the panel, in the order they are read.
- *
- * ⭐ **A query, not a list of refs.** The panel's contents are conditional — the list
- * is `rows.length === 0` or `rows.length` buttons — so a hand-maintained array of
- * refs would be wrong the moment a row is added or the query has no matches. ⭐
- * `F-151` is the reason this is a query: a guard written from an assumption rather
- * than a measurement can be unreachable while reading as diligence, and the only
- * defence is to derive the value rather than keep it in step by hand.
- *
- * ⚠️ **The selector is the one place this can go stale**, and it is written to match
- * what the panel renders rather than what it ought to render. ⭐ The panel's three
- * footer hints (`↑↓ 选择` / `⏎ 执行` / `Esc 关闭`) are `<span>`s, not buttons, so
- * they are **not** tab stops and **must not** be in the trap: a screen-reader user
- * tabbing forward would land on a hint that does nothing, and the panel would feel
- * broken. ⭐ If someone makes them `<button>`s this query picks them up
- * automatically, which is the behaviour that is wanted.
- */
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
-
-/**
- * The shell's id, shared with `AppShellFrame`.
- *
- * ⭐ **A constant rather than a prop, and the reason is worth stating.** The palette
- * needs to make the shell `inert` and it is not a descendant of it, so it has to
- * find it. ⭐ The alternative — threading a ref down from the frame — would mean
- * `CommandPalette`'s props grow a field that only matters in one of its three open
- * routes, ⭐ and a component that knows about the frame's DOM is no longer a
- * component. An `id` is the cheapest contract that both sides can hold, ⭐ and
- * `AppShellFrame` uses the same constant so a rename is a compile error there.
- */
-export const SHELL_ID = 'app-shell'
+import { useModalFocus } from '../../useModalFocus'
 
 export interface Command {
   id: string
@@ -89,22 +56,13 @@ export function CommandPalette({
   const inputRef = useRef<HTMLInputElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
-  /**
-   * ⭐ **What had focus before the palette opened.**
-   *
-   * Measured on 2026-09-30 with a browser probe rather than asserted: closing the
-   * palette left `document.activeElement` on `body`, so the reader who pressed
-   * ⌘K from the sidebar's 「知识库」 link was dropped at the top of the document and
-   * had to Tab back. ⭐ Recording it is the whole fix and there is no way to derive
-   * it — the browser does not remember, and the component cannot ask.
-   *
-   * ⭐ **Recorded on `open` becoming true, not in the click handler.** The palette is
-   * opened by three different routes (⌘K, the sidebar button, a page-contributed
-   * command) and only one of them is a click; ⭐ a ref set in `onClick` would restore
-   * focus to `body` for the two other routes, which is the shape of a fix that works
-   * in the test and not in the app.
-   */
-  const previousFocus = useRef<HTMLElement | null>(null)
+  // ⭐ **The three things a modal owes, in one place.** ⭐ This used to be three
+  // effects and a `trapFocus` in this file, because that is where the missing
+  // behaviour turned up. ⭐ A Drawer is a modal that arrives from the side and it
+  // needs the same three things, ⭐ and 「reuse the palette's mechanism」 with the
+  // mechanism inside a page-level component is copy-paste with a delay.
+  useModalFocus({ open, panelRef })
+
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -131,13 +89,6 @@ export function CommandPalette({
 
   useEffect(() => {
     if (!open) return
-    // ⭐ Read it **before** anything steals focus. The effect below moves focus with
-    // a rAF, so the value read here is still the reader's, and reading it in the rAF
-    // itself would record the palette's own input — ⭐ which restores focus to the
-    // thing that no longer exists, and looks like it works in every manual test
-    // because you opened it from somewhere and stayed there.
-    previousFocus.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null
     setQuery('')
     setSelected(0)
     // Focus after paint, so the input exists. Without the rAF the caret lands
@@ -146,66 +97,9 @@ export function CommandPalette({
     return () => cancelAnimationFrame(frame)
   }, [open])
 
-  /**
-   * ⭐ **Give the focus back when the palette closes.**
-   *
-   * ⭐ The condition is the one that is easy to get wrong: restoring on **unmount**
-   * alone would fire when the whole app navigated, and ⭐ restoring on `open`
-   * changing to false fights a command that *intends* to move focus elsewhere — a
-   * command that opens an editor should leave focus in the editor, not yank it back
-   * to the sidebar link. ⭐ So the restore is scheduled and the element is checked
-   * one frame later: ⭐ if the command moved focus, the reader's new focus is left
-   * alone; if it did not, focus goes back to where it came from.
-   */
-  useEffect(() => {
-    if (open) return
-    const target = previousFocus.current
-    if (target === null) return
-    const frame = requestAnimationFrame(() => {
-      // ⭐ The element may have been unmounted in the meantime — a command that
-      // navigates away from the view that owned the link leaves a detached node
-      // here, and `focus()` on a detached element is a silent no-op that looks like
-      // a successful restore.
-      if (target.isConnected) target.focus()
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [open])
-
   useEffect(() => {
     setSelected(0)
   }, [query])
-
-  /**
-   * ⭐ **The outer half of the trap: focus that is *not* in the panel.**
-   *
-   * `aria-modal="true"` is a claim the DOM does not enforce — ⭐ measured, 8 of the
-   * page's focusable elements were reachable with the panel open. ⭐ Making the
-   * page's own nodes unfocusable is the mechanism that actually delivers the claim,
-   * and `inert` is the platform's: ⭐ §6 bans an animation **library**, not a
-   * platform feature, and `inert` is one attribute that the browser implements in
-   * every target this product ships.
-   *
-   * ⭐ **Applied to the shell, and the panel escapes it via the portal.** The
-   * palette's call site is inside the shell (`AppShellFrame` renders it there and
-   * there is no reason to move it), ⭐ so setting `inert` on the shell would have
-   * frozen the panel along with the page behind. ⭐ The panel is portalled into
-   * `document.body`, which puts it in `#root`'s sibling — ⭐ so `inert` on the shell
-   * does not reach it, and a modal can be disabled *around* rather than *without*
-   * freezing itself.
-   */
-  useEffect(() => {
-    if (!open) return
-    const shell = document.getElementById(SHELL_ID)
-    if (shell === null) return
-    const wasInert = shell.inert
-    shell.inert = true
-    return () => {
-      // ⭐ Restore the **previous** value rather than setting `false`. Something
-      // else may have made the shell inert for its own reasons, ⭐ and a cleanup
-      // that hard-codes `false` would silently un-disable it.
-      shell.inert = wasInert
-    }
-  }, [open])
 
   if (!open) return null
 
@@ -215,70 +109,12 @@ export function CommandPalette({
     onClose()
   }
 
-  /**
-   * ⭐ **Keep Tab inside the panel — and the reason this is here and not on `window`
-   * is the whole finding.**
-   *
-   * Measured on 2026-09-30: Tab *forwards* stayed inside the dialog for five presses
-   * and left on the sixth; Tab *backwards* left on the first. ⭐ The two directions
-   * cannot both be right by accident, and the obvious reading of the markup — 「the
-   * dialog is at the end of `<body>`, so forward Tab naturally lands back in it and
-   * there is no trap needed」 — is **false for the first five presses and silently
-   * true-looking**: the panel was appended after the page's eight focusable nodes,
-   * so forward Tab *had* to pass through the whole page first. ⭐ What the probe
-   * actually showed is that the input was focused when Tab was pressed, so those
-   * five steps were the browser's own order inside the panel, and the sixth landed
-   * on `body` because nothing wrapped it.
-   *
-   * ⭐ **A `window`-level listener would have fixed the backward case and left the
-   * forward case broken**, because a `keydown` on a focused element **bubbles** to
-   * `window` only if it was not already handled — ⭐ and `Tab` pressed on the input
-   * never reaches a document listener that is added after React's root listener. ⭐
-   * So the handler lives on the panel's own `onKeyDown`, where both directions are
-   * seen, and the document listener below exists only for the case where focus is
-   * *outside* the panel entirely (which is what `aria-modal` promises and does not
-   * deliver).
-   */
-  const trapFocus = (event: React.KeyboardEvent) => {
-    if (event.key !== 'Tab') return
-    const panel = panelRef.current
-    if (panel === null) return
-    const stops = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE))
-    if (stops.length === 0) return
-    const first = stops[0]
-    const last = stops[stops.length - 1]
-    const current = document.activeElement
-
-    // ⭐ **Not inside at all: pull it in from the ends.** This is the case the
-    // document listener handles for focus that is already outside; here it matters
-    // for the moment after `onClose` unmounts the rows, when the browser may put
-    // focus on `body` and the next Tab starts from the top of the document.
-    if (!(current instanceof HTMLElement) || !panel.contains(current)) {
-      event.preventDefault()
-      ;(event.shiftKey ? last : first).focus()
-      return
-    }
-    // ⭐ **At an end and heading out: wrap to the other end.** Two separate
-    // conditions rather than one, because `Tab` on the last stop and
-    // `Shift+Tab` on the first stop are the only two that leave.
-    if (!event.shiftKey && current === last) {
-      event.preventDefault()
-      first.focus()
-      return
-    }
-    if (event.shiftKey && current === first) {
-      event.preventDefault()
-      last.focus()
-    }
-  }
-
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'Escape') {
       event.preventDefault()
       onClose()
       return
     }
-    trapFocus(event)
     if (event.key === 'ArrowDown') {
       event.preventDefault()
       setSelected((i) => Math.min(i + 1, rows.length - 1))
@@ -317,6 +153,15 @@ export function CommandPalette({
         role="dialog"
         aria-modal="true"
         aria-label="命令面板"
+        // ⭐ **`tabIndex={-1}`, and the mutation check found the reason.** The
+        // palette's list is either the rows or the 「没有匹配项」 paragraph, ⭐ so a
+        // query with no matches can leave the panel with **one** focusable thing —
+        // the input — and the hook's empty-panel branch calls `panel.focus()`.
+        // ⭐ On a `div` with no `tabindex`, `focus()` is a **silent no-op**: the
+        // reader is left on the page behind with the panel still open and nothing
+        // looks wrong. `-1` makes the panel focusable programmatically without
+        // adding it to the tab order, ⭐ which is the whole difference.
+        tabIndex={-1}
         // Zero shadow, 1px rule, 4px radius — the panel obeys §3.2 and §4 even
         // though the scrim above it is the documented exception.
         className="w-[560px] max-w-[92vw] rounded-[4px] border border-rule bg-surface"

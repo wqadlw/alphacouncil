@@ -404,6 +404,22 @@ test.describe('命令面板的焦点（spec 045 阶段 D）', () => {
       await page.keyboard.press('Shift+Tab')
       expect(await inPanel(), `向后 Tab 第 ${i + 1} 次跑出了面板`).toBe(true)
     }
+
+    // ⭐ **Now with an empty list, which is a different branch.** The panel is either
+    // the rows or the 「没有匹配项」 paragraph, ⭐ so a query that matches nothing
+    // leaves exactly one focusable thing — the input — and the trap has to handle a
+    // list of one. ⭐ It did not, and the failure was a **silent no-op**: the hook
+    // falls back to `panel.focus()`, ⭐ and `focus()` on a `div` with no `tabindex`
+    // does nothing at all, ⭐ so the reader was left on the page behind with the
+    // panel open and nothing looking wrong. Found by a mutation, not by reading.
+    await page.getByTestId('palette-input').fill('不可能存在的词')
+    await expect(page.getByTestId('palette-item')).toHaveCount(0)
+    for (let i = 0; i < 3; i += 1) {
+      await page.keyboard.press('Tab')
+      expect(await inPanel(), `空结果时向前 Tab 第 ${i + 1} 次跑出了面板`).toBe(true)
+    }
+    await page.keyboard.press('Shift+Tab')
+    expect(await inPanel(), '空结果时向后 Tab 跑出了面板').toBe(true)
   })
 
   test('背景对 Tab 关闭，而且面板自己没被自己冻住', async ({ page }) => {

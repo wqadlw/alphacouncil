@@ -24,7 +24,13 @@
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { CommandPalette, useCommandPalette, SHELL_ID, type Command } from '../components/nav/CommandPalette'
+import { CommandPalette, useCommandPalette, type Command } from '../components/nav/CommandPalette'
+// ⭐ **The id comes from the hook, not from the palette.** It moved there because the
+// hook is what sets `inert` and the hook is what has to find the element, ⭐ so the
+// hook is where the knowledge that this id exists belongs. ⭐ Importing it from
+// `CommandPalette` would make the shell's id a property of a page-level component,
+// which is the same two-homes shape one layer down.
+import { SHELL_ID } from '../useModalFocus'
 import { Input, Rule } from '../components/ui'
 import { Icon } from '../components/ui/Icon'
 import { ROUTES, type RouteName } from '../routing'
