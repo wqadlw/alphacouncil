@@ -30,7 +30,9 @@ import {
   getWatchlistQuotes,
   listWatchlist,
   removeFromWatchlist,
+  resolveTicker,
   type PoolQuote,
+  type TickerResolution,
   type WatchlistEntry,
 } from './api'
 import { displayCode, formatMoment } from './format'
@@ -43,6 +45,28 @@ import { useResource } from './useResource'
 interface PoolRow {
   entry: WatchlistEntry
   quote: PoolQuote['quote'] | undefined
+}
+
+/**
+ * ⭐ **The exchange names, and they are here rather than in `format.ts` on purpose.**
+ *
+ * They are the labels of a **closed set the server sends** — `resolve`'s
+ * `candidates` is `list[Market]` — and this map is only ever indexed by a value the
+ * server put there. So `MARKET_LABEL[market] ?? market` can never show a reader raw
+ * `bj` for the everyday codes, and if a fourth market is ever added the fallback
+ * shows the code rather than a blank.
+ *
+ * ⚠️ **This is a rendering label, not a claim about the instrument.** `000001` exists
+ * on both `sh` and `sz`, and choosing 「上海」 does not tell the reader they have
+ * picked the Shanghai Composite — the chooser says so in as many words (spec 047
+ * §3.2). A version of this map that carried instrument names would be a different
+ * table with a different contract, and it would need a name source this product does
+ * not have.
+ */
+const MARKET_LABEL: Record<string, string> = {
+  sh: '上交所',
+  sz: '深交所',
+  bj: '北交所',
 }
 
 export default function PoolPage() {
@@ -85,29 +109,79 @@ export default function PoolPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
 
+  /**
+   * ⭐⭐ **The ticker we resolved, and the market the reader picked for it.**
+   *
+   * ⭐ **Spec 047: `POST /watchlist` has always answered a bare `000001` with
+   * `DATA_SOURCE_TICKER_AMBIGUOUS` and the sentence 「choose one」 — and the page had
+   * nothing to choose with.** Measured, not inferred:
+   *
+   * ```
+   *   POST /api/v1/watchlist {"ticker":"000001","reason":"…"}
+   *     -> 400 DATA_SOURCE_TICKER_AMBIGUOUS  「000001 exists on sh / sz — choose one」
+   * ```
+   *
+   * while `GET /api/v1/instruments/resolve?ticker=000001` had been answering
+   * `{"status":"ambiguous","candidates":["sh","sz"]}` correctly since D1 landed, with
+   * **no caller anywhere in `frontend/src`**. `api.ts:671` even names the case:
+   * 「a code like `000001` is *both* the Shanghai Composite and Ping An Bank」.
+   *
+   * ⇒ **Resolve before writing, not after failing.** The successful path costs the
+   * same two requests, and — this is the reason the order matters — **the reason
+   * field keeps its contents while the reader chooses a market.** The reason is
+   * required and the page calls it 「半年后你被追问时要面对的那句话」; making someone
+   * retype that to get past an error we could have asked about first is spending the
+   * most expensive field in the product on a preventable mistake.
+   */
+  const [resolution, setResolution] = useState<TickerResolution | null>(null)
+  /** ⭐ `null` until the reader has picked. Never defaulted — see `submit`. */
+  const [picked, setPicked] = useState<string | null>(null)
+
   const refresh = list.reload
   const refreshQuotes = prices.reload
 
   const tickerMissing = ticker.trim().length === 0
   const reasonMissing = reason.trim().length === 0
 
+  /**
+   * ⭐ Editing the ticker invalidates the resolution, because a resolution is a
+   * claim about **the text above it**, not about the field being empty.
+   *
+   * `300338` → `600519` with `sh` still pinned would write 600519 into the Shanghai
+   * market on the strength of an answer given about a different code. Clearing both
+   * on change is the whole fix, and it is why `setTicker` is wrapped rather than
+   * passed straight to the input.
+   */
+  function onTickerChange(next: string) {
+    setTicker(next)
+    setResolution(null)
+    setPicked(null)
+  }
+
   // Keyed by the composite (market, code) — a bare code is not an instrument.
   const quoteByKey = new Map(
     (quotes ?? []).map((row) => [`${row.market}:${row.code}`, row.quote]),
   )
 
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault()
-    if (tickerMissing || reasonMissing || submitting) return
-
+  /**
+   * ⭐ **One helper, two callers, and the split is the whole design.**
+   *
+   * `submit(market)` writes. `handleSubmit` decides whether the reader has given
+   * enough to write. Splitting them is what lets the ambiguous case ask its question
+   * without a second copy of the write path — and a second copy of a write path is
+   * how a reason field ends up cleared in one branch and not the other.
+   */
+  async function submit(market: string | null) {
     setSubmitting(true)
     setFormError(null)
     setNotice(null)
     try {
-      const recorded = await addToWatchlist(ticker.trim(), reason.trim())
+      const recorded = await addToWatchlist(ticker.trim(), reason.trim(), market ?? undefined)
       setNotice(`已记录（事件 #${recorded.event_id}）—— 理由已写入不可修改的日志。`)
       setTicker('')
       setReason('')
+      setResolution(null)
+      setPicked(null)
       await refresh()
     } catch (error) {
       setFormError(
@@ -118,6 +192,71 @@ export default function PoolPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault()
+    if (tickerMissing || reasonMissing || submitting) return
+
+    // ⭐ **A market already chosen means a second press of the same button, so it
+    // writes directly** — asking again would be asking the same question twice.
+    if (picked !== null) {
+      await submit(picked)
+      return
+    }
+
+    setSubmitting(true)
+    setFormError(null)
+    setNotice(null)
+    try {
+      const answer = await resolveTicker(ticker)
+
+      // ⭐ **`unusable` is not an error state to be shown and cleared.** The reader's
+      // text is wrong, not their form, so the sentence replaces the question and the
+      // code they typed stays put for them to fix. Nothing is written, and this
+      // function returns without calling `submit`.
+      if (answer.status === 'unusable') {
+        setFormError({ message: answer.message, fix: answer.detail })
+        return
+      }
+
+      if (answer.status === 'ambiguous') {
+        // ⚠️ **`market` stays null and `picked` is not defaulted.** There is no safe
+        // default: picking the first candidate would silently write a guess, and the
+        // guess is exactly the judgement red line 15 forbids this product from making.
+        setResolution(answer)
+        setPicked(null)
+        return
+      }
+
+      // Resolved. `display` is non-null here by the server's contract.
+      setResolution(answer)
+      await submit(answer.market)
+    } catch (error) {
+      // ⭐ **A transport failure resolving says so, and writes nothing.** Silently
+      // falling through to `submit` would re-introduce the 400 this spec exists to
+      // remove, and the reader would see an English data-layer sentence with no
+      // chooser — the exact defect, one step later.
+      setFormError(
+        error instanceof ApiError
+          ? { message: error.message, fix: error.fix }
+          : { message: '无法判断这个代码属于哪个市场，所以没有写入。', fix: null },
+      )
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  /**
+   * ⭐ **Choosing a market does not write.**
+   *
+   * It arms the submit button, because the write is the reader's second deliberate
+   * press — and a control that records something permanent on its first click is not
+   * a control you can put a 「选错了」 next to.
+   */
+  function chooseMarket(market: string) {
+    setPicked(market)
+    setFormError(null)
   }
 
   async function handleRemove(entry: WatchlistEntry) {
@@ -251,7 +390,7 @@ export default function PoolPage() {
             </span>
             <Input
               value={ticker}
-              onChange={(event) => setTicker(event.target.value)}
+              onChange={(event) => onTickerChange(event.target.value)}
               placeholder="600519 / sh600519 / 600519.SH"
               className="num"
               autoComplete="off"
@@ -270,7 +409,7 @@ export default function PoolPage() {
           </label>
 
           <Button type="submit" variant="primary" disabled={tickerMissing || reasonMissing || submitting}>
-            {submitting ? '写入中…' : '加入关注池'}
+            {submitting ? '写入中…' : picked === null ? '加入关注池' : '按这个市场写入'}
           </Button>
         </div>
 
@@ -280,8 +419,86 @@ export default function PoolPage() {
             : '提交后理由会进入只增不改的事件日志：无法编辑，只能追加一条修改记录。'}
         </p>
 
+        {/*
+          ⭐⭐⭐ **The ambiguity chooser, and the sentence above it is the design.**
+
+          Measured on the running server before this existed:
+          `POST /watchlist {"ticker":"000001"}` answered **400**
+          `DATA_SOURCE_TICKER_AMBIGUOUS` — 「`000001` exists on sh / sz — choose one」 —
+          **in English, on a Chinese product, with nothing here to choose with.**
+
+          So the first thing this block does is **say out loud that the product cannot
+          help**. `InstrumentDetailRead.name` is `None` for every instrument
+          (measured: `sh/000001`, `sz/000001`, `sh/600519`), so the chooser can only
+          offer 上海 and 深圳 — and for `000001` those two are 上证指数 and 平安银行,
+          which is precisely the distinction the reader needs and precisely the one we
+          have no data for.
+
+          ⭐ **Two buttons and no recommendation** is the honest shape. Naming a
+          default would be the product making the judgement, which is red line 15
+          (Agent 只做抽取与核算) and red line 13 (不讨好用户). It would also be *wrong*
+          often enough to be worse than silence.
+
+          ⚠️ **Choosing does not write.** It arms the button above, and the write is a
+          second deliberate press — because this records a permanent event.
+        */}
+        {resolution?.status === 'ambiguous' ? (
+          <div
+            className="mt-2 border-l-2 border-l-navy py-1.5"
+            data-testid="pool-ambiguity"
+          >
+            <p className="type-prose text-ink" data-testid="pool-ambiguity-question">
+              {resolution.code} 在 {resolution.candidates.length} 个市场都存在。
+              <span className="text-ink-faint">
+                {' '}
+                而这个产品没有标的名数据，所以它不能替你选 ——
+                你选的是市场，不是哪一个标的。
+              </span>
+            </p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              {resolution.candidates.map((market) => (
+                <Button
+                  key={market}
+                  size="sm"
+                  variant={picked === market ? 'primary' : 'default'}
+                  aria-pressed={picked === market}
+                  data-testid={`pool-market-${market}`}
+                  onClick={() => chooseMarket(market)}
+                >
+                  {MARKET_LABEL[market] ?? market}
+                </Button>
+              ))}
+              {picked !== null ? (
+                <span className="type-meta text-ink-faint" data-testid="pool-market-chosen">
+                  将写入 {displayCode(picked, resolution.code)}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {/*
+          ⭐ **And the resolved case gets a line too**, because the reader is about to
+          write something permanent and should see what we understood — `600519.SH`
+          rather than `600519`. This is the one place in the product where there is a
+          "did you mean a different instrument" moment before a record is written, and
+          it is here because here is where the record is written.
+
+          ⚠️ **The condition is `resolution`, not `submitting`.** Keying it to the
+          in-flight flag made it a one-frame flash on a fast write and nothing at all
+          on a slow one, and — worse — on a **failed** write it would have vanished
+          exactly when the reader most wants to see that we had understood the code.
+          `resolution` is cleared by the successful write and by editing the ticker,
+          so it persists for precisely the window where it is true.
+        */}
+        {resolution?.status === 'resolved' ? (
+          <p className="mt-2 type-prose text-ink-soft" data-testid="pool-resolved">
+            认作 {resolution.display ?? resolution.code}
+          </p>
+        ) : null}
+
         {formError ? (
-          <div className="mt-2 border-l-2 border-l-[color:var(--color-up)] py-1">
+          <div className="mt-2 border-l-2 border-l-[color:var(--color-up)] py-1" data-testid="pool-form-error">
             <p className="text-[color:var(--color-up)]">{formError.message}</p>
             {formError.fix ? <p className="type-prose text-ink-soft">{formError.fix}</p> : null}
           </div>

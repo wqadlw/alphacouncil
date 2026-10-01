@@ -143,16 +143,61 @@ type Body = Record<string, unknown>
  * is mounting, so setting it after `goto` races the first render. It is registered
  * **before** any navigation, so it holds for `reload()` too.
  */
+/**
+ * ⭐⭐⭐ **Handlers accumulate across calls, and this is the third version of this
+ * function's behaviour.**
+ *
+ * ⭐ **The original replaced the map on every call**, and a second `routeApi` call
+ * inside a test therefore **silently discarded everything `beforeEach` had set up**.
+ * The symptom was four failures that read like product bugs:
+ *
+ * ```
+ *   1) A2  已记录（事件 #99）          element(s) not found
+ *   2) A6  expected "is not a six-digit code"
+ *              received 「请求被拒绝（HTTP 400）」
+ *   3)    expected "'zzz' is not a six-digit code"
+ *              received 「请求被拒绝（HTTP 404）」
+ *   4) pool.spec.ts  已记录（事件 #99）  element(s) not found
+ * ```
+ *
+ * **400** is `routeApi`'s own "you passed a bare status code" path, and **404** is its
+ * 「e2e fixture missing for …」 path. Both are the fixture's own diagnostics arriving
+ * as *product* sentences in the error output — which is the worst possible place for
+ * a fixture mistake to surface.
+ *
+ * ⚠️ **The mechanism is the one this repository has already measured twice, in a
+ * different place:** Playwright route handlers are consulted **last-registered
+ * first**, so the second `page.route()` shadowed the first instead of adding to it.
+ * That is the same rule as `addInitScript` in `launch.spec.ts`, where the comment
+ * says 「后注册的赢」 and where getting it backwards cost 101 test failures.
+ *
+ * ⇒ So the map is now **per page and cumulative**, and the route is registered once.
+ * A test can add or override a single endpoint without restating the world, and
+ * `beforeEach` stops being something a second call can throw away.
+ */
+const HANDLERS = new WeakMap<Page, Record<string, Body | number>>()
+const ROUTED = new WeakSet<Page>()
+
 export async function routeApi(
   page: Page,
   handlers: Record<string, Body | number>,
 ): Promise<void> {
   await acknowledgeLaunch(page)
+
+  const merged = HANDLERS.get(page) ?? {}
+  Object.assign(merged, handlers)
+  HANDLERS.set(page, merged)
+
+  // ⭐ Registered once per page. Re-registering would shadow, not extend.
+  if (ROUTED.has(page)) return
+  ROUTED.add(page)
+
   await page.route('**/api/v1/**', async (route) => {
     const url = new URL(route.request().url())
     const path = url.pathname
     const method = route.request().method()
-    const handler = handlers[`${method} ${path}`] ?? handlers[path]
+    const current = HANDLERS.get(page) ?? {}
+    const handler = current[`${method} ${path}`] ?? current[path]
     if (handler === undefined) {
       await route.fulfill({
         status: 404,
@@ -163,6 +208,18 @@ export async function routeApi(
     }
     if (typeof handler === 'number') {
       await route.fulfill({ status: handler })
+      return
+    }
+    if (typeof handler === 'object' && handler !== null && 'status' in handler && 'body' in handler) {
+      // ⭐ A refusal with a real envelope: `{ status, body }`, so a 400 can carry the
+      // five-field shape the server really sends instead of an empty 200 that a stub
+      // is tempted to produce.
+      const shaped = handler as { status: number; body: Body }
+      await route.fulfill({
+        status: shaped.status,
+        contentType: 'application/json',
+        body: JSON.stringify(shaped.body),
+      })
       return
     }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(handler) })
@@ -470,4 +527,63 @@ export function recordedEvent(): Body {
     reason: '测试写入的理由',
     supersedes_id: null,
   }
+}
+
+/**
+ * ⭐ **The three answers `/instruments/resolve` can give (spec 047).**
+ *
+ * ⭐ **These bodies are copied from the running server, not invented** — probed on
+ * 2026-10-01, and the three shapes are exactly what `InstrumentResolveRead`
+ * declares:
+ *
+ * ```
+ *   ?ticker=600519  -> 200 {"status":"resolved","market":"sh","asset_type":"stock",
+ *                         "display":"600519.SH","candidates":[]}
+ *   ?ticker=000001  -> 200 {"status":"ambiguous","market":null,"asset_type":null,
+ *                         "display":null,"candidates":["sh","sz"]}
+ *   ?ticker=zzz     -> 400 {"code":"DATA_SOURCE_TICKER_INVALID", ...}
+ * ```
+ *
+ * ⚠️ **`display` is null exactly when `candidates` is non-empty.** That is the
+ * server's own contract (「Absent while ambiguous」) and it is the only reason the
+ * `ambiguous` fixture can be told apart from `resolved` by a field the client does
+ * not have to guess at.
+ *
+ * ⚠️ **The third answer is a `number`, not a `Body`** — `routeApi` takes
+ * `Record<string, Body | number>` precisely so a refusal can be a status code with a
+ * real envelope rather than a 200 carrying an error, which is the mistake a stub
+ * invites.
+ */
+export function resolvedTicker(
+  code = '600519',
+  market = 'sh',
+): Body {
+  return {
+    status: 'resolved',
+    code,
+    market,
+    asset_type: 'stock',
+    display: `${code}.${market.toUpperCase()}`,
+    candidates: [],
+  }
+}
+
+export function ambiguousTicker(code = '000001'): Body {
+  return {
+    status: 'ambiguous',
+    code,
+    market: null,
+    asset_type: null,
+    display: null,
+    candidates: ['sh', 'sz'],
+  }
+}
+
+/** What the server actually says for something that is not a ticker. */
+export const UNUSABLE_TICKER: Body = {
+  severity: 'error',
+  code: 'DATA_SOURCE_TICKER_INVALID',
+  message: "'zzz' is not a six-digit code (optionally with sh/sz/bj)",
+  target: null,
+  fix: null,
 }

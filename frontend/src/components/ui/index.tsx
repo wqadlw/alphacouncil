@@ -67,10 +67,40 @@ export interface ButtonProps
   extends ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {}
 
+/**
+ * ⭐⭐⭐ **`type` defaults to `button`, and that default is load-bearing.**
+ *
+ * ⭐ **A `<button>` with no `type` inside a `<form>` is `type="submit"` — that is the
+ * HTML spec, not a Tailwind default and not React's.** This component extended
+ * `ButtonHTMLAttributes` and passed `{...props}` straight through, so **every
+ * `<Button>` in a form was a submit button unless it said otherwise.**
+ *
+ * Measured on 2026-10-01 while building the pool page's ambiguity chooser (spec 047):
+ *
+ * ```
+ *   fill ticker=000001, fill reason, press 加入关注池   -> chooser appears, 0 POSTs  ✓
+ *   click 上交所 / 深交所                              -> **1 POST**            ✗
+ * ```
+ *
+ * The two market buttons were supposed to **arm** the submit button and nothing else.
+ * Instead they submitted the form, which re-ran `handleSubmit` — and since `picked`
+ * was still `null` it resolved again, got `ambiguous` again, and left the form
+ * disabled. **The second press then timed out on a disabled button**, so the probe
+ * reported a symptom thirty seconds away from the cause.
+ *
+ * ⚠️ **The bug was mine, but the trap was the component's**, and that is the part
+ * worth fixing: the next person to put two buttons in a form hits it too.
+ *
+ * ⇒ `type="button"` is the safe default (it is what shadcn/Radix do), and the four
+ * forms in this codebase all already declare `type="submit"` on their submit button
+ * — measured, so making the default safe cost nothing. `V-19` is the other half: it
+ * fails if a `<form>` ever appears without an explicit submit.
+ */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, ...props }, ref) => (
+  ({ className, variant, size, type = 'button', ...props }, ref) => (
     <button
       ref={ref}
+      type={type}
       data-motion="l1"
       className={cn(buttonVariants({ variant, size }), className)}
       {...props}

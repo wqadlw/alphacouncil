@@ -664,6 +664,91 @@ export function getToday(): Promise<Today> {
 }
 
 /**
+ * ⭐ **What the ticker means, before anything is written (spec 047).**
+ *
+ * ⭐ **This function had no caller at all**, which is the whole of the defect: the
+ * server has answered 「which instrument is this?」 correctly since D1 landed, and
+ * `POST /watchlist` has rejected an ambiguous code with `DATA_SOURCE_TICKER_AMBIGUOUS`
+ * and the sentence 「choose one」 — **while the page had nothing to choose with.**
+ *
+ * Measured against the running server, before this existed:
+ *
+ * ```
+ *   GET  /api/v1/instruments/resolve?ticker=000001
+ *     -> 200 {"status":"ambiguous","candidates":["sh","sz"],"display":null}
+ *   POST /api/v1/watchlist {"ticker":"000001","reason":"…"}
+ *     -> 400 {"code":"DATA_SOURCE_TICKER_AMBIGUOUS",
+ *             "message":"000001 exists on sh / sz — choose one"}
+ * ```
+ *
+ * ⭐ **`status` is a three-state enum and not a boolean**, for the reason
+ * `constitution` 7.7 gives elsewhere: 「not a code at all」 and 「a code, but two of
+ * them」 need different sentences, and a boolean would make the caller recover the
+ * difference by inspecting which fields happened to be null.
+ *
+ * ⚠️ **`display` is null exactly when `candidates` is non-empty**, by the server's
+ * own contract (「Absent while ambiguous」). So a client that renders `display` and
+ * falls back to `code` when it is null is correct, and one that assumes `display` is
+ * always there is not.
+ */
+export type ResolveStatus = 'resolved' | 'ambiguous'
+
+export interface TickerResolution {
+  status: ResolveStatus
+  code: string
+  /** Absent while `ambiguous` — a bare code is not an instrument. */
+  market: string | null
+  asset_type: string | null
+  /** Conventional form, e.g. `600519.SH`. Absent while ambiguous. */
+  display: string | null
+  /** Markets the code could mean. Empty unless `status` is `ambiguous`. */
+  candidates: string[]
+}
+
+/**
+ * ⭐ **A refusal is a normal answer, not an exception.**
+ *
+ * `ticker=zzz` comes back **400** with the standard envelope, and `data.resolve()`
+ * turns a non-2xx into a thrown `ApiError`. So this function catches it and returns
+ * a third state rather than letting every caller re-implement the same catch:
+ *
+ * ```
+ *   'unusable'  ->  { status: 'unusable', message, code, detail }
+ * ```
+ *
+ * ⚠️ **`message` is the server's sentence, verbatim and untranslated.** It is data
+ * layer wording about 「this is not a code」, and translating it here would mean a
+ * frontend table of error codes that can drift from `api/errors.py` — which `S-05`
+ * exists to prevent for the other two of the three sources (docs ↔ enum ↔ code).
+ * The frontend has no such guarantee, so this spec does not add one.
+ */
+export interface UnusableTicker {
+  status: 'unusable'
+  /** The server's own sentence. Never invented here. */
+  message: string
+  code: string
+  detail: string | null
+}
+
+export type TickerAnswer = TickerResolution | UnusableTicker
+
+export function resolveTicker(ticker: string): Promise<TickerAnswer> {
+  return request<TickerResolution>(
+    `/api/v1/instruments/resolve?ticker=${encodeURIComponent(ticker.trim())}`,
+  ).catch((cause: unknown) => {
+    if (cause instanceof ApiError) {
+      return {
+        status: 'unusable',
+        message: cause.message,
+        code: cause.code,
+        detail: cause.fix,
+      }
+    }
+    throw cause
+  })
+}
+
+/**
  * The three writes. Each takes an optional `market`.
  *
  * It is optional rather than required because a code like `600519` can only be
@@ -672,6 +757,10 @@ export function getToday(): Promise<Today> {
  * Bank — and the instrument page knows which one it is showing, so it can say
  * so. Without this the page's own buttons would fail on exactly the codes the
  * pool had to disambiguate when they were added.
+ *
+ * ⭐ **As of spec 047 the pool page always passes it**, because it has just resolved
+ * the ticker and therefore knows. The parameter stays optional for the other callers
+ * that have a `(market, code)` pair already in hand.
  */
 export function addToWatchlist(
   ticker: string,

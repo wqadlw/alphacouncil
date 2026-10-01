@@ -1,10 +1,18 @@
 import { expect, test } from '@playwright/test'
-import { poolQuotes, poolRows, recordedEvent, routeApi } from './fixtures'
+import { poolQuotes, poolRows, recordedEvent, resolvedTicker, routeApi } from './fixtures'
 
 test.beforeEach(async ({ page }) => {
   await routeApi(page, {
     'GET /api/v1/watchlist': poolRows(),
     'GET /api/v1/watchlist/quotes': poolQuotes(),
+    // ⭐ **Spec 047 made the pool page resolve the ticker before it writes**, so this
+    // spec needs the resolver. Without it every write in this file 404s at
+    // `/instruments/resolve` and fails on 「已记录（事件 #99）」 — which reads like the
+    // receipt broke rather than like a missing stub.
+    //
+    // It is the **unambiguous** answer because that is what this file's tests are
+    // about; `pool-ambiguity.spec.ts` asks for the other one explicitly.
+    'GET /api/v1/instruments/resolve': resolvedTicker(),
     'POST /api/v1/watchlist': recordedEvent(),
     'POST /api/v1/watchlist/remove': recordedEvent(),
   })

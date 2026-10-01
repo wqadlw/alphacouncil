@@ -1770,6 +1770,140 @@ describe('V-16 · the dependency budget has two halves', () => {
  * **Nothing moved.** A media query is a condition, not a priority: with no layers,
  * an unlayered rule is ordered only by where it appears.
  */
+/**
+ * V-19 — a button in a form is a submit button unless it says otherwise.
+ *
+ * ⭐⭐⭐ **This exists because the bug happened, and it happened *to me*, while writing
+ * the feature the gate is named after.**
+ *
+ * Measured on 2026-10-01 (spec 047, the pool page's ambiguity chooser):
+ *
+ * ```
+ *   fill 000001, fill the reason, press 加入关注池   -> chooser appears, 0 POSTs   ✓
+ *   click 上交所 (or 深交所)                         -> **1 POST**             ✗
+ * ```
+ *
+ * The two market buttons were meant to **arm** the submit button and nothing else.
+ * A `<button>` with no `type` attribute inside a `<form>` is `type="submit"` — **that
+ * is the HTML spec**, and `Button` extended `ButtonHTMLAttributes` and spread
+ * `{...props}` through, so every `<Button>` in a form was a submit button unless it
+ * said `type="submit"` itself. Clicking one re-ran `handleSubmit`, which resolved
+ * again, got `ambiguous` again, and left the form disabled — so the next press timed
+ * out on a disabled button and the probe reported a symptom thirty seconds from the
+ * cause.
+ *
+ * ⚠️ **Two halves, and both are needed.**
+ *
+ * 1. **`Button` defaults `type` to `'button'`.** The component now makes the safe
+ *    thing the default (it is what shadcn/Radix do). All four forms in this codebase
+ *    already declared `type="submit"` explicitly — measured before changing it, so
+ *    the default cost nothing.
+ *
+ * 2. **Every `<form>` must have an explicit `type="submit"`.** Without this, a form
+ *    whose only button relied on the old implicit default would silently stop
+ *    submitting when the default changed. This is the assertion that makes half 1 safe
+ *    to do.
+ *
+ * ⭐ **A grep is the wrong instrument here and the reason is worth recording**: the
+ * defect is not a missing attribute, it is a **present** `<button>` with a correct
+ * name doing the wrong thing. So this counts forms and their explicit submit buttons
+ * against each other, rather than looking for buttons that forgot a `type`.
+ */
+describe('V-19 · a button in a form is a submit button only when it says so', () => {
+  it('Button defaults type to "button", so a bare <Button> in a form cannot submit', () => {
+    // ⭐ **Asserted on the component's own destructuring line**, because a test that
+    // renders the component would need a DOM and this repository has neither jsdom
+    // nor @testing-library (recorded at the top of this file). The default is
+    // therefore a *source* fact, and this is a source check.
+    //
+    // ⚠️ **Matched on a normalised path, and the first version used `endsWith` on the
+    // raw one.** `FILES` holds absolute paths and on Windows they are joined with
+    // backslashes, so `endsWith('components/ui/index.tsx')` matched **nothing** and
+    // the gate failed with 「the ui barrel moved」 — a message that is confidently
+    // wrong about a file that had not moved. ⭐ The lesson is the same as `SRC_DIR`'s,
+    // recorded at the top of this file: a path comparison written on one platform is
+    // a claim about all of them.
+    const byRelative = new Map(FILES.map((f) => [RELATIVE(f), f]))
+    const uiBarrel = byRelative.get('components/ui/index.tsx')
+    expect(uiBarrel, 'components/ui/index.tsx is not under src/ — update this gate').toBeDefined()
+
+    const source = stripComments(readFileSync(uiBarrel as string, 'utf8'), false)
+    const destructured = source.match(/type\s*=\s*'button'/)
+    expect(
+      destructured,
+      [
+        '`Button` must destructure `type = \'button\'`.',
+        'A `<button>` with no `type` inside a `<form>` is `type="submit"` (HTML spec),',
+        'so a bare <Button> in a form submits it. Measured 2026-10-01: the ambiguity',
+        'chooser wrote a permanent watchlist event on the click that was only',
+        'supposed to arm the button.',
+      ].join('\n'),
+    ).not.toBeNull()
+
+    // And the default must actually reach the element, not just be destructured.
+    const forwarded = source.match(/<button\b[^>]*\btype=\{type\}/s)
+    expect(
+      forwarded,
+      '`type` is destructured but never put on the <button>, so the default does nothing',
+    ).not.toBeNull()
+  })
+
+  it('every <form> declares its submit button, so the new default cannot break one', () => {
+    const forms = occurrences(/<form\b/, FILES)
+    expect(forms.length, 'no <form> found — this gate is not vacuous').toBeGreaterThan(0)
+
+    // ⭐ `occurrences` reports `RELATIVE(file)`, which is not openable — the second
+    // version of this test passed it straight to `readFileSync` and every `<form>`
+    // threw ENOENT against a path relative to `frontend/`. This map is why the gate
+    // reads source at all.
+    const absolute = new Map(FILES.map((f) => [RELATIVE(f), f]))
+
+    const problems: string[] = []
+    for (const form of forms) {
+      const path = absolute.get(form.file)
+      if (path === undefined) {
+        problems.push(`${form.file}  cannot be re-opened for reading`)
+        continue
+      }
+      const source = stripComments(readFileSync(path, 'utf8'), false)
+      const lines = source.split(/\r?\n/)
+      const start = form.line - 1
+      // ⭐ **Count to the form's closing tag, tracking nesting.** A `<form>` can
+      // contain another one only in malformed JSX, but the depth is tracked anyway so
+      // this cannot silently over-count on a page that grows one.
+      let depth = 0
+      let end = lines.length
+      for (let i = start; i < lines.length; i += 1) {
+        depth += (lines[i].match(/<form\b/g) ?? []).length
+        depth -= (lines[i].match(/<\/form>/g) ?? []).length
+        if (depth === 0) {
+          end = i + 1
+          break
+        }
+      }
+      const body = lines.slice(start, end).join('\n')
+      // ⭐ **`type="submit"` anywhere inside is enough**, including on a child
+      // component's element written in another file — so this is a *count* of forms
+      // declaring an explicit submit, and a form with none is reported by name.
+      if (!/type="submit"/.test(body)) {
+        problems.push(`${form.file}:${form.line}  <form> with no explicit type="submit" button`)
+      }
+    }
+
+    expect(
+      problems.join('\n'),
+      [
+        'Each of these <form>s has no explicit `type="submit"`.',
+        '`Button` now defaults `type` to "button" (V-19), so a form relying on the',
+        'HTML default would stop submitting — silently, because the button is there,',
+        'named, enabled, and does nothing on click.',
+        '',
+        problems.join('\n'),
+      ].join('\n'),
+    ).toBe('')
+  })
+})
+
 describe('V-17 · V-18 — the cascade is ordered, and this file is the only thing that checks it', () => {
   it('found a stylesheet, so the two rules below are not vacuous', () => {
     expect(CSS.length, 'no stylesheet under src/ — the whole file passes by checking nothing').toBeGreaterThan(0)
