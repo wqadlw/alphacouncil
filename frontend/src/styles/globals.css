@@ -204,12 +204,45 @@ body {
   letter-spacing: 0.06em;
 }
 
-input,
-textarea,
-button,
-select {
-  font: inherit;
-  color: inherit;
+/* ⭐⭐⭐ **Wrapped in `@layer base`, and it was not cosmetic — it was a bug that made
+ * every type class on a button silently do nothing.**
+ *
+ * Measured on 2026-10-01: the launch screen's exit is
+ * `<button class="serif type-page-title …">`. `type-page-title` **alone** computes
+ * to `font-size: 22px`; on the button it computes to **13px**, and the button
+ * measured 53×20px — byte-identical to the version before the class was added.
+ *
+ * The cause is the `font:` **shorthand**, which resets `font-size` along with the
+ * family and the weight. And `font: inherit` makes it inherit from `<body>`, which
+ * is 13px — so the reset was stamping 13px onto every control, and then:
+ *
+ * - **this file declares `@layer` zero times** (measured), so the reset is an
+ *   *unlayered* rule;
+ * - an unlayered rule beats **every** layered rule at equal specificity, which is
+ *   exactly the `.mark` defect `status.md` §〇 records — "36 elements were asking
+ *   it for a colour it does not have";
+ * - `@utility` classes land in Tailwind's `utilities` layer.
+ *
+ * So the reset silently beat the type scale on every `<input>`, `<textarea>`,
+ * `<button>` and `<select>` in the product. Nobody noticed because **every one of
+ * them was already 13px** — the body size. The defect is only visible on a control
+ * that was *meant* to be a different size, which until today was nothing.
+ *
+ * `V-12` did not catch it: it greps for hand-written `text-[NNpx]` in components,
+ * and this is a stylesheet shorthand defeating a class the component did write.
+ *
+ * The fix is the one the file's own comment on `@utility` describes: put the reset
+ * where a reset belongs, so it loses to the utilities on purpose rather than by
+ * accident of source order.
+ */
+@layer base {
+  input,
+  textarea,
+  button,
+  select {
+    font: inherit;
+    color: inherit;
+  }
 }
 
 ::placeholder {
@@ -311,41 +344,116 @@ select {
  * place. Every size on this screen is a `type-*` class chosen in the component.
  */
 .startup {
-  /* `min-height: 100%` rather than `100vh`: the shell sets `html, body, #root`
-     to `height: 100%` and gives `body` `overflow: hidden`, so `100vh` on a
-     desktop window that has been resized is the height *including* the chrome
-     the webview does not have. This is the same reason `.pane-scroll` exists. */
-  min-height: 100%;
+  /* ⭐⭐⭐ `height: 100%` + `overflow-y: auto`, and this is a fix rather than a
+     style. `min-height: 100%` was here first and it was wrong: a *floor* lets the
+     block grow past the viewport, and the shell gives `body` `overflow: hidden`, so
+     the overflow was clipped by an ancestor that is not allowed to scroll.
+
+     Measured at 900x800 (one column): `scrollHeight` 1026 against `clientHeight`
+     800, with the mount at y=318 and the credit at y=962 — **162px past the bottom of
+     the screen with no way to scroll to it.** A reader with a narrow window and a
+     laptop's height did not get a launch screen; they got two lines of type.
+
+     `100vh` rather than `100%` would have the same defect in a different place: it
+     is the height *including* the chrome the webview does not have. Same reason
+     `.pane-scroll` exists. */
+  height: 100%;
+  overflow-y: auto;
   display: grid;
-  /* ⭐ **One column until 1080px, not until 900px.** The first version broke to two
-     columns at 900 and a screenshot at 900 showed the painting at **250px wide**:
-     `minmax(280px, 420px) 1fr` gave the copy column its full 420px and left the
-     painting 250px in a window that had plenty of room for a two-column layout
-     stacked instead. The breakpoint now sits where the copy column's maximum and
-     the painting's useful minimum can both be honoured with the gap between them,
-     which is arithmetic rather than a round number someone liked. */
-  gap: 40px;
+  /* ⭐ **One column until 1180px.** The first version broke at 900 and a
+     measurement at 1440 showed the painting at 698x558 against 420x146 of
+     words — **the picture was 7x the area of the text and the left column had
+     420px of nothing in it.** The second version broke at 1080 and still gave
+     the painting 1fr against the copy's 420px maximum, so at 1200px wide the
+     painting got 620 and the words 420: still picture-dominant. 1180 is where
+     the two columns can be `1fr 1fr` with a gap that reads as a gap, which is
+     arithmetic rather than a number someone liked. */
+  gap: 44px;
   padding: 48px 40px;
   background: var(--color-paper);
 }
 
-@media (min-width: 1080px) {
+@media (min-width: 1180px) {
   .startup {
-    grid-template-columns: minmax(280px, 420px) 1fr;
-    gap: 64px;
-    padding: 56px 64px;
+    /* ⭐⭐⭐ **`minmax(0, 480px) minmax(0, 1fr)` — the copy column is *capped*
+       and the painting takes the rest.**
+
+       The third version used `1fr 1.05fr`, which handed the words 609px of a
+       column whose longest line measures 420px, and capped the painting at 639px
+       when 780px was available. Both halves were wrong in the same direction:
+       space moved from the thing that could use it to the thing that could not.
+
+       480 is measured, not chosen: the widest line in the column is the sign-off
+       「AlphaCouncil　投资是一场修行」 at 12px, and the headline is
+       ~420px at 20px. A cap at 480 fits all of it with room and gives the
+       painting 780px at 1440 — whose frame then holds a 688x542 painting.
+
+       `minmax(0, ...)` on both sides rather than `1fr`: **`1fr` is
+       `minmax(auto, 1fr)`, and `auto` means min-content**, so one long unbreakable
+       credit line can push a column past its share and open a hole in the middle.
+       That was the 630px gap in the second screenshot. */
+    grid-template-columns: minmax(0, 480px) minmax(0, 1fr);
+    gap: 60px;
+    padding: 52px 60px;
   }
 }
 
-/* The copy column. `align-self: center` so the text sits on the painting's
-   middle rather than its top — a launch screen read top-aligned looks like a
-   page that ran out of content. */
+/* The copy column. `align-self: center` so the text sits on the painting's middle
+   rather than its top — a launch screen read top-aligned looks like a page that
+   ran out of content. */
 .startup-copy {
   align-self: center;
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  max-width: 420px;
+  gap: 22px;
+  /* ⭐ No `max-width`. The column grid track already sizes it, and a `max-width`
+     here was capping the words at 560px inside a 616px column — so the text
+     stopped 56px short of its own space and the gap read as empty. */
+  min-width: 0;
+}
+
+/* ⭐ **A reserved slot for the headline, so the painting does not move.**
+   The sentence is one line when two things are due and two when nothing is, and
+   without a floor the image below it would shift after the request lands — a
+   screen whose contents move after it appears has already asked to be trusted
+   before it had earned it. `min-height` rather than `height`: two lines must fit
+   without clipping, and one line must not leave a hole the eye reads as a gap. */
+.startup-headline-slot {
+  min-height: 84px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* ⭐ **The two-column overrides live here, below the rules they override.**
+   Measured: with `.startup-copy { align-self: stretch }` written inside the
+   `@media (min-width: 1180px)` block, the exit stayed at y=481 and the byline at
+   y=531 — to the pixel, nothing moved.
+
+   This file declares `@layer` **zero** times (measured), so all of its rules are
+   unlayered and unlayered rules are ordered **only** by position. A media query is
+   a condition, not a priority. Same family as the
+   `input, textarea, button { font: inherit }` defect below: put the specific rule
+   after the general one, or layer them.
+
+   ❌ **And the overrides themselves were removed, after measuring them.**
+   Stretching the column so the date line sat on the mount's top edge and the
+   byline on its bottom did align the two — and turned 480x226 of words into
+   480x796 with three ~200px voids in it. Four lines of text over 796px are four
+   fragments, not a statement. The void above a centred block is breathing room and
+   reads as composure; the same height with three holes in it reads as a page that
+   failed to load. **The centres are 14px apart** (words 337..563, mount 130..741,
+   because the wall column's height includes the credit under the frame) and that
+   is 0.7% of the screen and not worth a number. */
+
+/* The sign-off. Brand and slogan, together, last and small. */
+.startup-signoff {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  border-top: 1px solid var(--color-rule-soft);
+  padding-top: 14px;
 }
 
 /* The painting's side of the screen. Centred, and allowed to shrink. */
@@ -355,74 +463,138 @@ select {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 14px;
 }
 
-/* ⭐ **The mount.** A hairline and a surface-coloured mat, not a shadow. Padding
- * is `18px` rather than a token because it is not a token's job: this is the
- * mount's own margin, and it has no second use anywhere in the product. */
+/* ⭐⭐ **The mount — and the padding went from 18px to 28px because of a
+   measurement, not a taste.**
+   The first version sized the frame to the painting (frame 698x558, painting
+   660x520 — **1.25 : 1.27, near enough identical**), and a frame that matches its
+   contents is not a frame: the painting read as **an image pasted onto a page**.
+   Real mounting leaves a visibly larger margin, and that margin is the whole
+   difference between a picture and an object on a wall. */
+/* ⭐⭐⭐ **The mount is sized by the COLUMN, not by the painting.**
+   The first two versions let the frame hug the image (`max-width: 100%` + the
+   image's own `max-width`), so the mount margin was exactly the padding and the
+   proportions could not differ: measured **frame 1.24 : art 1.27**. A frame the
+   same shape as its contents is not a frame.
+
+   Now the frame fills its column and the height is the viewport's, and the image
+   sits inside whatever is left — so the margin is *whatever is left over*, which is
+   what a mount actually is. A tall scroll gets wide side margins; a landscape
+   album leaf gets almost none. **The frame stops asserting a shape and starts
+   being one.** */
 .startup-frame {
   display: flex;
-  max-width: 100%;
-  max-height: 62vh;
-  padding: 18px;
+  align-items: center;
+  justify-content: center;
+  /* ⭐⭐⭐ **`width: 100%`, and the reason is that it is the only version with
+     no percentage anywhere in its own chain.**
+
+     Three attempts, each measured:
+
+     | version | frame  | art    | what went wrong |
+     |---------|--------|--------|----------------|
+     | v1      | 698x558| 660x520| the frame hugged the image, so 1.25:1 against 1.27:1 — **a frame the same shape as its contents is not a frame** |
+     | v2      | 639x620| 557x439| the frame filled the column at a fixed height — **a portrait frame around a landscape scroll**, 90px of dead white above and below |
+     | v3      | 639x430| 477x376| `width: fit-content` + a percentage `max-width` on the image — **a circular measurement**, which the browser resolved against 557 rather than 639 and cost the painting 80px |
+
+     A grid track is a **definite** width, so `width: 100%` here resolves against
+     a number that is already known. That is what makes the image's `max-width`
+     honest, which in turn is what lets `max-height` decide the painting's size.
+
+     The mount's margin is now simply **whatever the painting does not use**,
+     floored by the padding — which is what a mount is: a margin, not a border. */
+  width: 100%;
+  padding: 34px 46px;
   background: var(--color-surface);
   border: 1px solid var(--color-rule);
 }
 
 .startup-frame > img {
   display: block;
-  /* `max-height` on the frame plus `max-width: 100%` on the image: the painting
-     keeps **its own** proportions, at whatever shape it happens to be. A
-     landscape album leaf and a two-metre hanging scroll are both 30-centimetre
-     objects of the same kind, and cropping one to match the other would be
-     choosing the wrong one. */
+  /* The painting keeps **its own** proportions, at whatever shape it happens to
+     be: `width`/`height` `auto` plus two `max-` bounds lets the browser pick the
+     largest size that fits both, which is a landscape album leaf and a two-metre
+     hanging scroll alike. Cropping one to match the other picks the wrong one.
+
+     ⭐ `min(70vh, 600px)` rather than a token: this is the largest object the product
+     will ever put on screen, and its budget is the viewport's height — there is no
+     second place in the app where 600px means anything. 70vh of 900 leaves 162px
+     for the mount, the credit and the page's own padding, and the measurement at
+     1440x900 came out 542px tall with 156px of that left over. */
   max-width: 100%;
-  max-height: calc(62vh - 36px);
+  max-height: min(70vh, 600px);
   width: auto;
   height: auto;
 }
 
-/* The credit. `type-badge` (11/14) is the smallest size in the product and this
-   is the smallest thing on the screen; `ink-faint` because it is a receipt, not
-   a caption, and it must never compete with the slogan. */
+/* The credit, and the day's place in the month.
+   ⭐ `type-meta` (12px), not `type-badge` (11px): the museum's name is 26
+   characters of English and at 11px it wrapped to `of Art` on a line of its own.
+   §2.2 marks 11px as badge-only, and a credit line is not chrome. */
+/* ⭐ `text-wrap: balance` rather than a wider column or `nowrap`.
+   The credit is one sentence about one painting — artist, work, year, museum — and
+   the previous two versions both let `The Cleveland Museum of Art` break so that
+   `of Art` sat alone on a line. Widening the column did not fix it because the
+   column is the same width in both; `balance` asks the browser to even the lines
+   out instead of filling the first and overflowing the second. */
 .startup-credit {
-  max-width: 560px;
+  max-width: 100%;
   text-align: center;
+  text-wrap: balance;
   color: var(--color-ink-faint);
 }
 
-/* The one control. A text link with a hairline under it, because rule 4 gives
- * this product no buttons and no pills — the affordance is a thing you click,
-   and the guide's own vocabulary for that is a link. */
+/* ⭐ The day counter is pulled off its own line so the credit reads as one
+   sentence about one painting. */
+.startup-credit-day {
+  white-space: nowrap;
+}
+
+/* ⭐⭐ **The one control, and it was the wrong size twice.**
+   First version: `type-prose` (13px) underlined — about 20px tall, **roughly 2%
+   of a 900px screen**, on the screen whose *only* action is to leave it. Now
+   `type-page-title` (22/30), the largest size the scale has, because the thing a
+   reader must not dismiss is the way out of this screen. */
+/* ⭐⭐ **No `font-size`, no `font-family`, no `line-height` in this rule, and
+   that is the fix for a 53x20px button.**
+
+   The measurement said the button was exactly as tall as it had been before the
+   `type-page-title` class was added — 20px, which is `type-prose`. `type-*` are
+   `@utility`, so they sit in Tailwind's `utilities` cascade layer; **a plain rule
+   written after `@import "tailwindcss"` is outside every layer** and beats the
+   whole layer at equal specificity. That is the same defect `.mark` had, recorded
+   in `status.md` §〇 as "36 elements were asking it for a colour it does not have".
+
+   So this rule now sets **only** what no utility class covers: alignment, the
+   underline, the pointer, and the reset of the button's own defaults. The size
+   comes from the class on the element and stays there. */
 .startup-enter {
   align-self: flex-start;
   color: var(--color-ink);
   text-decoration: underline;
-  text-underline-offset: 4px;
   text-decoration-color: var(--color-brass);
+  /* 8px: a 22px underline wants more air below it than a 13px one did, and the
+     previous 6px was measured against the 13px box rather than the 22px one. */
+  text-underline-offset: 8px;
+  text-decoration-thickness: 1px;
   cursor: pointer;
   border: 0;
   background: none;
   padding: 0;
+  border-radius: 0;
 }
 
 .startup-enter:hover {
   text-decoration-color: var(--color-ink);
 }
 
-/* ── Motion on this screen ──────────────────────────────────────────────────
- *
- * ⭐ Two keyframes, and both are **entrance** motion on a screen that appears at
- * most once a day with nothing to interrupt — which is the distinction §7.1 draws
- * between an L2 transition ("a state change the reader triggered") and an
- * arrival the reader did not ask for. ADR-0033 allows the second kind here and
- * `V-09`'s `L3` band is what bounds it.
- *
- * ⭐ `ac-hang` is `scaleY` from `top`, not a fade. A hanging scroll settles
- * downward from its roller; a fade would say "an image appeared" where this says
- * "an object was hung". The difference is 1200 ms of credibility.
- */
+.startup-enter:focus-visible {
+  outline: 2px solid var(--color-brass);
+  outline-offset: 3px;
+}
+
 @keyframes ac-rise {
   from {
     opacity: 0;

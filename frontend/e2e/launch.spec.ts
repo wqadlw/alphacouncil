@@ -368,4 +368,89 @@ test.describe('开屏 · the launch screen', () => {
     })
     expect(runningWhenAllowed, 'the control: motion is on, so something must animate').toBeGreaterThan(0)
   })
+
+  /**
+   * ⭐⭐⭐ **Everything on the screen is reachable, at every size.**
+   *
+   * This exists because of a defect that no other assertion in this file could see,
+   * and that no test anywhere in the repo could see either. Measured at **900×800**,
+   * one column:
+   *
+   * ```
+   *   document.scrollHeight  1026
+   *   document.clientHeight   800
+   *   .startup-frame   top  318   height 630
+   *   .startup-credit  top  962      ← 162px past the bottom
+   * ```
+   *
+   * and the shell sets `body { overflow: hidden }`. **So nothing scrolled.** The
+   * painting and the credit were rendered, present in the DOM, `toBeVisible()` in
+   * Playwright's sense, and *unreachable* — a reader with a narrow window and a
+   * laptop's height got two lines of type and a way out, and no painting.
+   *
+   * The cause was `min-height: 100%`, which sets a *floor*: the block grows past
+   * the viewport and its overflow is clipped by an ancestor that is forbidden from
+   * scrolling. `Playwright`'s visibility is geometric, so every other assertion here
+   * passed throughout — including `hangs the painting whole`, which measured the
+   * proportions of a painting nobody could see.
+   *
+   * ⚠️ **Two assertions, and the second is the one that matters.** 「fits」 alone
+   * would pass on a screen that is *mostly* fine, so the test scrolls and then asks
+   * whether the last line is inside the box. A size where the content overflows but
+   * does not scroll fails the second assertion; a size where it fits passes both.
+   */
+  test('keeps everything reachable at a size where the columns stack', async ({ page }) => {
+    // ⭐ 900×800, not a round smaller number: 900 is the **largest** width that
+    // stacks (the two-column query starts at 1180) and 800 is a laptop's usable
+    // height. The defect lives in that corner specifically — at 414×896 a phone the
+    // content fits, and at 1440×900 it is one column each way.
+    await page.setViewportSize({ width: 900, height: 800 })
+    await openWithLaunchPending(page)
+
+    const startup = page.getByTestId('startup')
+    await expect(startup).toBeVisible()
+    await expect(page.getByTestId('launch-art')).toBeVisible()
+
+    // The screen owns the scrolling, rather than being clipped by an ancestor that
+    // is not allowed to scroll.
+    const box = await startup.evaluate((node) => {
+      const el = node as HTMLElement
+      return {
+        overflowY: getComputedStyle(el).overflowY,
+        scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight,
+        scrolls: el.scrollHeight > el.clientHeight,
+      }
+    })
+    expect(box.overflowY, 'the launch screen must be its own scroll container').toBe('auto')
+    // Measured at this size before the fix: 1026 against 800.
+    expect(box.scrollHeight, 'the screen scrolls at 900x800, so this size is the gate').toBeGreaterThan(
+      box.clientHeight,
+    )
+
+    // And the last line can be brought into view. `fullyVisible` is computed against
+    // the *container's* box, not the viewport's, so it fails if the credit is clipped
+    // by anything in between.
+    await startup.evaluate((node) => {
+      ;(node as HTMLElement).scrollTop = 99_999
+    })
+    const reached = await page.getByTestId('launch-credit').evaluate((node) => {
+      const credit = node.getBoundingClientRect()
+      const container = node.closest('[data-testid=startup]') as HTMLElement
+      const bounds = container.getBoundingClientRect()
+      return {
+        scrollTop: Math.round(container.scrollTop),
+        top: Math.round(credit.top),
+        bottom: Math.round(credit.bottom),
+        containerTop: Math.round(bounds.top),
+        containerBottom: Math.round(bounds.bottom),
+        inside: credit.top >= bounds.top - 0.5 && credit.bottom <= bounds.bottom + 0.5,
+      }
+    })
+    expect(
+      reached.inside,
+      `credit ${reached.top}..${reached.bottom} inside ${reached.containerTop}..` +
+        `${reached.containerBottom}, scrollTop ${reached.scrollTop}`,
+    ).toBe(true)
+  })
 })
