@@ -543,6 +543,35 @@ describe('V-07 · the dependency budget', () => {
       '@milkdown/core',
       '@milkdown/react',
       '@milkdown/preset-commonmark',
+      // ⭐ **No package was added for the launch screen, and the reason is worth
+      // recording because it was the owner's condition.**
+      //
+      // The instruction on 2026-09-30 was 「你可以引入高级的艺术的相关库」 — an
+      // explicit licence to add one. Four were measured and none was taken, and the
+      // list above did not change:
+      //
+      // - **`unDraw`** — free and no attribution, but its licence **forbids AI use**,
+      //   which is what I am, and its whole set is 「person at a laptop」.
+      // - **`Flowbite`** — MIT but **attribution is mandatory**, and the drawings are
+      //   3D people.
+      // - **`gsap` / `motion`** — the actual animation libraries, and the ones the
+      //   constitution bans by name. The launch screen's two keyframes are 24 lines
+      //   of CSS and the whole budget of what it needs is 「a scroll comes down off
+      //   its roller」.
+      // - **`three.js` / WebGL** — the way to get real ink-wash bleeding, at the cost
+      //   of a 600 kB runtime for an effect nobody asked for by name.
+      //
+      // The artwork that was actually used is 31 CC0 paintings from the Cleveland
+      // Museum of Art, committed as JPEG (`frontend/src/art/scroll/`, 2.71 MB), and
+      // **images are not dependencies** — so the dependency budget is unchanged and
+      // `check_licenses.py`, which reads the npm and pip trees, has nothing new to
+      // inspect. Their provenance is in `PROVENANCE.md` beside them, per painting,
+      // with accession numbers.
+      //
+      // ⚠️ **This paragraph is the assertion.** If a package is ever added for the
+      // artwork, this list has to name it and the reason, and the licences gate has
+      // to pass on it — which is what `V-07` and `check_licenses.py` between them
+      // enforce.
     ])
     const actual = Object.keys(pkg.dependencies).sort()
     expect(actual.filter((name) => !approved.has(name))).toEqual([])

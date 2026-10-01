@@ -195,9 +195,30 @@ cd backend && .venv/Scripts/python scripts/dev.py check
 
 The most convincing part of a README is the part that admits what it does not have.
 
-**Built**: 5 pages · 12 migrations · 43 API endpoints · FTS5 search · the decision
-log and its quality quadrant · review scheduling for cards and notes · charts and
-quotes · the command palette · 15 static checks · an 11-step gate.
+**Built**: 5 pages · **1 launch screen** · 12 migrations · 43 API endpoints ·
+FTS5 search · the decision log and its quality quadrant · review scheduling for
+cards and notes · charts and quotes · the command palette · 15 static checks · an
+11-step gate.
+
+**The 31 paintings on the launch screen** (`.ai/memory/decisions.md` ADR-0033) —
+CC0 holdings from the Cleveland Museum of Art, ink landscapes from the Song and
+Yuan dynasties through the Qing, one per day of the month. Per painting, the
+artist, date, title, medium, **accession number** and museum link are in
+`frontend/src/art/scroll/PROVENANCE.md`, and that file is **a receipt, not a
+claim**. The first generator wrote all 31 with no accession number and no source
+URL — it read the API's `accession_number` against a cache that stores
+`accession` — so the images were right and the gate was green and the words
+「public domain」 had nothing behind them. Four assertions now watch that.
+
+**⭐ This section has been edited, so it should say why it still holds.** ADR-0033
+reversed 「zero entrance animation」 and 「the interface is the product, not a
+landing page」, and a repository that just overrode its own rules should be the
+first to be doubted on the sections still claiming to be honest. It holds,
+because every line here is a **fact** and not a rule: 「pywebview is not built」
+does not become built because somebody changed their mind, and 「`Drawer` has no
+callers」 does not gain callers because building it was approved. **What was
+reversed is a judgement; facts are not affected.** The only honest edit to this
+section is to add to it.
 
 **Adopted, not built** (each recorded in `.ai/`, each with a reason):
 
@@ -224,13 +245,29 @@ quotes · the command palette · 15 static checks · an 11-step gate.
 - **5 of 15 red lines have a runnable verifier** (`dev.py eval`, deliberately
   **not** in the gate — a permanently red gate trains everyone to ignore the
   summary). Baseline in `.ai/eval/redlines.json`.
+- **No first-run experience** — no seed, no demo, no onboarding. A new reader sees
+  **five empty pages**, and now a full-screen painting in front of them. That is
+  the largest gap in the product and this section is not here to excuse it.
 
 **Fixed while writing this README** (the previous version of this file listed it
-as outstanding): a note's **outgoing** link used to render the raw id while the
-**incoming** side rendered a title. The cause was not a missing title but the
-title's presence depending on the target happening to be in the list on screen —
-typing in the search box turned a link the reader had written into an id. The link
-row now carries the target's own name.
+as outstanding):
+
+- A note's **outgoing** link used to render the raw id while the **incoming** side
+  rendered a title. The cause was not a missing title but the title's presence
+  depending on the target happening to be in the list on screen — typing in the
+  search box turned a link the reader had written into an id. The link row now
+  carries the target's own name.
+- ⭐ **The gate's CSS scan was walking nothing.** `SRC_DIR` came from
+  `URL.pathname` with the leading slash stripped, which on Windows yields
+  `/D:/AAA/...`; stripping the slash leaves an **absolute Windows path used as a
+  relative one**. It does not throw — it just does not exist, so it fell back to
+  the `frontend/` root, and the one stylesheet is at `src/styles/globals.css`.
+  Eleven rules written as `for (const file of CSS)` had **never run**. A
+  deliberate `@keyframes` in the stylesheet left all 37 tests green.
+- ⭐ **The launch screen once blocked the entire e2e suite: 10 passed, 101 failed.**
+  That was not a test bug. A reader opening `#/i/sh/600519` from a bookmark has
+  asked a specific question, and answering it with a full-screen painting puts the
+  app's onboarding above the reader's intent. Deep links now skip it.
 
 ## 8. Where the screenshot data came from
 
