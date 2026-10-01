@@ -1735,3 +1735,179 @@ describe('V-16 · the dependency budget has two halves', () => {
     ).toBe('')
   })
 })
+
+/**
+ * V-17 · V-18 — the cascade itself is a rule.
+ *
+ * ⭐⭐⭐ **Both of these exist because a defect got through the other sixteen rules,
+ * and in each case every existing check was right about something else.**
+ *
+ * The defects were found on 2026-10-01 while rebuilding the launch screen, and
+ * they are recorded in full as regressions 0014 and 0015. The short form:
+ *
+ * **V-17 ·** `input, textarea, button, select { font: inherit }` was written
+ * outside every `@layer`. The file declared `@layer` **zero** times, so that reset
+ * was unlayered, and **an unlayered rule beats every layered rule at equal
+ * specificity** — which beat Tailwind's `utilities` layer, where every `@utility`
+ * type class lives. Measured on the launch screen's exit:
+ *
+ * ```
+ *   type-page-title  alone            -> font-size 22px, line-height 30px
+ *   type-page-title  on the <button>  -> font-size 13px, line-height 20.15px
+ *   the button                       -> 53 x 20px, identical to before the class was added
+ * ```
+ *
+ * **Every `<input>`, `<textarea>`, `<button>` and `<select>` in the product had a
+ * dead type class.** It had been invisible because they were *all* already 13px —
+ * the body size — so the reset was doing exactly what it was written to do and
+ * nothing was visibly wrong. `V-12` could not catch it: `V-12` greps for
+ * hand-written `text-[NNpx]` in components, and this was a stylesheet shorthand
+ * defeating a class a component *did* write.
+ *
+ * **V-18 ·** `.startup-copy { align-self: stretch }` was written inside the
+ * `@media (min-width: 1180px)` block, which sits **above** the plain `.startup-copy`
+ * rule. Measured: the exit stayed at y=481 and the byline at y=531, to the pixel.
+ * **Nothing moved.** A media query is a condition, not a priority: with no layers,
+ * an unlayered rule is ordered only by where it appears.
+ */
+describe('V-17 · V-18 — the cascade is ordered, and this file is the only thing that checks it', () => {
+  it('found a stylesheet, so the two rules below are not vacuous', () => {
+    expect(CSS.length, 'no stylesheet under src/ — the whole file passes by checking nothing').toBeGreaterThan(0)
+  })
+
+  it('V-17 · keeps the form reset inside `@layer base`', () => {
+    // ⭐ **The assertion is about the *reset*, not about `@layer` in general.**
+    // Layering the whole stylesheet is the better answer and is recorded as its own
+    // change (see `.ai/logs/changes/2026-10-01-plan.md`); doing it in the same commit
+    // as a bug fix would have made the bug fix unreadable. What must never come back
+    // is a **shorthand reset that restyles a control out from under a utility**.
+    const resets = occurrences(
+      /^\s*(?:input|textarea|button|select)[^{]*\{\s*font:\s*inherit/,
+      CSS,
+    )
+    const layered = occurrences(/@layer\s+base\s*\{/, CSS)
+
+    // ⭐ **First: is there a `@layer base` at all?** Without this the second assertion
+    // passes on an empty set, which is the vacuity this file has already been bitten by
+    // twice (see `SRC_DIR` above, and V-06's un-run loop).
+    expect(
+      layered.length,
+      'no `@layer base` in the stylesheet, so the rule below has nothing to check against',
+    ).toBeGreaterThan(0)
+
+    // ⭐ **Then: every such reset must sit *inside* that block.** Checking by counting
+    // `font: inherit` against counting `@layer base` would pass as soon as one of each
+    // existed anywhere in the file — which is what the first version of this test did:
+    // it reported green with the reset at L207 and the layer at L238, thirty lines of
+    // nothing in between.
+    //
+    // So the check is positional: the reset's line must fall between a `@layer base {`
+    // and its matching `}`. Brace counting is naive about strings, and this stylesheet
+    // contains none.
+    const problems: string[] = []
+    for (const hit of resets) {
+      const source = stripComments(readFileSync(hit.file, 'utf8'), true)
+      const lines = source.split(/\r?\n/)
+      const open = layered.filter((l) => l.line <= hit.line).pop()
+      if (!open) {
+        problems.push(`${hit.file}:${hit.line}  outside every @layer — ${hit.text}`)
+        continue
+      }
+      let depth = 0
+      let closedAt = -1
+      for (let i = open.line; i < lines.length; i += 1) {
+        depth += (lines[i].match(/\{/g) ?? []).length
+        depth -= (lines[i].match(/\}/g) ?? []).length
+        if (depth === 0 && i > open.line) {
+          closedAt = i
+          break
+        }
+      }
+      if (closedAt === -1 || hit.line > closedAt) {
+        problems.push(`${hit.file}:${hit.line}  after @layer base closes at L${closedAt} — ${hit.text}`)
+      }
+    }
+
+    expect(
+      problems.join('\n'),
+      [
+        'These reset the font on a control from outside `@layer base`.',
+        'An unlayered rule beats Tailwind`s `utilities` layer, which is where',
+        'every `@utility` type class lives — so a `type-*` class on an <input>,',
+        '<textarea>, <button> or <select> computes to the body size and silently',
+        'does nothing. Measured 2026-10-01: 22px -> 13px on the launch screen exit.',
+        '',
+        problems.join('\n'),
+      ].join('\n'),
+    ).toBe('')
+  })
+
+  it('V-18 · never writes a `@media` override above the rule it overrides', () => {
+    // ⭐ **This is a whole-file structural check, not a grep**, and the reason is that
+    // the defect is invisible to a grep: the overriding rule is present, spelled
+    // correctly, and simply never wins. A grep for `align-self: stretch` would find
+    // it and call it fine.
+    //
+    // So this walks the stylesheet tracking brace depth, collects the selectors
+    // declared inside `@media` blocks with their line numbers, collects the selectors
+    // declared at depth 0, and reports any selector appearing in both **with the
+    // top-level one later**. That ordering is precisely 「the media query lost」.
+    //
+    // ⭐ **And it deliberately does not try to be a CSS parser.** It handles nesting by
+    // counting braces and ignores strings, which this stylesheet does not contain. A
+    // gate that reports a false positive gets deleted, and this one runs against one
+    // stylesheet a linter has already formatted.
+    const reports: string[] = []
+    for (const file of CSS) {
+      const source = stripComments(readFileSync(file, 'utf8'), true)
+      const lines = source.split(/\r?\n/)
+      const inside = new Map<string, number>()
+      const topLevel = new Map<string, number>()
+
+      const selectorsOf = (text: string): string[] =>
+        text
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0 && !s.startsWith('@'))
+
+      let depth = 0
+      lines.forEach((text, index) => {
+        const line = index + 1
+        const isHeader = text.trim().endsWith('{')
+        if (isHeader && !text.trim().startsWith('@')) {
+          for (const sel of selectorsOf(text.trim().slice(0, -1))) {
+            if (depth > 0) {
+              if (!inside.has(sel)) inside.set(sel, line)
+            } else if (!topLevel.has(sel)) {
+              topLevel.set(sel, line)
+            }
+          }
+        }
+        depth += (text.match(/\{/g) ?? []).length
+        depth -= (text.match(/\}/g) ?? []).length
+      })
+
+      for (const [sel, at] of inside) {
+        const later = topLevel.get(sel)
+        if (later !== undefined && later > at) {
+          reports.push(`${RELATIVE(file)}  ${sel}  inside a @media at L${at}, beaten by L${later}`)
+        }
+      }
+    }
+
+    expect(
+      reports.join('\n'),
+      [
+        'Each of these is declared inside a @media block AND again at the top level',
+        'later in the same file. This stylesheet declares `@layer` zero times, so',
+        'every rule in it is unlayered and unlayered rules are ordered only by',
+        'position — the top-level one wins and the @media block does nothing.',
+        'Measured 2026-10-01: an `align-self: stretch` override moved nothing, to',
+        'the pixel. Move the override below the rule it overrides, or put both in',
+        'layers.',
+        '',
+        reports.join('\n'),
+      ].join('\n'),
+    ).toBe('')
+  })
+})
