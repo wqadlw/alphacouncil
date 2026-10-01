@@ -605,9 +605,18 @@ describe('V-09 · transition durations are L1 or L2', () => {
     const out: { where: string; value: number }[] = []
     for (const file of FILES.filter((f) => f.endsWith('.css'))) {
       const css = stripComments(readFileSync(file, 'utf8'), true)
-      for (const decl of css.matchAll(/transition(?:-duration)?\s*:\s*([^;]+);/gi)) {
+      // ⭐ **`animation` as well as `transition`, and that is not tidiness — it is a
+      // hole ADR-0033 opened.** This function read only `transition`, which was
+      // complete while the stylesheet had no `@keyframes` at all. The reversal
+      // brought keyframes back, so an `animation:` shorthand could now declare
+      // `4000ms` and nothing in this file would look at it: §7.1's two ranges
+      // stopped being the whole of the motion budget the moment motion stopped
+      // being spelled `transition`.
+      for (const decl of css.matchAll(
+        /(transition|animation)(?:-duration)?\s*:\s*([^;]+);/gi,
+      )) {
         const head = (decl[0].split('\n')[0] ?? '').trim()
-        for (const match of decl[1].matchAll(/(\d*\.?\d+)ms/g)) {
+        for (const match of decl[2].matchAll(/(\d*\.?\d+)ms/g)) {
           out.push({ where: `${RELATIVE(file)}  ${head}`, value: Number(match[1]) })
         }
       }
@@ -615,7 +624,7 @@ describe('V-09 · transition durations are L1 or L2', () => {
     return out
   }
 
-  /** §7.1's two ranges, plus the reduced-motion off switch. */
+  /** §7.1's two ranges, the reduced-motion off switch, and L3. */
   const ALLOWED: { label: string; test: (ms: number) => boolean }[] = [
     { label: 'L1 100–120ms', test: (ms) => ms >= 100 && ms <= 120 },
     { label: 'L2 180–220ms', test: (ms) => ms >= 180 && ms <= 220 },
@@ -628,6 +637,24 @@ describe('V-09 · transition durations are L1 or L2', () => {
       // so a reader can see why this one number is not one of §7.1's two.
       label: 'reduced-motion off switch (0.01ms)',
       test: (ms) => ms > 0 && ms < 1,
+    },
+    {
+      // ⭐ **L3 · 600–1600ms · a one-shot entrance, and the launch screen only.**
+      //
+      // §7.1 has two levels and both describe a *state change the reader
+      // triggered*. The launch screen is not that: it arrives on its own, at most
+      // once a day, and the reader has nothing to interrupt while it does. So it
+      // needs a third band rather than being forced through L2 — a 220 ms
+      // unrolling scroll is a flick, and a launch screen that flicks is a splash
+      // screen with better manners.
+      //
+      // The ceiling is the point. Past about 1.6 s an entrance stops being an
+      // entrance and becomes a wait, and a wait on the way into the product is
+      // the one thing this product must never be. The floor is there for the same
+      // reason from below: under 600 ms there is no settle in it, and the effect
+      // is only detectable by someone measuring it.
+      label: 'L3 600–1600ms (one-shot entrance)',
+      test: (ms) => ms >= 600 && ms <= 1600,
     },
   ]
 
@@ -650,6 +677,60 @@ describe('V-09 · transition durations are L1 or L2', () => {
     expect(found.length).toBeGreaterThanOrEqual(4)
     expect(found.some((d) => ALLOWED[0].test(d.value))).toBe(true)
     expect(found.some((d) => ALLOWED[1].test(d.value))).toBe(true)
+  })
+
+  it('confines the L3 entrance band to the launch screen', () => {
+    // ⭐ **A band nobody can misuse is not a band, it is a permission.** L3 exists
+    // because the launch screen needs 700–1200 ms and L2's 220 ms ceiling is a
+    // flick. Without this, the next person who wants a slow drawer just writes
+    // `1600ms`, and the number that was a bound on one specific screen becomes a
+    // general licence to be slow.
+    //
+    // So the band is tied to the thing it was written for: an L3 duration may only
+    // be declared in a rule that also carries a `startup-` selector. That is a
+    // coarse test — it does not check the *specific* selector — and it is
+    // deliberately coarse, because the failure being prevented is "L3 escapes the
+    // launch screen", not "L3 is spelled correctly".
+    const offenders: string[] = []
+    for (const file of FILES.filter((f) => f.endsWith('.css'))) {
+      const css = stripComments(readFileSync(file, 'utf8'), true)
+      // ⭐ **The class name, with no boundary in front of it.** The first version
+      // required `(^|[,\s])startup-`, on the reasoning that `foo-startup-x` should
+      // not count. It also failed to count `.startup-hang` — a CSS class selector
+      // has a `.` in front of it — so the rule reported **the one legitimate L3
+      // declaration in the tree** as an offence, on its first run. The boundary was
+      // guarding against a collision that cannot happen here (there is exactly one
+      // screen) and it cost the rule its only real subject.
+      for (const rule of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        const [, selector, body] = rule
+        // An `@keyframes` block names the animation, not the screen it runs on, so
+        // its durations are judged by who *references* the name, not by its
+        // selector — and there is no reference to check here, so it is skipped
+        // rather than guessed at.
+        if (/^@(keyframes|media|supports)\b/.test(selector.trim())) continue
+        for (const m of body.matchAll(/(\d*\.?\d+)ms/g)) {
+          const ms = Number(m[1])
+          if (!ALLOWED[3].test(ms)) continue
+          if (!selector.includes('startup-')) {
+            offenders.push(
+              `${RELATIVE(file)}  ${selector.trim().slice(0, 60)}  ${m[0]}  (L3)`,
+            )
+          }
+        }
+      }
+    }
+    expect(
+      offenders,
+      `an L3 duration outside the launch screen:\n${offenders.join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('has at least one L3 duration, so the band above is not an empty permission', () => {
+    // The launch screen is the reason L3 exists, so if the tree has no L3
+    // duration then the band is describing a screen that is not there, and the
+    // rule above would be guarding nothing. Same reasoning as the file-list check.
+    const found = declaredDurations()
+    expect(found.some((d) => ALLOWED[3].test(d.value))).toBe(true)
   })
 
   it('never says `transition: all`', () => {

@@ -41,6 +41,24 @@ import { routeApi, todayEmpty } from './fixtures'
 
 const VIEWS = ['#/', '#/pool', '#/review', '#/retrospective'] as const
 
+/**
+ * ⭐ **What the palette offers that is not a view.**
+ *
+ * One command today: 「重看开屏」, which reopens the launch screen (ADR-0033).
+ * That screen is deliberately **not** in `ROUTES` — it has no address, must not
+ * appear in the sidebar, and Back does not return to it — so the palette is the
+ * only way back to it, and `App.tsx` contributes it through `ShellProps.commands`.
+ *
+ * ⚠️ **This is the one place that number lives.** It was previously `ROUTES.length`
+ * alone, which was correct until the launch screen arrived and the count became 6
+ * against a table of 5. Writing `ROUTES.length + 1` instead would have been the
+ * same dead constant wearing a different hat: the next command anyone adds breaks
+ * this suite with a failure that says nothing about the palette.
+ */
+const SHELL_EXTRA_COMMANDS = 1
+
+const PALETTE_COMMANDS = ROUTES.length + SHELL_EXTRA_COMMANDS
+
 /** Every API call the shell makes on any of the four views. */
 async function stub(page: Parameters<typeof routeApi>[0]): Promise<void> {
   await routeApi(page, {
@@ -120,14 +138,25 @@ test.describe('命令面板（spec 025 · ⌘K）', () => {
 
     const items = page.getByTestId('palette-item')
     const all = await items.count()
-    // ⭐ Derived from `ROUTES`, not written down.
+    // ⭐ Derived from `ROUTES` **plus the shell's own commands**, not written down.
     //
     // This was `expect(all).toBe(4)`, and adding the `vault` view (spec 026)
     // broke it — the same dead-constant trap the constraint ledger documents
     // ("written dead on purpose, a new migration changes it"). A number that has
     // to be edited whenever the app grows a screen is not asserting anything; it
     // is just a second place to forget.
-    expect(all).toBe(ROUTES.length)
+    //
+    // ⭐ **And then adding a command broke it a second time, for the same reason.**
+    // ADR-0033's launch screen has no route — deliberately, since it must not
+    // appear in the nav — so 「重看开屏」 reaches it through the palette, and the
+    // palette's count went from 5 to 6 while `ROUTES` stayed at 5. Rewriting the
+    // expectation as `ROUTES.length + 1` would have moved the dead constant rather
+    // than removed it: the next person to add a command hits this again.
+    //
+    // So the count is derived from both sources. `SHELL_EXTRA_COMMANDS` is what the
+    // shell contributes beyond the route table, named here so that adding a command
+    // has exactly one place to say so, and `PALETTE_COMMANDS` is the total.
+    expect(all).toBe(PALETTE_COMMANDS)
     // And the palette really does offer every view, not a hand-picked few.
     for (const route of ROUTES) {
       await expect(page.getByTestId('palette-list')).toContainText(route.label)
@@ -210,7 +239,7 @@ test.describe('命令面板（spec 025 · ⌘K）', () => {
     const items = page.getByTestId('palette-item')
     const count = await items.count()
     // Derived, for the same reason as in the filtering test above.
-    expect(count).toBe(ROUTES.length)
+    expect(count).toBe(PALETTE_COMMANDS)
 
     const activeIndex = async () => {
       const flags = await items.evaluateAll((els) =>

@@ -290,6 +290,185 @@ select {
     transform 200ms cubic-bezier(0.2, 0, 0.2, 1);
 }
 
+/* ── 启动页 · the launch screen ────────────────────────────────────────────────
+ *
+ * ⭐ **Added 2026-10-01 under ADR-0033**, which reversed §5.2 ("the interface is
+ * the product, not a landing page"). This is the one screen that is allowed to
+ * behave like a landing page, and the reason it can be is that it is not one:
+ * it is a **launcher**, shown once a day on the way in, and every click on it
+ * leaves it. A page the reader stays on would be the thing §5.2 was forbidding.
+ *
+ * ⭐ **No shadow on the painting, and rule 4 is why rather than taste.** `*` has
+ * `box-shadow: none` (§3.2) because this product is a printed object; a floating
+ * JPEG with a drop shadow is the one thing on this screen that would announce
+ * itself as a web image. So the painting is **mounted**: a hairline, and a
+ * `--color-surface` mat with padding around it, which is how the object is
+ * actually presented in a room. The mat is what sells it, and it costs no pixels.
+ *
+ * ⭐ **`font-size` is absent from this whole block, deliberately.** V-12 says the
+ * scale is the only place a size is written, and this file's own comment on
+ * `@utility` explains why: a size decided here is a size decided in the wrong
+ * place. Every size on this screen is a `type-*` class chosen in the component.
+ */
+.startup {
+  /* `min-height: 100%` rather than `100vh`: the shell sets `html, body, #root`
+     to `height: 100%` and gives `body` `overflow: hidden`, so `100vh` on a
+     desktop window that has been resized is the height *including* the chrome
+     the webview does not have. This is the same reason `.pane-scroll` exists. */
+  min-height: 100%;
+  display: grid;
+  /* ⭐ **One column until 1080px, not until 900px.** The first version broke to two
+     columns at 900 and a screenshot at 900 showed the painting at **250px wide**:
+     `minmax(280px, 420px) 1fr` gave the copy column its full 420px and left the
+     painting 250px in a window that had plenty of room for a two-column layout
+     stacked instead. The breakpoint now sits where the copy column's maximum and
+     the painting's useful minimum can both be honoured with the gap between them,
+     which is arithmetic rather than a round number someone liked. */
+  gap: 40px;
+  padding: 48px 40px;
+  background: var(--color-paper);
+}
+
+@media (min-width: 1080px) {
+  .startup {
+    grid-template-columns: minmax(280px, 420px) 1fr;
+    gap: 64px;
+    padding: 56px 64px;
+  }
+}
+
+/* The copy column. `align-self: center` so the text sits on the painting's
+   middle rather than its top — a launch screen read top-aligned looks like a
+   page that ran out of content. */
+.startup-copy {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 420px;
+}
+
+/* The painting's side of the screen. Centred, and allowed to shrink. */
+.startup-wall {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* ⭐ **The mount.** A hairline and a surface-coloured mat, not a shadow. Padding
+ * is `18px` rather than a token because it is not a token's job: this is the
+ * mount's own margin, and it has no second use anywhere in the product. */
+.startup-frame {
+  display: flex;
+  max-width: 100%;
+  max-height: 62vh;
+  padding: 18px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-rule);
+}
+
+.startup-frame > img {
+  display: block;
+  /* `max-height` on the frame plus `max-width: 100%` on the image: the painting
+     keeps **its own** proportions, at whatever shape it happens to be. A
+     landscape album leaf and a two-metre hanging scroll are both 30-centimetre
+     objects of the same kind, and cropping one to match the other would be
+     choosing the wrong one. */
+  max-width: 100%;
+  max-height: calc(62vh - 36px);
+  width: auto;
+  height: auto;
+}
+
+/* The credit. `type-badge` (11/14) is the smallest size in the product and this
+   is the smallest thing on the screen; `ink-faint` because it is a receipt, not
+   a caption, and it must never compete with the slogan. */
+.startup-credit {
+  max-width: 560px;
+  text-align: center;
+  color: var(--color-ink-faint);
+}
+
+/* The one control. A text link with a hairline under it, because rule 4 gives
+ * this product no buttons and no pills — the affordance is a thing you click,
+   and the guide's own vocabulary for that is a link. */
+.startup-enter {
+  align-self: flex-start;
+  color: var(--color-ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: var(--color-brass);
+  cursor: pointer;
+  border: 0;
+  background: none;
+  padding: 0;
+}
+
+.startup-enter:hover {
+  text-decoration-color: var(--color-ink);
+}
+
+/* ── Motion on this screen ──────────────────────────────────────────────────
+ *
+ * ⭐ Two keyframes, and both are **entrance** motion on a screen that appears at
+ * most once a day with nothing to interrupt — which is the distinction §7.1 draws
+ * between an L2 transition ("a state change the reader triggered") and an
+ * arrival the reader did not ask for. ADR-0033 allows the second kind here and
+ * `V-09`'s `L3` band is what bounds it.
+ *
+ * ⭐ `ac-hang` is `scaleY` from `top`, not a fade. A hanging scroll settles
+ * downward from its roller; a fade would say "an image appeared" where this says
+ * "an object was hung". The difference is 1200 ms of credibility.
+ */
+@keyframes ac-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ac-hang {
+  from {
+    opacity: 0;
+    transform: scaleY(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.startup-rise {
+  animation: ac-rise 700ms cubic-bezier(0.2, 0, 0.2, 1) both;
+}
+
+.startup-hang {
+  transform-origin: top center;
+  animation: ac-hang 1200ms cubic-bezier(0.2, 0, 0.2, 1) both;
+}
+
+/* ⭐ The stagger is on the **children**, not on a parent with a delay per item.
+ * `nth-child` delays are greppable and they die with the element; a `--i` custom
+ * property set from JSX would put a duration decision in a component, which is
+ * where V-12 says decisions like that do not go.
+ *
+ * ⭐ The offsets are 120 ms apart and they stop after the third child: the fourth
+ * thing on a launch screen arrives at 1140 ms, which is past the point where the
+ * reader has stopped noticing, so staggering further is latency with a
+ * justification attached.
+ */
+.startup-rise:nth-child(1) { animation-delay: 40ms; }
+.startup-rise:nth-child(2) { animation-delay: 160ms; }
+.startup-rise:nth-child(3) { animation-delay: 280ms; }
+.startup-rise:nth-child(4) { animation-delay: 400ms; }
+
 /* ⭐ 禁止 count-up（guide §7.2）：把"看数据"变成"看表演"，而且暗示收益。 */
 @media (prefers-reduced-motion: reduce) {
   [data-motion],
