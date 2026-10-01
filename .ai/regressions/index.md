@@ -11,6 +11,13 @@
 | [0004](0004-console-encoding.md) | 质量门禁在中文控制台上无法输出，全绿也退出 1 | P1 | ✅ 已修复 | 2026-09-28 |
 | [0005](0005-arch-doc-and-adr-divergence.md) | 架构文档把「已采纳未实现」写成「已被移除」—— 而写错的是我自己 | P1 | ✅ 已修复 | 2026-09-28 |
 | [0006](0006-card-lifecycle-not-atomic.md) | 卡片的状态变更与记录这次变更从来不在一个事务里 | P1 | ✅ 已修复 | 2026-09-28 |
+| [0007](0007-reviewed-decision-stays-in-queue.md) | 准复了的决策仍然留在队列里 | P1 | ✅ 已修复 | 2026-09-28 |
+| [0008](0008-assuming-the-primary-key-is-id.md) | 假设主键叫 `id` | P1 | ✅ 已修复 | 2026-09-28 |
+| [0009](0009-fixture-describes-an-impossible-state.md) | fixture 描述一个不可能的状态 | P1 | ✅ 已修复 | 2026-09-28 |
+| [0010](0010-two-ema-definitions.md) | 两个 EMA 定义各说各的 | P1 | ✅ 已修复 | 2026-09-28 |
+| [0011](0011-rule-title-wider-than-its-check.md) | 规则的标题比它的检查严格 | P1 | ✅ 已修复 | 2026-09-28 |
+| [0012](0012-css-scan-iterated-nothing.md) | 门禁的样式表扫描一直在迭代一个空列表 | P0 | ✅ 已修复 | 2026-09-30 |
+| [0013](0013-launch-screen-blocked-every-test.md) | 开屏把整个 e2e 套件挡在外面，10 过 101 挂 | P0 | ✅ 已修复 | 2026-10-01 |
 
 ---
 
