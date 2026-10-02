@@ -39,6 +39,7 @@ from checks.rules import (
     no_prediction_field,
     no_print,
     no_raw_http,
+    no_route_drift,
     time_cost_in_stop_loss,
     tool_encoding,
 )
@@ -58,7 +59,7 @@ class Rule:
     run: Callable[[ScanContext], CheckResult]
 
 
-#: Sixteen rules, matching `.ai/checks/static/README.md` §3.
+#: Seventeen rules, matching `.ai/checks/static/README.md` §3.
 RULES: tuple[Rule, ...] = (
     Rule(no_raw_http.META, no_raw_http.run),
     Rule(no_boolean_state.META, no_boolean_state.run),
@@ -79,6 +80,9 @@ RULES: tuple[Rule, ...] = (
     # anything — and a rule that skips silently is the failure mode its own docstring
     # warns about.
     Rule(no_enum_drift.META, no_enum_drift.run),
+    # S-17 (spec 050). Also constructs the app, for the same reason as S-16 and with the
+    # same guard: it **skips** rather than reports when the app cannot be built.
+    Rule(no_route_drift.META, no_route_drift.run),
     # S-14 (spec 032). Last because it is the only rule that reads git rather
     # than the working tree, and it should not mask a syntax error.
     Rule(git_tracked.META, git_tracked.run),

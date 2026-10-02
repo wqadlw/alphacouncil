@@ -67,6 +67,7 @@ Lint  →  Typecheck  →  ★ check-static  →  Test  →  Build
 | **S-10** | `no-print` | 禁止 `print()`（宪法 7.4） |
 | **S-11** | `no-bare-except` | 禁止裸 `except:` / `except Exception: pass`（宪法 7.3） |
 | **S-16** | `no-enum-drift` | 后端 `openapi.json` 里的枚举与前端 `type X = 'a' | 'b'` 的镜像不一致（**双向**），或未在豁免表里写下它**是什么**（spec 049） | 同一概念两个家（`styleguide.test.ts` 已记录这个形状） |
+| **S-17** | `no-route-drift` | 前端调用点 × 应用实际提供的路由，\**双向**，且**四个桶**（drift / unverifiable / orphan / ok）（spec 050）| 同一个接口两侧漂移（与 `S-16` 同类）|
 | **S-14** | `git-tracked` | 源文件在磁盘上却不在 git 里（未跟踪报 error；**被 `.gitignore` 藏起来报 warning** —— `git status` 看不见后者） |
 | **S-12** | `check-doc-sync` | 关键文档里的代码块与实现**不脱同步**（借"测试直接从文档抽取代码执行"的思路） |
 

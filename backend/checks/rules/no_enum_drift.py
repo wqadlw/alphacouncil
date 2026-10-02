@@ -207,7 +207,9 @@ def _sources(ctx: ScanContext) -> list[tuple[str, str]]:
     union written in a test is the test's own fixture vocabulary, and counting
     those would let a test file satisfy a production requirement.
     """
-    if frontend_sources.skip_reason() is not None:
+    # ⚠️ has_sources, not skip_reason: the latter always returns a string, so
+    # branching on it would make this helper return nothing. S-17 hit exactly that.
+    if not frontend_sources.has_sources(ctx):
         return []
     root = frontend_sources.source_root(ctx)
     out: list[tuple[str, str]] = []

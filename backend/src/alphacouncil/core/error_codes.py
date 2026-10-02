@@ -225,4 +225,8 @@ class ErrorCode(StrEnum):
     # consumer is the check runner, never a request path -- which is why it sits in the
     # CHECK_* block above rather than among the codes `api/errors.py` maps to HTTP.
     CHECK_ENUM_DRIFT = "CHECK_ENUM_DRIFT"
+    # S-17 (spec 050). A descriptive code like CHECK_ENUM_DRIFT: the disagreement is
+    # between the frontend's call sites and the routes the app serves, and its consumer
+    # is the check runner, never a request path.
+    CHECK_ROUTE_DRIFT = "CHECK_ROUTE_DRIFT"
     CHECK_RUNNER_ERROR = "CHECK_RUNNER_ERROR"

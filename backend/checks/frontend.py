@@ -54,8 +54,29 @@ def files(ctx: ScanContext) -> list[Path]:
     return found
 
 
+def has_sources(ctx: ScanContext) -> bool:
+    """Whether there is any frontend source to look at.
+
+    ⭐ **This is the predicate. `skip_reason` is a message, not one** — and reading it as a
+    predicate makes every caller skip unconditionally, because it always returns a string.
+    `S-17` did exactly that on its first run and reported 「frontend sources are not present」
+    against a frontend that has 46 call sites in it.
+
+    ⇒ `S-07` / `S-08` / `S-09` were already branching on `if not pages:` / `if not files:`
+    and using `skip_reason()` only for the wording, which is why they were never affected.
+    The function's *name* was the trap, not its behaviour — and this repository has four
+    records of a name being wider than the thing it describes (`0011`, `F-208`, `F-210`,
+    `F-211`).
+    """
+    return bool(files(ctx))
+
+
 def skip_reason() -> str:
-    """Why the UI rules cannot run — phrased so it reads as a gap, not a pass."""
+    """Why the UI rules cannot run — phrased so it reads as a gap, not a pass.
+
+    ⚠️ **This always returns text; it is not a test.**  Pair it with `has_sources`, or with
+    the caller's own empty-list check — never branch on this value alone.
+    """
     return (
         f"no frontend sources under `{_SOURCE_ROOT}` or `{_FALLBACK_ROOT}` yet — "
         "the UI-layer rule cannot observe anything until S2 lands the frontend"
