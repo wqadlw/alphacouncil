@@ -163,6 +163,35 @@
   而这一种在网络**完全正常**时发生。⭐ 先跑 `Invoke-WebRequest` 确认网络，
   如果它通而 `git` 不通，就不要再调代理了——去换 `sslBackend`。
 
+- ⭐⭐⭐ **第四种：代理配在全局 gitconfig 里，所以 `-c http.proxy=...` 是「再加一条」而不是「换掉」（2026-10-02 实测）**
+  症状是「Clash 没开，直连 200，但带代理参数的 push 与**不带**代理参数的 push
+  **报同一个错**：
+
+  ```
+  fatal: unable to access 'https://github.com/wqadlw/alphacouncil.git/':
+  Failed to connect to github.com:443 over proxy 127.0.0.1 after 2027 ms
+  ```
+
+  ⇒ **`-c` 是叠加的。** 代理不在仓库的 `.git/config` 里，而在**全局**
+  `C:\Users\23507\.gitconfig`，所以仓库级与命令行级的设置都盖不住它。查证：
+
+  ```powershell
+  git config --show-origin --get-regexp 'http.*proxy'
+  #   file:C:/Users/23507/.gitconfig  http.proxy  http://127.0.0.1:7897
+  ```
+
+  ⇒ **可用**（把全局那条**清空**，而不是再指定一个）：
+
+  ```powershell
+  git -c http.sslBackend=openssl -c http.proxy= -c https.proxy= push origin main
+  ```
+
+  ⚠️ **这一条与上面三条的排查顺序相反**：前三条都是「网络不通」，
+  这一条是「**网络通、代理不该用、而代理仍然被用**」。
+  ⇒ 所以第 138 行那条「不要照抄任何一种，先测」在这里也要加一步：
+  **先问 `git config --show-origin --get-regexp proxy` 代理是从哪个文件来的** ——
+  **在它来自全局的情况下，「代理在不在监听」根本不是决定因素。**
+
 ## 五、跑起来与验收命令
 
 ```bash
