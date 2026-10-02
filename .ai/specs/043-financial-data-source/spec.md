@@ -51,7 +51,7 @@
 
 ## 三、⭐ 先只接一组 API，理由是节流的单位
 
-6 组财务 API。⭐ **首批只做 `query_profit_data`**，因为它**一次调用返回 10 个指标**：
+6 组财务 API。⭐ **首批只做 `query_profit_data`**，因为它**一次调用返回 8 个指标**：
 
 `roeAvg` `npMargin` `gpMargin` `netProfit` `epsTTM` `MBRevenue` `totalShare` `liqaShare`
 

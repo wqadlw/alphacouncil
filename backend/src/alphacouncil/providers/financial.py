@@ -2,7 +2,7 @@
 
 ## ⭐ What this is, and what it deliberately is not
 
-One API — ``query_profit_data`` — and the ten numbers it returns in a single round trip.
+One API — ``query_profit_data`` — and the eight numbers it returns in a single round trip.
 ⭐ **The unit of rate limiting is 「how many metrics per call」, not 「how many rows per
 call」** (spec 043 §3): the six BaoStock financial endpoints share their ``pubDate`` and
 ``statDate`` columns, so taking all six is six round trips for one document. One endpoint
@@ -136,7 +136,7 @@ class FinancialPeriod:
 
     @property
     def known(self) -> int:
-        """How many of the ten metrics this row actually carries."""
+        """How many of the eight metrics this row actually carries."""
         return sum(
             1
             for value in (

@@ -42,7 +42,7 @@ CREATE TABLE financial_reports (
     -- 两条都在，而「我们用哪一条」是消费方的事而不是表的唯一性约束的事。
     source       TEXT    NOT NULL,
     fetched_at   TEXT    NOT NULL,
-    -- ⭐ 以下十个字段来自一次 `query_profit_data`（实测 2026-09-29，sh.600519 2024Q4）。
+    -- ⭐ 以下八个字段来自一次 `query_profit_data`（实测 2026-09-29，sh.600519 2024Q4）。
     -- 全部可空：没有任何一个能对所有报告期成立，而 `0.0` 会说「它是零」。
     roe_avg      REAL,
     np_margin    REAL,

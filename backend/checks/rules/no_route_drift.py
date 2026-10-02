@@ -103,7 +103,31 @@ CLIENT_FILES = ("api.ts", "notes.ts", "lessons.ts")
 #: and a new dead endpoint is visible as 「unaccounted for」 rather than lost in a count.
 EXPECTED_UNREACHED: dict[str, str] = {
     "GET /health": "the liveness probe; there is no screen that would ask for it",
+    "GET /api/v1/decision-reviews/schema/quadrants": (
+        "superseded, not merely unused: `DecisionReview.guidance` already carries the same "
+        "sentence on every review row, and `api.ts:348-354` argues at length why the client "
+        "renders that rather than retyping it (a UI-authored version of the dangerous-quadrant "
+        "warning is one careless PR away from congratulating someone for a decision that lost "
+        "them money the next time). Measured 2026-10-02: the frontend names this path 0 times, "
+        "and all five server sentences appear 0 times in frontend/src. \u2b50 **A candidate for "
+        "deletion rather than for a caller** \u2014 deleting an endpoint is a product decision, "
+        "and an unused GET on a local single-user product costs nothing"
+    ),
 }
+
+#: \u2b50\u2b50 **`GET /api/v1/capabilities` is deliberately NOT in the table above.**
+#:
+#: It answers \u300cwhich (dataset, market) pairs have a live source\u300d \u2014 `state` plus
+#: each source's health and cooldown, with a `reason` when nothing declares one. `financial` is
+#: one of its datasets, so it is the board that would say whether report data is arriving at
+#: all. Nothing surfaces it, and \u26a0\ufe0f **\u300cthe reports source is down\u300d and
+#: \u300cthe reports source is fine\u300d look identical to a reader otherwise.**
+#:
+#: \u21d2 **Leaving it out is the point.** The rule reports it on every run until someone either
+#: surfaces it or says here why not, and \u2b50 **a finding that stops being reported is a
+#: finding that stops being real.** Declaring it to quiet the gate is the move
+#: `regressions/0012` records. (`status.md` carries it as an open decision.)
+CAPABILITIES_STILL_UNDECIDED = "GET /api/v1/capabilities"
 
 #: ⚠️⚠️ **The self-check, and the reason this file is worth more than its finding.**
 #:
@@ -456,7 +480,9 @@ def run(ctx: ScanContext) -> CheckResult:
                     f"`{label}` is served and nothing calls it, and it is not in "
                     f"EXPECTED_UNREACHED",
                     target=target,
-                    fix="Either wire a screen to it, or say here why nothing should. ⭐ An "
+                    fix=f"Either wire a screen to it, or add it to EXPECTED_UNREACHED with "
+                    f"a reason. {CAPABILITIES_STILL_UNDECIDED} is deliberately not in that "
+                    f"table yet, so it keeps being reported. ⭐ An "
                     "endpoint with no caller is usually one of two things — a capability "
                     "that was never surfaced, or a hand-written copy of something the "
                     "server was already publishing.",
