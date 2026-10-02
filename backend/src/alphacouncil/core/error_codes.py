@@ -220,4 +220,9 @@ class ErrorCode(StrEnum):
     # -- CHECK_* : emitted by the check runner itself -----------------------
     # Not tied to any single rule, so they cannot be attributed to one row.
     CHECK_EXEMPTION_UNREASONED = "CHECK_EXEMPTION_UNREASONED"
+    # S-16 (spec 049). A descriptive code: it is not a product error but a disagreement
+    # between the enums the backend publishes and the unions the frontend wrote. Its
+    # consumer is the check runner, never a request path -- which is why it sits in the
+    # CHECK_* block above rather than among the codes `api/errors.py` maps to HTTP.
+    CHECK_ENUM_DRIFT = "CHECK_ENUM_DRIFT"
     CHECK_RUNNER_ERROR = "CHECK_RUNNER_ERROR"

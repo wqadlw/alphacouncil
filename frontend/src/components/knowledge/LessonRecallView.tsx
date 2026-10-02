@@ -32,6 +32,7 @@ import { useCallback, useState } from 'react'
 
 import { ApiError } from '../../api'
 import { listDueLessons, reviewLesson, type LessonRating } from '../../lessons'
+import { LESSON_RATINGS } from './ratings'
 import { formatAgo } from './formatAgo'
 import { Badge, Button, Rule } from '../ui'
 import { useResource } from '../../useResource'
@@ -46,12 +47,9 @@ import { Markdown } from './Markdown'
  * be wrong for both, and calling the most valuable answer this queue collects a
  * lapse is the failure the whole scheduling mechanism is for.
  */
-const RATINGS: { value: LessonRating; label: string; hint: string }[] = [
-  { value: 'again', label: '我的想法变了', hint: '这条我现在不认了 —— 它该重新想一遍。' },
-  { value: 'hard', label: '想得起来，但吃力', hint: '' },
-  { value: 'good', label: '想得起来', hint: '' },
-  { value: 'easy', label: '张口就来', hint: '' },
-]
+/** ⭐ **From `./ratings`, which owns it** — see that file for why the two
+ *  queues deliberately disagree on the wording of the same four wire values. */
+const RATINGS = LESSON_RATINGS
 
 export default function LessonRecallView({ onDone }: { onDone?: () => void }) {
   const describe = useCallback(

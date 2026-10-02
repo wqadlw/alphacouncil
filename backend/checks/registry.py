@@ -34,6 +34,7 @@ from checks.rules import (
     no_bare_except,
     no_boolean_state,
     no_client_supplied_id,
+    no_enum_drift,
     no_mojibake,
     no_prediction_field,
     no_print,
@@ -57,7 +58,7 @@ class Rule:
     run: Callable[[ScanContext], CheckResult]
 
 
-#: Fifteen rules, matching `.ai/checks/static/README.md` §3.
+#: Sixteen rules, matching `.ai/checks/static/README.md` §3.
 RULES: tuple[Rule, ...] = (
     Rule(no_raw_http.META, no_raw_http.run),
     Rule(no_boolean_state.META, no_boolean_state.run),
@@ -73,6 +74,11 @@ RULES: tuple[Rule, ...] = (
     Rule(no_bare_except.META, no_bare_except.run),
     Rule(check_doc_sync.META, check_doc_sync.run),
     Rule(tool_encoding.META, tool_encoding.run),
+    # S-16 (spec 049). ★ Placed before S-14 because it **constructs the app** to read
+    # `openapi.json`, so a syntax error in the app would make it skip rather than mask
+    # anything — and a rule that skips silently is the failure mode its own docstring
+    # warns about.
+    Rule(no_enum_drift.META, no_enum_drift.run),
     # S-14 (spec 032). Last because it is the only rule that reads git rather
     # than the working tree, and it should not mask a syntax error.
     Rule(git_tracked.META, git_tracked.run),

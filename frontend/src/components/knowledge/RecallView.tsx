@@ -45,6 +45,7 @@ import { formatAgo } from './formatAgo'
 import { Button, Rule, Textarea } from '../ui'
 import { useResource } from '../../useResource'
 import { Markdown } from './Markdown'
+import { NOTE_RATINGS } from './ratings'
 
 /** ⭐ The four answers, in the reader's own words.
  *
@@ -57,12 +58,16 @@ import { Markdown } from './Markdown'
  * stays green when the button is reworded, which is the regression it exists to
  * prevent.
  */
-export const RATINGS: { value: ReviewRating; label: string; hint: string }[] = [
-  { value: 'again', label: '我的想法变了', hint: '这条已经跟不上现在的判断了' },
-  { value: 'hard', label: '想得起来，但有点犹豫', hint: '还在，不过已经不牢' },
-  { value: 'good', label: '还是我的想法', hint: '重读一遍就回来了' },
-  { value: 'easy', label: '太熟了', hint: '根本不用想' },
-]
+/**
+ * ⭐ **Re-exported from `./ratings`, which owns it.** Kept exported from here
+ * because `recallContract.test.ts` asserts against this name, and because a queue
+ * that names its own grades is easier to read than one that reaches for them.
+ *
+ * ⭐ The *reasoning* stays in this file — why a note's `again` is 「我的想法变了」
+ * and not 「我忘了」 — because that argument belongs to the screen where a reader
+ * presses the button. `ratings.ts` owns the tables; this file owns the why.
+ */
+export const RATINGS = NOTE_RATINGS
 
 /**
  * ⭐ Copy the product's rules put into words.

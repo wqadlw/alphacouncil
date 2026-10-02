@@ -34,7 +34,8 @@
  */
 
 import type { CardEvent, WatchlistEvent } from '../../api'
-import type { NoteReview, ReviewRating } from '../../notes'
+import type { NoteReview } from '../../notes'
+import { labelsOf, NOTE_RATINGS } from '../knowledge/ratings'
 import { RecordTimeline, type TimelineEvent } from './RecordTimeline'
 
 /** ⭐ `add` / `remove` are `null` there and carry no event id — see `eventKey`. */
@@ -156,13 +157,15 @@ export function CardTimeline({ events }: { events: readonly CardEvent[] }) {
   )
 }
 
-/** ⭐ The reader's own words for a grade, and the words are the spec's. */
-const RATING_LABEL: Record<ReviewRating, string> = {
-  again: '我的想法变了',
-  hard: '想起来了，但慢',
-  good: '记得',
-  easy: '不用想',
-}
+
+/**
+ * ⭐ **The note history's grades, borrowed from the note queue's own buttons.**
+ *
+ * Exported so `ratings.test.ts` can compare the values rather than the wording — and
+ * ⭐ **a value comparison is the assertion that would have caught the drift**: the wire
+ * values were identical all along, only the words on screen differed.
+ */
+export const NOTE_RATING_LABEL = labelsOf(NOTE_RATINGS)
 
 /** ⭐ `deferred` and `reset` are **not** grades — a rating is `null` for both. */
 const OUTCOME_LABEL: Record<NoteReview['outcome'], string> = {
@@ -198,7 +201,7 @@ function noteReviewEvents(reviews: readonly NoteReview[]): TimelineEvent[] {
     id: review.id,
     what:
       review.outcome === 'reviewed' && review.rating !== null
-        ? `${OUTCOME_LABEL[review.outcome]} · ${RATING_LABEL[review.rating]}`
+        ? `${OUTCOME_LABEL[review.outcome]} · ${NOTE_RATING_LABEL[review.rating]}`
         : OUTCOME_LABEL[review.outcome],
     at: review.reviewed_at,
     detail: `下一次 ${review.to_due_at.slice(0, 10)}`,

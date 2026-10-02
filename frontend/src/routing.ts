@@ -37,6 +37,7 @@ import { useEffect, useState } from 'react'
 // `api.ts`-adjacent code, and a value import would make the 4236-icon barrel a
 // dependency of the routing layer for every consumer.
 import type { IconName } from './components/ui/Icon'
+import type { QueueName } from './api'
 
 /**
  * A view the app can be on. Instrument pages are parsed, not enumerated.
@@ -198,14 +199,33 @@ export const RETROSPECTIVE_HREF = definitionFor('retrospective').href
  * eventually disagree. So the mapping lives here, next to the table it derives
  * from, and the server is left with no opinion about where anything lives.
  *
- * Exhaustive over `QueueName` **by construction** — the parameter is the union, so
- * adding a queue server-side without adding a route here is a compile error
- * rather than a link that 404s.
+ * ⭐⭐ **The union is declared once, in `api.ts`, and imported here** — spec 049 measured
+ * the import graph rather than deciding by preference: `api.ts` imports **nothing**,
+ * `routing.ts` already imports an icon, and `TodayPage` imports from both. ⇒ `api.ts` is
+ * the leaf, so converging *into* it is the direction that does not make a cycle.
+ *
+ * ⚠️ **Spec 049 §2.6 said converge into `routing.ts`, and the measurement said
+ * otherwise.** The plan's version was written before the graph was read, and it would
+ * have made `api.ts` import `routing.ts` — the direction that produces a cycle.
+ * A plan is a prediction; a measurement is not (`regressions/0017`).
+ *
+ * Exhaustive over `QueueName` **by construction** — and ⭐ **now it actually is.** The
+ * first version of this comment promised a compile error when a queue is added without a
+ * route here, and the code was a ternary:
+ * `queue === 'cards' ? REVIEW_HREF : RETROSPECTIVE_HREF`.
+ * ⚠️ **A ternary over a union is not exhaustive**, so the promise was `regressions/0005`
+ * in a comment — a document asserting something the code did not do. ⇒ a
+ * `Record<QueueName, string>` makes adding a value to the union a real compile error.
  */
-export type QueueName = 'cards' | 'reviews'
+export type { QueueName } from './api'
+
+const QUEUE_HREF: Record<QueueName, string> = {
+  cards: REVIEW_HREF,
+  reviews: RETROSPECTIVE_HREF,
+}
 
 export function queueHref(queue: QueueName): string {
-  return queue === 'cards' ? REVIEW_HREF : RETROSPECTIVE_HREF
+  return QUEUE_HREF[queue]
 }
 
 export function useRoute(): Route {

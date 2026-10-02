@@ -56,6 +56,34 @@
 
 ---
 
+## 〇之三、spec 049 收尾（2026-10-02）
+
+| | |
+|---|---|
+| **做了什么** | **`S-16` 枚举漂移门禁**（读 `openapi.json`，双向比对，每条豁免必须写「它是什么」）+ **复习四档标签收成一个家**（流水改为从读者按的那个队列派生） |
+| **为什么是它** | ⭐ **不是「加功能」，是先量。** 调研问的是「前端手写类型怎么不漂」，**四个标准答案里三个在本仓走不通**（codegen 要加依赖 · Pact 过重 · 路由对拍是下一轮），第四个**零依赖** —— ⭐ 而 `openapi.json` 一直在被 FastAPI 吐出来，**30 个枚举没人在读** |
+| **量出来的** | 24 个枚举是手抄的，**当前全部精确相符** ⇒ **今天没有活的类型漂移，而后端加值时没有任何东西会红**。⚠️ 而真有一处**已经漂了**且用户可见：同一个 FSRS 评分 `hard`，队列里是「想得起来，但有点犹豫」，流水里是「想起来了，但慢」 |
+| **门禁** | **16 条静态检查全绿 · 退出码 0**；`S-16` 变异 M1–M4 全红（⭐ **M3/M4 才是关键** —— 豁免表是漂移规则死掉的地方） |
+| **还差什么** | **`S-17` 路由对拍门禁**（前端调用点 × 后端路由声明，三个桶：`drift` / `orphan` / `ok`）—— ⭐ **就是我前两段手搓了四次、错了三次的那件事**；⚠️ **`orphan` 必须单独一个桶**，因为「后端有路由而前端没人调」是合法状态（health · 通知 CLI · schema 端点），混进 `drift` 要么天天红要么被加白名单 |
+
+⭐ **这一轮最刺眼的一条**：`S-16` 第一次跑时报「`CriterionVerdict` 没有前端镜像」，
+**而镜像就在那里** —— `api.ts:533` 一行一个值，我那条只认单行的正则看不见它。
+⚠️ **这不是「规则不准」，是「漂移检测器在自己该抓的东西上报干净」** ——
+它被信任，比没有更坏。而我**先把这条教训写进了规则的 docstring，然后自己犯了一遍**
+（`F-202`）。⇒ 正则改成跨行，并拿十种形状探测，**其中两种是它必须不匹配的**。
+
+⚠️ **盘点还挖出四件更大的事，都还没做**（子代理带 `文件:行号`，我核实过相关部分）：
+
+| # | 缺口 | 证据 |
+|---|---|---|
+| **B1** | **D4 财务整栈零生产路径** —— spec 043 已交付，**只差没插** | `providers/__init__.py:24` 导出了它，`default_router():75-79` 不含它；`repositories/financial.py` 176 行零 import |
+| **B2** | **`audit_log` 表有 append-only 触发器、零写入者** —— 宪法 6.3 的审计轨迹是空的 | `0001_initial.up.sql:167,216-220`；而 `check_append_only_triggers.py:85` 强制这张表必须存在 |
+| **B3** | **卡片与决策的复习历史既无 API 也无界面** —— **笔记有** | `scheduling.py:402` / `reviews.py:198` 都在，零路由调用 ⇒ spec 028 的问题只在笔记那边修了一半 |
+| **B4** | **`check-data` 门禁声明 24 条检查、写了 0 条** ⇒ `dev.py check` 永远 INCOMPLETE | `dev.py:112-117, 288-292` |
+
+⚠️ **B4 是一个长期工程做成永久红的门禁**，而本仓自己的判断是
+**「长期工程做成永久红的门禁会训练所有人忽略汇总」** ⇒ 要么写，要么从门禁清单里删掉并说明理由。
+
 ## 一、阶段总览（S0–S5）
 
 | 阶段 | 内容 | 状态 |
@@ -141,7 +169,7 @@
 | ⭐ **`scripts/dev.py`（单一命令入口）** | ✅ **已建立**（2026-09-26）—— `check` / `check-lite` / `lint` / `typecheck` / `licenses` / `test` / `test-cov` / `clean`。**原因：本机根本没装 `make`**，宪法第九条此前**从未被执行过** |
 | ⭐ **`scripts/check_licenses.py`（L-06 许可门禁）** | ✅ **Python + npm 都扫了**（spec 031 · 2026-09-29）—— 实测 `scanned 313 · ok=306 · warn=7 · fail=0`，其中 214 个 npm 包进 production 闭包。⭐ `classify` 从子串匹配改成 **SPDX 表达式**（`OR` 取最宽松 / `AND` 取最严格 / `WITH` 按基础许可）—— 而它**此前一个测试都没有**，已补 42 条，变异 8/8。⚠️ 仍有的局限：**只扫已安装的依赖**（这正是不扫声称清单的理由）|
 | `make check`（质量门禁） | ✅ **已可执行，且已全绿**（2026-09-26）—— 走 `dev.py check`；**有门禁未实现时退出码 1**（T-19 已落地）。**实测 `ran 9 · passed 9 · failed 0 · skipped 0`，退出码 0**。此前一直是 `failed 1`，因为 `check-static` 的 S-09 因"仓库里没有止损组件"而 `skipped`，而 **T-19 不让 skip 变绿** —— 这条纪律正是靠"一直红着"把 S-09 逼到落地的。还差：**Biome**（当前 oxlint）· **Playwright** 组件测试 |
-| ⭐ **`.ai/checks/static/`（13 条静态检查）** | ✅ **已实现且 13 条全部真正运行**（2026-09-28）—— `backend/checks/`，**13 个规则模块 + 框架 + 运行器**；`tests/unit/test_static_checks.py` **105 项**（每条规则"必须报错 + 必须静默"两个 fixture）。**✅ 新增 S-13 `tool-encoding`（P0，spec 017）** —— 开发者工具打印人类可读输出却没调 `use_utf8()`（回归 0004 的续集）。**它第一次运行就抓到 `backend/scripts/smoke_market.py`** —— 一个从无任何测试覆盖的手工冒烟脚本。**✅ 已接入 CI**（`static-checks` job，`python -m checks --strict`）。**实测 `ran 13 · skipped 0 · crashed 0 · 0 error`** |
+| **`.ai/checks/static/`（静态检查）** | ✅ **已实现，**16** 条全部真正运行**（spec 049 起）—**`backend/checks/`：16 个规则模块 + 框架 + 运行器**；`S-12` 双向比对规则表与本文档；⭐ **`S-16`（spec 049）读 `openapi.json` 双向比对后端枚举与前端手写联合类型，实测基线：发布 30 个枚举 · 24 个有手写镜像 · 24 个全部相符 · 而后端加值时原本没有任何东西会红** —⚠️ **还差：`S-17` 前端调用点 × 后端路由声明（下一轮）** |
 | ⭐ **`.ai/eval/`（红线评测集 · spec 017）** | ✅ **已实现，2026-09-28 · spec 020 扩档** —— `dev.py eval` 跑出真实通过率：**6 / 15 红线被真正强制执行**（full 6 · partial 5 · none 4）。**核心规则：没有检查 = 失败**（T-19 用在产品自己的承诺上），所以**这条命令今天是红的，这是它的诚实状态**。**baseline 在动手修任何东西之前就写进注册表**，并有测试钉住"实测数 == baseline"（**四个数全钉** —— `full/partial/none` 原来没钉，漂移了很久没人看见）。三种 verifier：`static` **当场执行** · `gate` 只验证"声明不会腐烂" · ⭐ **`test`（2026-09-28 新增）当场跑一个 pytest 节点**，「跑了一个测试」= 退出码 0 **且** 实测跑了 ≥1 个（**不硬编码 pytest 的退出码**：9.1.1 对不存在的节点是 4 不是 5）。⚠️ **刻意不在 `CHECK` 里** —— 长期工程做成永久红的门禁会训练所有人忽略汇总。**还差：4 条 `none`**（红线 11 / 13 / 14 / 15 —— 13 与 14 大概率永远无法自动化） |
 | ⭐ **`dev.py` 的前端门禁** | ✅ **已补上**（2026-09-26）—— 新增 `frontend-typecheck` / `frontend-lint` / `frontend-test` / `frontend-build` 四个门禁（含 `cwd` 支持与 `npm` 解析，Windows 下 `npm.cmd` 需经 `shutil.which`）。**原因：`check` 自称"跑 CI 跑的所有门禁"，而 CI 早在跑前端 —— 本地绿对前端一无所知**，与 CI 那个 `frontend` job 要修的缺陷是同一个，只是低了一层。已做变异检查：种入类型错误 → `FAIL`、退出码 1 |
 | ⭐ **`storage/`（SQLite + 迁移）** | ✅ **已实现**（2026-09-26）—— `db.py`（**双 PRAGMA 剖面**：应用 `synchronous=NORMAL` / 迁移 `FULL` + `temp_store=FILE`）· `migrate.py`（`manifest.json` 显式清单 · **DDL 与版本号同事务** · `VACUUM INTO` 快照 + SHA-256 · **三向版本比较，库新于程序即拒绝** · 版本号范围校验，防 32 位静默回绕）· `repositories/`（`instruments.ensure` / `watchlist.append·current·current_event` / **`cards.py`**（2026-09-27：create/get_by_id/query/list_for_symbol/list_all/verify/list_events/converge））· `0001_initial` **4 表 / 1 视图 / 6 触发器 / 3 索引**（全 `STRICT`）· **`0003_knowledge_cards`**（2026-09-27：cards + card_symbols，origin 孤立红线 CHECK + 级联删除）· **`0004_card_events`**（2026-09-27：append-only 状态事件表，条件必填 CHECK + 2 触发器 + 索引）。**`storage/` 5 个模块覆盖率全 100%**；`tests/unit/test_storage.py` 39 项 + `tests/integration/test_migrations.py` 42 项。真实 `1→2` 已由 spec 006 补齐；还差：含 0004 的长链升级快照级回归 |

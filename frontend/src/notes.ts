@@ -14,7 +14,7 @@
  * second card list.
  */
 
-import { request } from './api'
+import { request, type ReviewRating } from './api'
 import type { Backlink } from './components/knowledge/BacklinkList'
 
 export type NoteLinkKind = 'note' | 'card' | 'decision' | 'instrument' | 'lesson'
@@ -212,8 +212,14 @@ export interface VaultCard {
  * The wire format cannot carry that difference — both are `"again"` — so it has to
  * be said in the UI. Dressing it up as a failure would throw away the best
  * feedback the reader gives.
+ *
+ * ⭐ **The type itself lives in `api.ts`** and is only re-exported here (spec 049).
+ * There were two declarations and nothing joined them, so a fifth grade could land in
+ * one and not the other with no test failing — and this argument, which is the only
+ * place the note/lesson difference is written down, would then be describing a union
+ * that the note queue no longer uses.
  */
-export type ReviewRating = 'again' | 'hard' | 'good' | 'easy'
+export type { ReviewRating } from './api'
 
 export interface NoteSchedule {
   note_id: string
