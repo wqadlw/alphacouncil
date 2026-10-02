@@ -95,6 +95,33 @@ class CriterionVerdict(StrEnum):
 ⚠️ **`answerable` 不变** —— 它只认 `CROSSED` / `NOT_CROSSED`，
 而新状态显然不是对比较结果的陈述。**这一条不需要改，但它需要被确认过。**
 
+### 3.4 ⭐ 状态名不变，但**必须携带一个事实**
+
+原设计是一个孤立的布尔，调研把它改了。依据（`research.md` §四）：
+
+> Treat `period` as the x-axis of your chart and `as_of` as the lens you view it through.
+> The period tells you *which* point you are plotting; the cutoff tells you *which vintage*
+> of that point you are allowed to see.
+
+⇒ **读者需要的不是「还没公告」这四个字，是「你当时能看到的最新是哪一期」。**
+
+| | 原（布尔） | 改后（带事实） |
+|---|---|---|
+| 状态 | `NOT_ANNOUNCED` | `NOT_ANNOUNCED`（**名字不变**） |
+| 携带 | 无 | ⭐ `latest_announced_period_end: date \| None` |
+| 句子 | 「这一期还没公告」 | 「2026 中报在 2026-09-20 之前没有公告；你当时最新能看到的是 2025 年报」 |
+
+⚠️ **仍然不含任何时间预测** —— 它说的是**已经发生的事**，不是**将发生的事**。
+⇒ 写进 `MetricFacts`（该类已有 `period` / `bars_available` 两组，**两组都是行情形状的**，
+所以财务需要第三组）。
+
+### 3.5 ⭐ 调研给出的两条额外要求
+
+| # | 要求 | 依据 |
+|---|---|---|
+| 1 | ⭐ **一条 MUST-RED 的变异：把一条财报**重述一次**（同 `period_end`，更晚的 `announced_at`），断言 `as_of(重述前的日期)` 返回**旧值**。** ⚠️ **只测「没有重述」的路径永远抓不到这个 bug** —— 无重述时两条取数路径给出同一个答案 | `research.md` §三（`as-of join` 的 `leak` 列） |
+| 2 | ⭐ **`as_of` 的解析要 fail closed。** 今天 `2026-9-20`（一位月份）静默通过，而它比 `2026-09-20` 小，**会让 `announced_at <= as_of` 少取一段报告** —— 一个时间参数写错 = 判据少看一期，而没有任何报错 | `research.md` §六 |
+
 ## 四、设计决定二：**报告期口径必须落库（年报 vs 季报）**
 
 ### 4.1 缺口
@@ -152,9 +179,9 @@ fiscal_year: int | None
 |---|---|---|
 | A1 | `MetricStatus.NOT_ANNOUNCED` ↔ `CriterionVerdict.NOT_ANNOUNCED` 双射完整 | 单测（`_VERDICT_FOR_STATUS` 是全覆盖） |
 | A2 | 一条财务判据在 `as_of` 早于公告日时**不**说「还差 N 根日线」 | 单测（`criterion_sentence`） |
-| A3 | 新句子里**没有任何时间预测** | 单测：断言句中不含「天」「周」「个月」 |
+| A3 | 新句子里**没有任何时间预测**，且**携带最新已公告报告期** | 单测：断言句中不含「天」「周」「个月」 |
 | A4 | `report_kind` 为 NULL 时渲染留空，且 CHECK 允许 | 变异检查 |
-| A5 | `evaluate()` 按 `announced_at <= as_of` 取数，**不是 `trade_date`** | 变异检查（把条件换成 `trade_date` 必须变红） |
+| A5 | ⭐ **重述一次后 `as_of` 仍返回旧值**（`announced_at <= as_of` 取数，**而不是 `period_end <= as_of`**），**不是 `trade_date`** | 变异检查（把条件换成 `trade_date` 必须变红） |
 | A6 | `/capabilities` 对 `financial` 不再说 `pending` | 单测 |
 | A7 | `TodayPage.tsx` 不再说「财务数据源尚未接入」 | 单测（文案断言） |
 
