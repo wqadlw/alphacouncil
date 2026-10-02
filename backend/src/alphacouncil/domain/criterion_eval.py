@@ -88,6 +88,9 @@ class CriterionVerdict(StrEnum):
     #: `research.md` §四: the period is the x-axis and the cutoff is the lens, so a reader who is
     #: told only 「it has not been announced」 learns nothing they can act on.
     NOT_ANNOUNCED = "not_announced"
+    #: ⚠️ 与 `MetricStatus.NOT_ANNOUNCED` 同状:**已声明、未可达**(2026-10-02)。
+    #: 它有句子、有前端镜像、有路由映射,但**没有任何读数路径会产生它**。
+    #: → 接线完成后这两行必须删掉;留着就是在说谎。
 
     @property
     def answerable(self) -> bool:

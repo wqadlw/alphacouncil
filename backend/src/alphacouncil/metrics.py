@@ -95,6 +95,12 @@ class MetricStatus(StrEnum):
     #:
     #: ⇒ So the reading carries the **latest period we knew** rather than a date to wait for.
     NOT_ANNOUNCED = "not_announced"
+    #: ⚠️ **今天还没有生产路径能返回它**(spec 051 的前半段,2026-10-02)。
+    #: `read_metric()` 只有四个返回:
+    #: UNKNOWN_METRIC / NO_BARS / WARMING / OK。
+    #: ⇒ 这里说的是**已声明、未可达**,而不是说它已经能产生。
+    #: 同一个事实在本仓已经有一份记录写法:`no_route_drift.py`
+    #: 把 `/api/v1/capabilities` 故意留在表外,让它继续被报。
 
 
 @dataclass(frozen=True, slots=True)

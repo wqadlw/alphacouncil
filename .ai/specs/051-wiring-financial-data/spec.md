@@ -1,6 +1,11 @@
 # spec 051 · 把财务数据接上：先决定两件设计问题，再写代码
 
-> 立项：2026-10-02 · **状态：设计已定，未动代码**
+> 立项：2026-10-02 · **状态：渲染侧已落地，接线未开始** · 记录与接线现状见 `§十`
+> ⚠️ 本行原写「未动代码」，而 §三/§四 的枚举、字段、句子分支**已经在树里**；盘点实测出**七个「已落地但无生产路径」**的东西，逐项列在 §十.2。
+> 依据：`.ai/specs/043-financial-data-source/spec.md`（D4 本体）· `ADR-0031`
+> 轮次：两轮调研（`research.md` §一~七 与 §八）· 结论与实施细节分离。
+> 门禁现状：17 条静态检查全绿 · 冻结字节契约 · 本会话新增 `F-219`~`F-222` 与 `0023`
+> 纪律与经验沉淀：`.ai/README.md`（纪律 7）、`research.md` §八、`regressions/0023`
 > 依据：`.ai/specs/043-financial-data-source/spec.md`（D4 本体）· `ADR-0031`
 > 上游计划：`.ai/logs/changes/2026-10-02-plan.md` 任务 4（**该任务的三处说法已被实测推翻，见文末**）
 > 门禁现状：17 条静态检查全绿 · `S-08` 刚补上一个盲区（见 §五）
@@ -261,3 +266,115 @@ crossed: metric?.state === 'crossed'
 ⭐ **没有 switch，没有 `Record<State, ...>` 映射表。**⇒ 新状态**自动落到中性样式**，而语义全部由
 服务端下发的那句话承担 —— 这正是 `criterionVerdict.ts:59-61` 注里「**a state the server adds
 cannot render as 「not crossed」 by omission**」的意思。⇒ **因此前端一个分支都不需要**。
+---
+
+## 十、接线前的实测盘点（2026-10-02 第二轮）
+
+> 写代码之前派子代理把供给侧与存储侧读了一遍。⭐ **它推翻了六处我自己的说法，
+> 并且找到了七个「已经落地却没有生产路径」的东西** —— 后者是本文件 `:3` 那句
+> 「未动代码」漏掉的。
+
+### 10.1 盘点推翻的六处
+
+| # | 我写的 | 实测 | 代价 |
+|---|---|---|---|
+| 1 | `backend/migrations/` | ⭐ `backend/src/alphacouncil/storage/migrations/0011_financial_reports.{up,down}.sql` | 找错目录 |
+| 2 | `_CatalogueEntry` 在 `:125` 附近 | ⭐ **`:138`**（`:119-132` 是四个 helper） | 行号错 |
+| 3 | `today.py:254-355` 是 attention 构造 | ⭐ **`:264-365`**（`:254-261` 是 `MarketStatusRead` 的字段） | 行号错 |
+| 4 | `criterion_eval.py:63` 写着「Four」 | ⭐ **已改成「Six」**（上一轮改的），本条已过时 | 沿用会改回去 |
+| 5 | `financial_reports` 的约束数 | ⭐ **9**（8 具名 CHECK + 1 复合主键），`constraints.json` 登记 8 | 「12」无出处 |
+| 6 | 财务指标在 `:436-443` | ✅ **完全正确**，八行一行一个 | — |
+
+⚠️ **第 4 条是最危险的一类**：规格里的旧事实被下游当作现状引用，于是「按规格改」会把已经修好的东西改回去。
+
+### 10.2 ⭐⭐ 七个「已落地但无生产路径」的东西（本文件 `:3` 漏掉的）
+
+| 已存在 | 位置 | 差什么 |
+|---|---|---|
+| `MetricStatus.NOT_ANNOUNCED` | `metrics.py:97` | ⭐ **`read_metric()` 只有 4 个 return，永不返回它** |
+| `CriterionVerdict.NOT_ANNOUNCED` | `criterion_eval.py:90` | ✅ 枚举有 |
+| `_VERDICT_FOR_STATUS` 第五行 | `criterion_eval.py:142` | ✅ 有；**`evaluate()` 打不到它** |
+| `MetricFacts.latest_announced_period_end` | `criterion_sentence.py:99` | ✅ 字段有；**`today.py` 从不填** |
+| `sentence_for` 的 `not_announced` 支 | `criterion_sentence.py:213-247` | ✅ 两支文案齐全；**`today.py` 从不触发** |
+| `MetricStateRead.latest_announced_period_end` | `today.py:139-147` | ✅ 模型有；**线上恒 `null`** |
+| `_VERDICT_FOR_STATUS` 的测试 | — | ⚠️ **零**。全仓两处命中都在源码里 |
+
+⇒ **上一轮写的那句「已声明、未可达」现在有了逐项清单，而不只是枚举上的一句注。**
+
+### 10.3 ⭐ `period` 的单位被两处锁死为「根日线数」，而这决定了粒度方案
+
+实测确认我上一轮的怀疑，且比怀疑的更强：
+
+- `criterion_sentence.py:179` 把 `period` 与 `bars_available` 相减；
+- **`:190` 把差值渲染成「N 根日线」**（中文字面量是硬证据）；
+- `bars_available` 被 `today.py:329/337` 钉成 `len(bars)`，且 `today.py:130-138`
+  与 `api.ts:558-564` 都写明它**故意由服务端算**（spec 038 的教训）。
+
+⚠️ **给 `period` 一个季度数，`warming` 分支会说「还差 3 根日线」。**
+而财务指标今天恰好会落进那一支（没有 reader）。
+
+⇒ **`research.md` §八的判别式决定由此落地：** 加的不是「一个可空的 `period_end`」，
+而是**一个说明这一行是哪种粒度的枚举字段**，按它分派属性。
+⚠️ **判别式不能靠「哪个字段是 null」推断** —— 那正是产出撒谎句子的那一种推断。
+
+### 10.4 ⭐ `today.py:315` 是那堵墙
+
+```python
+if bars is not None:          # :315
+```
+
+**判据求值入口被这一句把着。** 一条纯财务判据（`roe_avg < 0.2`）的标的完全可能没有
+bars（停牌 / 新上市 / 退市整理）⇒ **今天它会被判成 `no_bars`，而真相是「这只票有财报，
+只是那天没公告」。**
+
+⚠️ **而 `no_bars` 那句话是「这个代码没有日线，这条判据没有被求值过」** ——
+对一条财务判据来说这是**假话**，且是产品最不该说的那种假话。
+
+最小改动集（盘点给出的六处，按依赖顺序）：
+
+| # | 行 | 改什么 | 不改的后果 |
+|---|---|---|---|
+| 1 ⭐ | `today.py:315` | 闸门 2 从「有 bars」变成「有 bars 或有财务行」 | 财务判据被误判成 `no_bars` |
+| 2 | `today.py:283-296` | 加 `financial_by_symbol` 缓存，照抄 `bars_for` 的形状（含 `:295` 的「None 也缓存」纪律 —— 财务源会封 IP） | 每条判据抓一次，32 次串行往返 |
+| 3 | `today.py:316` | `evaluate()` 加第三个来源参数 | `read_metric` 看不到财务 |
+| 4 | `today.py:317-338` | 补 `latest_announced_period_end`（**两处都要**） | ⭐ `sentence_for` 永远走「而这只股票我们从未记过报告」那一支，**说了一句假话** |
+| 5 | `today.py:314` | 兜底 state 对财务判据不对 | 静默误判 |
+| 6 | `today.py:106-147` + `api.ts:533-565` | 两边同步（`S-16` 会红） | 门禁红 |
+
+### 10.5 `as_of()` 已经够用，不必新写查询
+
+实测：`repositories/financial.py:146-162` 的 `as_of()` 返回的行里**已经含 `period_end`**
+（`_COLUMNS` 第三项），SQL 是 `WHERE announced_at <= ? ORDER BY announced_at DESC LIMIT 1`。
+
+⇒ **「最新已公告报告期」= `row["period_end"]`，零存储改动。**
+（`history()`（`:165`）不接 `as_of`，所以「截至该日曾公告过的全部期」才是真的要新写的。）
+
+⚠️ **但 `as_of` 是裸 `str` 且 fail open**（`:147`）—— docstring 说「schema 的 CHECK 保证它能解析」，
+而**那个保证只覆盖表里的列，不覆盖传进来的参数**。`"2026-9-20"` 静默少取一段报告。
+§3.5 第 2 条实测确认：**它今天还在。**
+
+⚠️ 另有一条接线的暗坑：`BaostockFinancial` 抛的是 `ProviderIpBlockedError`（`financial.py:259`，
+**裸异常**），不是 `DataResult`，**所以它永远进不了 `_record()`**，而
+`_COOLDOWN_BY_CODE`（`router.py:76-80`）为 `DATA_SOURCE_IP_BLOCKED` 准备的 20 小时冷却对它无效。
+
+### 10.6 ⭐⭐ 第二条「接线即达成」的谎言
+
+`catalogue_labels()`（`metrics.py:225`）**全仓零调用者** —— 只在 `__all__` 与自己的定义里出现。
+
+⇒ **8 个财务指标进 `CATALOGUE` 时，label 会自动进这张字典，而没有任何人读它。**
+前端今天拿不到任何指标清单（`TodayPage.tsx` 不用它，也没有路由暴露它）。
+
+⚠️ **这与 `TodayPage.tsx:144` 那句「公告与财务数据源尚未接入」是同一个形状**：
+一句「加了目录项就能选」的推论，而接收端不存在。
+⇒ 接线清单里要有一条：**指标选择器要么一起接，要么明确写下「没有选择器，判据只能手写指标名」。**
+
+### 10.7 接下来的顺序（本轮之后的计划）
+
+1. `FINANCIAL_CATALOGUE`（第二目录，**不动 24 个现有 reader**）+ 判别式字段
+2. `repositories/financial.py` 加一个薄封装 + `as_of` 改 fail closed
+3. `BaostockFinancial` 进 `default_router()`，并把 `ProviderIpBlockedError` 接进 `_record()`
+4. `evaluate()` 第三来源参数（`_bars_as_of` 的对应物是按 `announced_at` 切）
+5. ⭐ **那条 MUST-RED 变异**：重述一次后 `as_of(重述前的日期)` 必须返回旧值
+6. `today.py` 的六处
+7. `TodayPage.tsx:144` 改掉；指标选择器那条二选一写进本文件
+8. `report_kind` 落库（迁移，**SQLite 的 CHECK 遇 NULL 判为通过，所以可空**）

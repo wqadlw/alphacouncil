@@ -12,6 +12,7 @@ from datetime import UTC, date, datetime, timedelta
 import pytest
 
 from alphacouncil.domain.criterion_eval import (
+    _VERDICT_FOR_STATUS,  # the subject of the completeness tests below
     CriterionVerdict,
     compare,
     evaluate,
@@ -219,11 +220,8 @@ class TestEvaluate:
     def test_only_two_verdicts_are_about_the_comparison(self) -> None:
         assert CriterionVerdict.CROSSED.answerable
         assert CriterionVerdict.NOT_CROSSED.answerable
-        for verdict in (
-            CriterionVerdict.WARMING,
-            CriterionVerdict.UNDETERMINED,
-            CriterionVerdict.NO_BARS,
-        ):
+        for verdict in NOT_A_COMPARISON:
+            assert not verdict.answerable
             assert not verdict.answerable
 
 
@@ -277,3 +275,48 @@ class TestCompareIsTotal:
         )
         assert off_by_a_cent.verdict is CriterionVerdict.NOT_CROSSED
 
+
+class TestTheStatusToVerdictMappingIsComplete:
+    """⭐ The structural fact spec 051 §3.1 rests on, asserted instead of prose.
+
+    `dict[MetricStatus, CriterionVerdict]` **does not raise when a key is missing** — it
+    raises later, in `evaluate()`, on whichever criterion happens to read that metric. So
+    「every status maps somewhere」 is a claim that needs a test, and there was none:
+    `_VERDICT_FOR_STATUS` occurred twice in the whole package and zero times under `tests/`.
+
+    ⇒ The second assertion is the one prose keeps getting wrong. `CROSSED` is **not** in
+    the table — it is produced by the comparison branch — so the mapping is not a
+    bijection onto `CriterionVerdict`, whatever a docstring says.
+    """
+
+    def test_every_status_has_a_verdict(self) -> None:
+        assert set(_VERDICT_FOR_STATUS) == set(MetricStatus)
+
+    def test_the_table_covers_every_status_but_not_every_verdict(self) -> None:
+        """⚠️ `CROSSED` is deliberately absent: it comes from the comparison."""
+        assert CriterionVerdict.CROSSED not in set(_VERDICT_FOR_STATUS.values())
+        assert set(_VERDICT_FOR_STATUS.values()) | {CriterionVerdict.CROSSED} == set(
+            CriterionVerdict
+        )
+
+    def test_only_two_of_them_are_facts_about_the_comparison(self) -> None:
+        """⭐⭐ And the derived set is not decorative.
+
+        `NOT_A_COMPARISON` was added to this file last round and **used nowhere** — the
+        triple it was meant to replace was multi-line, and the pattern was single-line, so
+        the substitution silently matched nothing while reporting zero replacements.
+
+        ⇒ This test closes that loop from the other end: the set the table can actually
+        return must be a strict subset of the non-answerable states, which is what makes
+        the derived list in `test_only_two_verdicts_are_about_the_comparison` honest.
+        """
+        returned = set(_VERDICT_FOR_STATUS.values())
+        assert {verdict for verdict in returned if verdict.answerable} == {
+            CriterionVerdict.NOT_CROSSED
+        }
+        assert len(returned) == len(MetricStatus), "a mapping that loses a state has gone partial"
+        # ⭐ OK maps to NOT_CROSSED, which IS answerable — so the
+        # table returns one of the two comparable verdicts, and the other one is the
+        # only answerable verdict it cannot produce.
+        answerable = {v for v in CriterionVerdict if v.answerable}
+        assert answerable - returned == {CriterionVerdict.CROSSED}
