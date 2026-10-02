@@ -179,6 +179,53 @@ def schedule(card_id: str, connection: DatabaseConnection) -> ScheduleRead:
     return to_schedule_read(row)
 
 
+@card_router.get(
+    "/{card_id}/schedule",
+    summary="Whether one card is on the review queue, and when it is next due",
+)
+def read_schedule(card_id: str, connection: DatabaseConnection) -> ScheduleRead:
+    """Read one card's scheduling item. Spec 048.
+
+    ⭐ **This endpoint existed only as a `POST`, and that made the queue unreachable
+    from the interface.** Measured on 2026-10-02, against the empty database:
+
+    ```
+      POST /api/v1/cards                 -> 201 card_1790916668533
+      GET  /api/v1/review/due            -> 0 items      (the server volunteers nothing)
+      POST /api/v1/cards/{id}/schedule   -> 201 {"state":"learning", …}
+      GET  /api/v1/review/due            -> 1 item
+      grep scheduleCard                  -> api.ts:282 defines it, zero callers
+    ```
+
+    So a claim could only reach the queue by writing code. **The gap was the missing
+    read**, not the missing write: without it the interface cannot tell 「already
+    enrolled」 from 「never enrolled」, and **it cannot infer it from
+    `GET /review/due` either** — that endpoint returns only what is *due*, so a card
+    scheduled for next week is not in it. A button whose result you only learn by
+    pressing it is a wager, and this product does not make wagers with a reader's
+    records.
+
+    ⚠️ **Not-scheduled answers 409, not 404 — and the reason is already written down,
+    elsewhere.** `GET /notes/{note_id}/schedule` answers **404** for the same state,
+    and copying it was the first thing this spec did; `api/errors.py` says:
+
+    ```
+    # K3. Both are 409 rather than 404 on purpose: the *card* exists, and what
+    # conflicts is the request with the card's scheduling state. Answering 404
+    # would tell the user their card is gone when it is sitting right there.
+    ErrorCode.CARD_NOT_SCHEDULED.value: 409,
+    ```
+
+    ⇒ The card's contract is followed, not the note's. ⭐ **And it is the better
+    contract for the interface too**: 409 separates 「this claim is not on the queue」
+    (an ordinary empty state, the button should be there) from **404 「no such card」**
+    (something is wrong that the button must not paper over).
+    """
+    if card_repository.get_by_id(connection, card_id) is None:
+        raise CardNotFoundError(f"card {card_id!r} not found")
+    return to_schedule_read(repository.get_schedule(connection, card_id))
+
+
 @queue_router.get("/due", summary="Claims due at a stated instant")
 def due(
     connection: DatabaseConnection,

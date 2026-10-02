@@ -1,12 +1,15 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import {
   ApiError,
   convergeCard,
   createCard,
+  getCardSchedule,
+  scheduleCard,
   verifyCard,
   type Card,
   type CardInput,
   type ClaimType,
+  type Schedule,
 } from './api'
 import { formatMoment } from './format'
 import { CardTimeline } from './components/data/timelineAdapters'
@@ -301,6 +304,105 @@ export default function CardSection({ market, code, cards, onRecorded }: Props) 
   )
 }
 
+/**
+ * ⭐ **「加入复习」这一个控件，和它为什么是三个状态而不是一个布尔。**
+ *
+ * Spec 048。背景写在 `CardItem` 里那个注释块 —— 这里是实现。
+ *
+ * ⚠️ **`unknown` 与 `not-enrolled` 分开，是这个组件存在的理由。** 笔记那边
+ * （`VaultPage`）用 `.catch(() => false)`：任何失败都读成「未入队」。于是后端
+ * 停掉的时候，读者看到的是一个**「加入复习」按钮，点下去必然失败** ——
+ * 那是一个看起来能用而实际不能用的控件，比没有更坏。
+ *
+ * ⚠️ **所以「不知道」这一态显示的是一句话，不是一个按钮。** 它也没有重试按钮 ——
+ * **刷新页面就是重试**，而一个只做「再试一次」的按钮会让这一行永远占着位置。
+ */
+function Enrolment({ cardId }: { cardId: string }) {
+  // `null` = still asking. `'unknown'` = asked and did not find out.
+  const [state, setState] = useState<'asking' | 'unknown' | 'out' | Schedule | 'busy'>('asking')
+  const [error, setError] = useState<string | null>(null)
+
+  // ⚠️ **`live` guards the response, not the request.** Without it, switching
+  // instruments while a card's schedule is in flight sets state on a component that
+  // is no longer on screen — `useResource` in this file's siblings does the same
+  // thing and for the same reason.
+  const [live, setLive] = useState(true)
+  useEffect(() => {
+    setLive(true)
+    return () => setLive(false)
+  }, [cardId])
+
+  useEffect(() => {
+    let current = true
+    setState('asking')
+    getCardSchedule(cardId)
+      .then((schedule) => {
+        if (current) setState(schedule ?? 'out')
+      })
+      .catch(() => {
+        // ⭐ **Any other failure is 「不知道」, never 「没入队」.** See above.
+        if (current) setState('unknown')
+      })
+    return () => {
+      current = false
+    }
+  }, [cardId])
+
+  async function enrol() {
+    setState('busy')
+    setError(null)
+    try {
+      const schedule = await scheduleCard(cardId)
+      if (live) setState(schedule)
+    } catch (caught) {
+      setState('out')
+      setError(
+        caught instanceof ApiError ? caught.message : '加入复习失败。这张卡片没有变化。',
+      )
+    }
+  }
+
+  if (state === 'asking') return null
+
+  if (state === 'unknown') {
+    return (
+      <p className="type-meta text-ink-faint" data-testid="card-schedule-unknown">
+        复习状态取不到，所以这里不给「加入复习」—— 刷新页面再试。
+      </p>
+    )
+  }
+
+  if (state === 'busy') {
+    return (
+      <p className="type-meta text-ink-faint" data-testid="card-schedule-busy">
+        加入中…
+      </p>
+    )
+  }
+
+  if (typeof state === 'string') {
+    // 'out' — known to be off the queue.
+    return (
+      <div className="flex flex-wrap items-baseline gap-2" data-testid="card-schedule-out">
+        <Button size="sm" onClick={() => void enrol()}>
+          加入复习
+        </Button>
+        {/* ⚠️ **The button says when it would come back**, because the reader is being
+            asked to commit to something and the cost of saying so is one clause.
+            `due_at` is the server's, not a guess about the reader's calendar. */}
+        <span className="type-meta text-ink-faint">到时会自己回来。</span>
+        {error ? <span className="type-meta text-[color:var(--color-up)]">{error}</span> : null}
+      </div>
+    )
+  }
+
+  return (
+    <p className="type-meta text-ink-faint" data-testid="card-schedule-in">
+      已加入复习 · 下次 {formatMoment(state.due_at)}
+    </p>
+  )
+}
+
 function CardItem({
   card,
   onVerify,
@@ -393,6 +495,38 @@ function CardItem({
           and `RecordTimeline`'s absence sentence means a `verified` row no longer
           shows an empty second line. */}
       {card.events.length > 0 && <CardTimeline events={card.events} />}
+
+      {/*
+        ⭐⭐⭐ **加入复习 —— 这个控件是 spec 048 的全部内容，而它能存在只因为后端多了一条
+        读路由。**
+
+        2026-10-02 量到的：卡片**只能靠写代码进复习队列**。
+        `POST /api/v1/cards/{id}/schedule` 早就存在、而 `scheduleCard` 在 `api.ts`
+        有定义**零调用者**；界面既不能知道一张卡在不在队列里，**也不能从
+        `/review/due` 推断** —— 那个端点只给**到期**的，排在下周三的卡不在里面。
+        ⇒ 「加入复习」如果只能靠点完才知道结果，**它就是一个赌注**，而这个产品不拿
+        读者的记录下赌。
+
+        ⭐ **三态，不是一个布尔：**
+
+        | 显示 | 含义 |
+        |---|---|
+        | （什么都不显示） | 还在问 |
+        | 「复习状态取不到。」 | **不知道** —— 后端没起来时**不许**显示「加入复习」，那是一个骗人的按钮 |
+        | 「加入复习」 | 确定没入队 |
+        | 「已加入复习 · 下次 …」 | 确定在队列里 |
+
+        ⚠️ **笔记那边现在是 `.catch(() => false)`**（`VaultPage`），任何失败都读成
+        「未入队」，于是后端一停就出现一个点了会失败的按钮。**本条按 `error.code`
+        判断而不是按「抛了没有」**，并且**本 spec 不改笔记那条**（那是 spec 028
+        的地盘，已记为欠账）。
+
+        ⚠️ **不给「全部加入」。** 入队是显式的：把读者写过的每样东西都塞进队列，
+        攒下的是一份没人清的欠账 —— 这条理由是 `VaultPage` 已经写下的，
+        这里沿用它。⚠️ **而教训相反（红线 7 强制入队）**，因为教训是系统自己的产出，
+        卡片是读者署名的东西。
+      */}
+      {!converged && <Enrolment cardId={card.id} />}
 
       {!converged && (
         <div className="mt-1.5 flex flex-wrap items-center gap-2">

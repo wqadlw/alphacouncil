@@ -176,6 +176,19 @@ test.describe('复习页（spec 019 · 红线 9 / 11 / 13）', () => {
     await routeApi(page, { 'GET /api/v1/review/due': [] })
     await page.goto('#/review')
     await expect(page.getByText('今天没有到期的卡片')).toBeVisible()
-    await expect(page.getByText('还没加入复习的卡片不会出现在这里')).toBeVisible()
+    // ⚠️ **The second sentence changed on 2026-10-02 (spec 048), and this assertion is
+    // what made that visible rather than silent.**
+    //
+    // It said 「还没加入复习的卡片不会出现在这里。到期的会自己回来。」 — true, and it
+    // explained why *this queue* is empty. Measured against an empty database it was
+    // **62 characters** of prose against 今日's 360, because for a brand-new reader the
+    // reason the queue is empty is an **upstream** fact they were never told.
+    //
+    // It now says where the queue comes from **and names the control that fills it** —
+    // which is only true because `CardSection` grew a 「加入复习」 button in the same
+    // change. **Before that button existed, this sentence was correct and useless;
+    // pointing at an action that does not exist is worse than saying nothing.**
+    await expect(page.getByText('队列来自你自己写下的卡片')).toBeVisible()
+    await expect(page.getByText('加入复习')).toBeVisible()
   })
 })

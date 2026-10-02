@@ -530,6 +530,71 @@ export function recordedEvent(): Body {
 }
 
 /**
+ * ⭐ **One card, as the instrument page renders it (spec 048).**
+ *
+ * ⭐ **`instrumentDetail()` ships `cards: []`**, which is why no e2e in this
+ * repository ever rendered a card's controls — and the enrolment button was
+ * therefore invisible to the whole suite *and* invisible to the product. A fixture
+ * that describes an empty page is a fixture that cannot see half the UI, which is
+ * `regressions/0009`（「fixture 描述了产品到不了的状态」）one level up.
+ */
+export function anInstrumentCard(overrides: Body = {}): Body {
+  return {
+    id: 'card_1700000000000',
+    content: '渠道库存是白酒先行指标',
+    claim_type: 'supporting',
+    source_url: 'https://example.com/report',
+    source_title: '渠道调研报告',
+    captured_at: '2026-09-20T01:00:00.000Z',
+    as_of: null,
+    origin: 'user_written',
+    priority: 4,
+    status: 'active',
+    created_at: '2026-09-20T01:00:00.000Z',
+    symbols: [{ market: 'sh', code: '600519', display: '600519.SH' }],
+    events: [],
+    ...overrides,
+  }
+}
+
+/**
+ * ⭐ **The schedule answers, verbatim from the running server (spec 048).**
+ *
+ * ```
+ *   GET /api/v1/cards/{id}/schedule  (enrolled)     -> 200 {"card_id":…,"state":"learning","due_at":…}
+ *   GET /api/v1/cards/{id}/schedule  (not enrolled) -> 409 {"code":"CARD_NOT_SCHEDULED", …}
+ *   GET /api/v1/cards/{id}/schedule  (no card)      -> 404 {"code":"CARD_NOT_FOUND", …}
+ * ```
+ *
+ * ⚠️ **409, not 404, for 「not enrolled」** — and `api/errors.py` already decided
+ * that, so these are copied rather than invented:
+ *
+ * > K3. Both are 409 rather than 404 on purpose: the *card* exists, and what
+ * > conflicts is the request with the card's scheduling state. Answering 404 would
+ * > tell the user their card is gone when it is sitting right there.
+ *
+ * ⇒ And that is what makes the interface's **three** states possible: 409 is an
+ * ordinary empty state (offer the button), 404 is something the button must not
+ * paper over, and a transport failure is **not knowing**.
+ */
+export function cardSchedule(overrides: Body = {}): Body {
+  return {
+    card_id: 'card_1700000000000',
+    state: 'learning',
+    due_at: '2026-10-09T01:00:00+00:00',
+    ...overrides,
+  }
+}
+
+export const CARD_NOT_SCHEDULED: Body = {
+  severity: 'error',
+  code: 'CARD_NOT_SCHEDULED',
+  message: 'card card_1700000000000 is not on the review queue',
+  target: null,
+  fix: null,
+}
+
+/**
  * ⭐ **The three answers `/instruments/resolve` can give (spec 047).**
  *
  * ⭐ **These bodies are copied from the running server, not invented** — probed on

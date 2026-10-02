@@ -78,6 +78,67 @@ class TestEnrolment:
         response = client.post("/api/v1/cards/card_9999999999999/schedule")
         assert response.status_code == 404
 
+
+class TestReadingASchedule:
+    """`GET /cards/{id}/schedule` — spec 048.
+
+    ⭐ **This endpoint is why the queue was reachable at all.** Measured on
+    2026-10-02: `POST` existed with **zero callers**, and the interface could not
+    tell 「already enrolled」 from 「never enrolled」 — nor infer it from
+    `GET /review/due`, which returns only what is *due*, so a card scheduled for
+    next week is absent from it.
+
+    ⚠️ **The not-scheduled case is 409, and the assertion below is the reason the
+    number is worth pinning.** `GET /notes/{id}/schedule` answers **404** for the
+    same state; copying the note's contract was this spec's first move, and
+    `api/errors.py` already decided the card's:
+
+        # K3. Both are 409 rather than 404 on purpose: the *card* exists, and what
+        # conflicts is the request with the card's scheduling state. Answering 404
+        # would tell the user their card is gone when it is sitting right there.
+    """
+
+    def test_not_enrolled_is_409_and_says_which_code(self, client: TestClient) -> None:
+        card_id = _card(client)
+        response = client.get(f"/api/v1/cards/{card_id}/schedule")
+        assert response.status_code == 409
+        assert response.json()["code"] == "CARD_NOT_SCHEDULED"
+
+    def test_enrolled_reads_back_the_same_shape_the_post_returned(self, client: TestClient) -> None:
+        card_id = _card(client)
+        created = client.post(f"/api/v1/cards/{card_id}/schedule")
+        assert created.status_code == 201
+
+        read = client.get(f"/api/v1/cards/{card_id}/schedule")
+        assert read.status_code == 200
+        # ⭐ **The read must equal the write, byte for byte on the fields the client
+        # renders.** A read that reshapes the answer would mean the interface has two
+        # shapes to reconcile, and the second one would be discovered by a screenshot.
+        assert read.json() == created.json()
+
+    def test_a_missing_card_is_404_which_is_a_different_problem_from_409(
+        self, client: TestClient
+    ) -> None:
+        # ⭐ **409 and 404 must stay apart**, and this is the test that says why:
+        # 409 is an ordinary empty state (the button should be offered), 404 means
+        # the thing the reader is looking at does not exist. Collapsing them would let
+        # a broken link show a working 「加入复习」 button.
+        response = client.get("/api/v1/cards/card_9999999999999/schedule")
+        assert response.status_code == 404
+        assert response.json()["code"] == "CARD_NOT_FOUND"
+
+    def test_reading_does_not_enqueue_anything(self, client: TestClient) -> None:
+        # ⭐ **A read with a side effect would be the worst kind of bug here**, because
+        # the interface calls it on every card it renders — so every card would
+        # enrol itself and the queue would fill with things nobody asked for.
+        _card(client)
+        assert client.get("/api/v1/review/due").json() == []
+        before = client.get("/api/v1/cards").json()
+        _card(client, index=1)
+        client.get("/api/v1/review/due")
+        assert client.get("/api/v1/cards").json() != before  # sanity: two cards now
+        assert client.get("/api/v1/review/due").json() == []
+
     def test_the_due_route_is_not_shadowed_by_the_card_route(
         self, client: TestClient
     ) -> None:

@@ -749,6 +749,59 @@ export function resolveTicker(ticker: string): Promise<TickerAnswer> {
 }
 
 /**
+ * ⭐⭐ **Is this card on the review queue, and when is it next due? (spec 048)**
+ *
+ * ⭐ **This function and `POST /cards/{id}/schedule` existed together for months with
+ * the `POST` having zero callers, because without a read the interface cannot tell
+ * 「already enrolled」 from 「never enrolled」 — and it cannot infer it from
+ * `GET /review/due`, which returns only what is *due* right now.** Measured on
+ * 2026-10-02 against an empty database:
+ *
+ * ```
+ *   POST /api/v1/cards                 -> 201 card_1790916668533
+ *   GET  /api/v1/review/due            -> 0 items    (the server volunteers nothing)
+ *   POST /api/v1/cards/{id}/schedule   -> 201 {"state":"learning", …}
+ *   GET  /api/v1/review/due            -> 1 item
+ * ```
+ *
+ * ⇒ **The review queue could only be filled by writing code.** That is the same shape
+ * this repository has now met three times: J3's 「机制齐了却够不着」, a
+ * `listNoteReviews` with no callers, and two implementations of `RecordTimeline`.
+ *
+ * ⚠️ **The rejection here is a normal answer and it is a `409`, not a `404`** —
+ * `GET /notes/{id}/schedule` answers 404 for the same state, and copying that was
+ * this spec's first move, but `api/errors.py` had already decided the card's case:
+ *
+ * > K3. Both are 409 rather than 404 on purpose: the *card* exists, and what
+ * > conflicts is the request with the card's scheduling state. Answering 404 would
+ * > tell the user their card is gone when it is sitting right there.
+ *
+ * ⇒ So callers get **three** states, and that is the contract:
+ *
+ * | outcome            | meaning                          | what the interface owes the reader |
+ * |--------------------|----------------------------------|------------------------------------|
+ * | `Schedule`         | enrolled, here is when it is due  | 「下次 …」                          |
+ * | `null` + 409       | not enrolled — an ordinary empty  | offer the button                    |
+ * | `null` + anything else | **do not know**                | say so; **never offer the button** |
+ *
+ * ⭐ **That last row is the one that matters.** `VaultPage`'s note enrolment reads
+ * `.catch(() => false)` — *any* failure becomes 「not enrolled」 — so a backend outage
+ * shows a 「加入复习」 button that is guaranteed to fail. This function keeps the
+ * three apart by returning `null` and letting the caller ask **which** failure it was.
+ */
+export async function getCardSchedule(cardId: string): Promise<Schedule | null> {
+  try {
+    return await request<Schedule>(`/api/v1/cards/${encodeURIComponent(cardId)}/schedule`)
+  } catch (cause) {
+    // ⭐ Only this one code means 「not on the queue」. Anything else — the server is
+    // down, the card id is stale, a future 500 — is **not knowing**, and collapsing it
+    // into "not enrolled" is how a broken link gets a working-looking button.
+    if (cause instanceof ApiError && cause.code === 'CARD_NOT_SCHEDULED') return null
+    throw cause
+  }
+}
+
+/**
  * The three writes. Each takes an optional `market`.
  *
  * It is optional rather than required because a code like `600519` can only be
