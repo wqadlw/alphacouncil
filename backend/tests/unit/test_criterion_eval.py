@@ -20,6 +20,13 @@ from alphacouncil.domain.decision import ComparisonOperator, KillCriterion
 from alphacouncil.metrics import CATALOGUE, MetricStatus, read_metric
 from alphacouncil.models.market import Market, Quote, Symbol
 
+#: ⭐ Derived, for the same reason as in `test_criterion_sentence.py`: the hand-written
+#: triple of non-answerable states would not have covered a sixth enum member, so the
+#: new state would have shipped with `answerable` unasserted.
+NOT_A_COMPARISON = tuple(
+    state for state in CriterionVerdict if not state.answerable
+)
+
 SYMBOL = Symbol(market=Market.SH, code="600519")
 D0 = date(2025, 1, 1)
 #: The last bar `bars(40)` produces. ⭐ Tests pass this as `as_of` rather than D0:

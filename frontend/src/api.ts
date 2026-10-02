@@ -536,6 +536,7 @@ export type MetricState =
   | 'warming'
   | 'undetermined'
   | 'no_bars'
+  | 'not_announced'
 
 export interface MetricReading {
   state: MetricState

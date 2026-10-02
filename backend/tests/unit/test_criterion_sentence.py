@@ -28,6 +28,16 @@ import pytest
 from alphacouncil.domain.criterion_eval import CriterionVerdict
 from alphacouncil.domain.criterion_sentence import MetricFacts, sentence_for
 
+#: ⭐ **The states that are not facts about a comparison, derived rather than listed.**
+#:
+#: Five sites across these tests hard-coded a *triple* of these, so adding a sixth enum
+#: member changed none of them — the new state would have shipped with no sentence
+#: test at all, green the whole way. ⇒ Every one of them derives from this, which is the
+#: property they were asserting when they listed three.
+NOT_A_COMPARISON = tuple(
+    state for state in CriterionVerdict if not state.answerable
+)
+
 pytestmark = pytest.mark.unit
 
 
@@ -154,7 +164,96 @@ class TestTheFiveSentences:
 # --------------------------------------------------------------------------
 
 
-class TestTheThreeDontKnowsStayApart:
+
+class TestTheUnannouncedSentence:
+    """⭐ The fourth kind of 「we do not know」, and the only one about a calendar.
+
+    ⇒ Its whole point is that the sentence names **what the reader could see** rather than
+    **when the next one arrives**. `providers/financial.py:372-377` measured the lag at
+    25 / 46 / 93 days, so a date here would be arithmetic dressed as a measurement — and
+    `spec 043:41-45` already overturned a vendor's 「about two months」 once.
+    """
+
+    def test_it_names_the_latest_period_the_reader_could_have_seen(self) -> None:
+        rendered = sentence_for(
+            MetricFacts(
+                state=CriterionVerdict.NOT_ANNOUNCED,
+                label="roe_avg",
+                latest_announced_period_end="2025-12-31",
+            )
+        ).verdict
+
+        assert rendered == (
+            "观察期已到——roe_avg 还没公告，"
+            "你当时最新能看到的是 2025-12-31，"
+            "这条判据暂时没有被求值"
+        )
+
+    def test_it_promises_no_date(self) -> None:
+        """⚠️ **No time quantity anywhere in the sentence.**
+
+        ⭐ This is the assertion that encodes the measurement rather than the taste: a
+        「ten days」 or 「about a month」 in this sentence would be a number nobody
+        measured, in the one sentence a reader will use to decide when to look again.
+        """
+        rendered = sentence_for(
+            MetricFacts(
+                state=CriterionVerdict.NOT_ANNOUNCED,
+                label="roe_avg",
+                latest_announced_period_end="2025-12-31",
+            )
+        ).verdict
+
+        for unit in ("天", "周", "个月", "岁", "不久", "近期"):
+            assert unit not in rendered, f"「{unit}」 is a time prediction we cannot make"
+
+    def test_without_the_fact_it_says_we_never_recorded_a_report(self) -> None:
+        """⭐ **The fallback, and it exists because of a bug this test was written after.**
+
+        The first version interpolated the field into one f-string, so `None` rendered as
+        the literal text 「None」 — a missing fact shown as a value, which is the class of
+        defect this product exists to prevent. `spec 051` §3.4 specified this fallback and
+        the implementation omitted it.
+        """
+        rendered = sentence_for(
+            MetricFacts(state=CriterionVerdict.NOT_ANNOUNCED, label="roe_avg")
+        ).verdict
+
+        assert "None" not in rendered
+        assert rendered == (
+            "观察期已到——roe_avg 还没公告，"
+            "而这只股票我们从未记过报告，"
+            "这条判据暂时没有被求值"
+        )
+
+    def test_it_is_neither_a_pass_nor_a_failure(self) -> None:
+        """⚠️ Not a comparison, and the styling must not imply one."""
+        result = sentence_for(
+            MetricFacts(
+                state=CriterionVerdict.NOT_ANNOUNCED,
+                label="roe_avg",
+                latest_announced_period_end="2025-12-31",
+            )
+        )
+
+        assert result.crossed is False
+        assert result.adjudicable is False
+
+    def test_it_does_not_say_the_condition_failed(self) -> None:
+        """⭐ 「没有越过」会把「我们不知道」读成「就是没越过」。"""
+        rendered = sentence_for(
+            MetricFacts(
+                state=CriterionVerdict.NOT_ANNOUNCED,
+                label="roe_avg",
+                latest_announced_period_end="2025-12-31",
+            )
+        ).verdict
+
+        assert "没有越过" not in rendered
+        assert "已越过" not in rendered
+
+
+class TestTheDontKnowsStayApart:
     @pytest.mark.parametrize(
         ("state", "label", "period", "bars"),
         [
@@ -163,7 +262,7 @@ class TestTheThreeDontKnowsStayApart:
             (CriterionVerdict.NO_BARS, "close", None, None),
         ],
     )
-    def test_they_render_three_different_sentences(
+    def test_they_render_mutually_distinct_sentences(
         self, state: CriterionVerdict, label: str, period: int | None, bars: int | None
     ) -> None:
         """⭐ ⭐ **This is the whole feature.**
@@ -193,14 +292,12 @@ class TestTheThreeDontKnowsStayApart:
                     state=state, label="ma60", period=60, bars_available=12, as_of="2026-09-29"
                 )
             ).verdict
-            for state in (
-                CriterionVerdict.WARMING,
-                CriterionVerdict.UNDETERMINED,
-                CriterionVerdict.NO_BARS,
-            )
+            for state in NOT_A_COMPARISON
         }
 
-        assert len(rendered) == 3
+        # ⭐ Derived, not counted. The claim is that they are mutually distinct, and a
+        # hard-coded 3 stops meaning that the moment there are four.
+        assert len(rendered) == len(NOT_A_COMPARISON)
 
     def test_only_a_comparison_is_adjudicable(self) -> None:
         """⭐ 「你今天就能据此行动」 is exactly two states, and the flag drives the styling —
@@ -216,9 +313,10 @@ class TestTheThreeDontKnowsStayApart:
 
         assert adjudicable[CriterionVerdict.CROSSED] is True
         assert adjudicable[CriterionVerdict.NOT_CROSSED] is True
-        assert adjudicable[CriterionVerdict.WARMING] is False
-        assert adjudicable[CriterionVerdict.UNDETERMINED] is False
-        assert adjudicable[CriterionVerdict.NO_BARS] is False
+        # ⭐ Derived, for the same reason: hand-written per-state asserts left the sixth
+        # member unasserted, and `answerable` is the property that decides the styling.
+        for state in NOT_A_COMPARISON:
+            assert adjudicable[state] is False, state
 
     def test_only_crossed_marks_the_accent(self) -> None:
         crossed = {
@@ -343,6 +441,11 @@ class TestNoRecommendationVocabularyExists:
             "as_of",
             "period",
             "bars_available",
+            # ⭐ **`latest_announced_period_end`**: the latest report period that *had*
+            # been announced on the reader's cutoff. A fact, not a flag — `S-02
+            # no_boolean_state` turns red on a field called `has_announced`, and this one
+            # carries the date the reader can act on instead of a bit about it.
+            "latest_announced_period_end",
         }
 
 

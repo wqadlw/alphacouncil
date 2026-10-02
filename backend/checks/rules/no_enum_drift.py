@@ -248,6 +248,49 @@ def backend_enums() -> dict[str, tuple[str, ...]]:
     return found
 
 
+def _without_comment_lines(text: str) -> str:
+    """Drop whole-line comments, leaving string literals intact.
+
+    ⭐⭐ **A union with a comment inside it used to parse as truncated**, which made
+    `S-16` report a matching union as absent — a finding that reads like a code defect and is
+    about the scanner. The body pattern closes on 「a newline not followed by `|`」, and a
+    `//` line satisfies that, so everything after the first comment was invisible.
+
+    ⚠️ **Whole-line only, and deliberately.** A trailing comment on a value's own line
+    would still truncate, and fixing that needs comment positions rather than comment
+    lines — which is a bigger change than the shape warrants. ⇒ This handles the case
+    people actually write (a comment block between the values) and says so, rather than
+    pretending to handle the rest.
+
+    ⚠️ String state is tracked because `//` inside a string is not a comment and a naive
+    stripper would delete the rest of the line — turning a passing file into one that looks
+    clean because it was truncated (`0003`).
+    """
+    out: list[str] = []
+    quote: str | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        in_string = False
+        j = 0
+        while j < len(line):
+            char = line[j]
+            if quote is not None:
+                if char == "\\":
+                    j += 2
+                    continue
+                if char == quote:
+                    quote = None
+            elif char in "'\"`":
+                quote = char
+            j += 1
+        _ = in_string
+        if (not quote and stripped.startswith("#")) or (not quote and stripped.startswith("//")):
+            out.append("")
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
 def frontend_unions(
     sources: Iterable[tuple[str, str]],
 ) -> dict[str, list[tuple[str, tuple[str, ...]]]]:
@@ -258,7 +301,7 @@ def frontend_unions(
     """
     found: dict[str, list[tuple[str, tuple[str, ...]]]] = {}
     for rel, text in sources:
-        for match in UNION.finditer(text):
+        for match in UNION.finditer(_without_comment_lines(text)):
             values = tuple(
                 value
                 for literal in LITERAL.finditer(match.group(2))

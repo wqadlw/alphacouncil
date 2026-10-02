@@ -82,6 +82,19 @@ class MetricStatus(StrEnum):
     UNKNOWN_METRIC = "unknown_metric"
     #: The catalogue knows it and the source has no bars for this instrument.
     NO_BARS = "no_bars"
+    #: ⭐⭐ **The metric is in the catalogue and the pipeline works, but no report had been
+    #: announced on or before the reader's cutoff.**
+    #:
+    #: ⚠️ **Not `WARMING`, and the difference is the whole point.** `WARMING` counts
+    #: *bars*, and 「还差 N 根日线才有值」 is a promise that resolves on its own — which is what
+# makes
+    #: it different from a shrug. This one has **no such promise**: the announcement lag was
+    #: measured at 25 / 46 / 93 days (`providers/financial.py:372-377`), so ⭐ **any number
+    #: here would be invented**. `spec 043:41-45` already overturned the vendor's
+    #: 「约 2 个月」 once because it did the arithmetic and called it a measurement.
+    #:
+    #: ⇒ So the reading carries the **latest period we knew** rather than a date to wait for.
+    NOT_ANNOUNCED = "not_announced"
 
 
 @dataclass(frozen=True, slots=True)

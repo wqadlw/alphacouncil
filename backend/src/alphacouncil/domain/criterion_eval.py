@@ -60,7 +60,12 @@ __all__ = [
 
 
 class CriterionVerdict(StrEnum):
-    """What today's reading says about one criterion. ⭐ Four, and they are not degrees."""
+    """What today's reading says about one criterion.
+
+    ⭐ **Six, and they are not degrees.** Two of them are facts about a comparison; the
+    other four are four *different* facts about us — warm-up, an unknown name, no bars, and
+    no announcement yet. `regressions/0011`: a count in a docstring is a claim about the code.
+    """
 
     #: Due, we have the number, and the comparison came out true.
     CROSSED = "crossed"
@@ -75,6 +80,14 @@ class CriterionVerdict(StrEnum):
     UNDETERMINED = "undetermined"
     #: Due, and the source has no bars for this instrument.
     NO_BARS = "no_bars"
+    #: ⭐⭐ **Due, the metric is one we compute, and its report had not been announced on
+    #: this date.** A fourth kind of 「we do not know」, and ⭐ **the only one whose remedy is a
+    #: calendar rather than more data.**
+    #:
+    #: ⚠️ **Its own remedy sentence must carry the latest period we knew** —
+    #: `research.md` §四: the period is the x-axis and the cutoff is the lens, so a reader who is
+    #: told only 「it has not been announced」 learns nothing they can act on.
+    NOT_ANNOUNCED = "not_announced"
 
     @property
     def answerable(self) -> bool:
@@ -126,6 +139,7 @@ _VERDICT_FOR_STATUS: dict[MetricStatus, CriterionVerdict] = {
     MetricStatus.WARMING: CriterionVerdict.WARMING,
     MetricStatus.UNKNOWN_METRIC: CriterionVerdict.UNDETERMINED,
     MetricStatus.NO_BARS: CriterionVerdict.NO_BARS,
+    MetricStatus.NOT_ANNOUNCED: CriterionVerdict.NOT_ANNOUNCED,
 }
 
 

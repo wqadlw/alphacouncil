@@ -27,6 +27,7 @@
 | [0020](0020-card-review-queue-was-code-only.md) | 一条存在的能力只能靠写代码用上，而它的读端点根本不存在 | P0 | ✅ 已修复 · 变异 M1/M2/M3 已确认 | 2026-10-02 |
 | [0021](0021-one-concept-three-homes.md) | 同一个 FSRS 评分三个家，其中两个是对的——而类型完全看不出来 | P2 | ✅ 已修 · `ratings.ts` 已加 · `S-16` 已加 · 变异 M1–M4 已确认（含**豁免**的两条）· 前端 M1 已确认，M2/M3 绿是记录在案的边界 | 2026-10-02 |
 | [0022](0022-a-static-join-accused-the-whole-frontend.md) | 一个静态对拍报「几乎全坏」，那是在说它自己 | P3 | ✅ 已修 · `S-17` 已加 · 变异 M1–M4 与 M5a/M5b 已确认 · 自检（`PLAUSIBILITY_FLOOR`）已加 | 2026-10-02 |
+| [0023](0023-a-gate-called-its-own-scanner-a-code-defect.md) | 一条门禁把自己的扫描器误报成代码缺陷 | P3 | 已修 · `S-16` 学会了带注释的 union | 
 
 ### 第 14 轮（spec 048，2026-10-02）：**缺口不是「按钮」，是「读」**
 

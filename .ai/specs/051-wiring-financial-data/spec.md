@@ -43,9 +43,23 @@ D4 的数据层把防回看偏差做得**非常完整**：单独存 `announced_a
 
 ### 3.1 结构性事实（读出来的，不是推断的）
 
-`_VERDICT_FOR_STATUS`（`criterion_eval.py:124-129`）是 `MetricStatus` 上的**双射**：
-4 个状态 ↔ 4 个判据。⇒ **加一个判据就必须同时加一个状态**，否则要么映射不完备，
-要么破掉双射。
+### ⚠️ 2026-10-02 消费侧盘点后修正：**它不是双射**
+
+原写的是「4 状态 ↔ 4 判据的双射」。**实际不是**：
+
+```
+MetricStatus       4 个   ok / warming / unknown_metric / no_bars
+CriterionVerdict   5 个   crossed / not_crossed / warming / undetermined / no_bars
+_VERDICT_FOR_STATUS          四个状态 → 后四个判据
+evaluate() 的比较分支      CROSSED 不在这张表里生成
+```
+
+⇒ **新增一个状态仍然需要同时加一个判据**（新状态不能落到已有的判据上），
+**但原因不是「要保持双射」。** 本来就没有双射可保。
+
+⭐ 同时：**`criterion_eval.py:63` 自己的 docstring 写着「Four, and they are not degrees.」**
+而它有五个成员 —— 这是一位**今天就是假的声明**，而我正要去编辑这个文件。
+⇒ 一并改掉（`regressions/0011`）。
 
 ### 3.2 为什么 `WARMING` 是错的（具体到句子）
 
@@ -73,7 +87,8 @@ bars_available 为空  -> 「还没有值，这条判据没有被求值过」
 ### 3.3 定下来的形状
 
 ```python
-# domain/metrics.py
+# alphacouncil/metrics.py   ⭐ AT THE PACKAGE ROOT, not domain/
+# (一开始写成 `domain/metrics.py`。那会创出一个不存在的文件，里面会有第二份 MetricStatus ——而这正是本仓反复付代价的那一件事。)
 class MetricStatus(StrEnum):
     ...
     #: The metric is in the catalogue and the pipeline works, but **no report had been
@@ -204,3 +219,45 @@ fiscal_year: int | None
 ⚠️ ⭐ **三处的共同形状：我在没有打开文件的情况下写了具体数字和具体做法。**
 「先量」这条纪律，量到的是**数字**为止 —— **做法也要量**（读签名、读类型、读词表），
 而上一轮我只量了前者。⇒ 这条补进 `.ai/README.md` 的纪律清单。
+
+## 九、消费侧盘点推翻的六处（写代码之前）
+
+⭐ **这是纪律 6 一轮后的收益：盘点在任何代码写之前发出，它推翻了这份规格的六处**
+—— 包括一处**照写会创出一个不存在的文件**，和一处**数了新代码转的那个枚举的成员数**。
+若先写代码，这六处会以运行错误或门禁失败的形式出现。
+
+| # | 原写 | 实测 | 影响 |
+|---|---|---|---|
+| 1 | `# domain/metrics.py` | ⭐ `backend/src/alphacouncil/metrics.py`（**包根下**） | 照写会创出假文件，里面第二份 `MetricStatus` |
+| 2 | 「四个判据」 | ⭐ `CriterionVerdict` **五个**，而 `criterion_eval.py:63` 自己写着「Four」 | 数字错在规格里就已经在误 |
+| 3 | `_VERDICT_FOR_STATUS` 是双射 | 4 → 后 4，`CROSSED` 由 `evaluate()` 的比较分支生成 | 保持双射本来就不是加成员的理由 |
+| 4 | 「新状态自动被测」 | ⭐ **五处测试硬写了三元组**，加第四个后**不红且没被覆盖** | 只有另四处 `for state in CriterionVerdict:` 会自动扩展 |
+| 5 | 新字段的形状 | ⭐ **`S-02 no_boolean_state`** 查 `is/has/was` 开头的 bool；而 `MetricFacts` 现在是 4 个可空值字段、**零 bool** | 加 `has_announced` 会**立刻红**。⇒ 字段按**事实**命名而不按**状态** |
+| 6 | 「同步前端即可」 | ⭐ **`S-16` 会立刻红**，因为 `api.ts:533-538` 的 `MetricState` 是 `CriterionVerdict` 的乐观体与达 | ⇒ **两个月前那条门禁把它变成两分钟的修复**，而不是一个静默的不匹配 |
+
+### ⚠️ 五处硬写三元组的测试（不会红，但会漏测）
+
+| 位置 | 形式 | 加第四个「不知道」后 |
+|---|---|---|
+| `test_criterion_sentence.py:158-165` | parametrize **三元组** | ⚠️ 不红，新状态**未被覆盖** |
+| `test_criterion_sentence.py:196-201` | **三元组** + `len(rendered) == 3` | ⭐ **不红，但语义已错** ——它本来在证「三个互不相同」，现在有四个 |
+| `test_criterion_sentence.py:217-221` | 手写五行 `adjudicable[...]` | ⚠️ 不红，新状态**漏测** |
+| `test_criterion_eval.py:212-220` | 2 个 True + **三元组** False | ⚠️ 不红，新状态**漏测** |
+| `test_notify_webhook.py:480-486` | parametrize **三态** + 三句字面量 | ⚠️ 不红，「不发通知」这条路径**未被测** |
+
+⇒ **会自动扩展的只有四处**：`test_criterion_sentence.py:214 / :226 / :240 / :294` 的
+`for state in CriterionVerdict:`。⇒ **新状态必须把那五处改成遍历**，而不是再加一个三元组。
+⭐ **第二行的 `len(rendered) == 3` 应该改成从枚举推导**：先定义「不知道」的集合
+（就是非 `answerable` 的那些），再断言它们互不相同。
+
+### ⭐ 一个不是修正、而是白拿的设计终带
+
+`frontend/src/criterionVerdict.ts:62` 是前端对状态的**全部**行为：
+
+```ts
+crossed: metric?.state === 'crossed'
+```
+
+⭐ **没有 switch，没有 `Record<State, ...>` 映射表。**⇒ 新状态**自动落到中性样式**，而语义全部由
+服务端下发的那句话承担 —— 这正是 `criterionVerdict.ts:59-61` 注里「**a state the server adds
+cannot render as 「not crossed」 by omission**」的意思。⇒ **因此前端一个分支都不需要**。

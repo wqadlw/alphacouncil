@@ -91,6 +91,12 @@ class MetricFacts:
     as_of: str | None = None
     period: int | None = None
     bars_available: int | None = None
+    #: ⭐ **The latest report period that *had* been announced on `as_of`**, for a criterion
+    #: whose current period had not. ⇒ 这是**事实**,不是状态 ——
+    #:   无布尔(`S-02 no_boolean_state` 会红)、不预测(实测公告滞后 25/46/93 天)。
+    #: 无为 `None` 时句子退化为「还没公告」而不是「没拿到过任何一期」,
+    #: 因为后者意味着我们从未开始记过这只股票。
+    latest_announced_period_end: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,6 +207,41 @@ def sentence_for(facts: MetricFacts) -> Sentence:
         case "no_bars":
             return Sentence(
                 verdict="观察期已到 —— 这个代码没有日线，这条判据没有被求值过。",
+                crossed=False,
+                adjudicable=False,
+            )
+        case "not_announced":
+            # ⚠️ ⭐ **这一支不能说时间。**
+            #
+            # 「还差 N 根日线」是一个**会自己兑现**的承诺,而公告无并存在这种承诺 ——
+            # `financial.py:372-377` 实测公告滞后 25 / 46 / 93 天,而 `spec 043:41-45` 已因为
+            # 官方文档的「约 2 个月」推翻过一次。
+            # ⇒ 这里只说**已经发生的事**:那一期在你的截止日之前没公告,你当时
+            # 最新能看到的是哪一期。一个日期都不给。
+            #
+            # ⚠️ **分行只为了行长,不是为了换词** —— 同上面的 `warming`。
+            # ⚠️ ⭐ **两个分支,而不是一个 f-string 直接插值。**
+            # `latest_announced_period_end` 是 `None` 时,单行插值会把页面上的这句话写成
+            # 「你当时最新能看到的是 None」 —— 一个缺失的事实被渲染成一个字面量。
+            # ⚠️ **这正好是本产品存在要防的那一类缺陷**,而我是在写
+            # 禁止它的那条规则的同一个改动里写的。`spec 051 §3.4` 已经写好了怎么办,我没实施。
+            if facts.latest_announced_period_end is None:
+                # 诚实地说我们从未开始记过这只股票 —— 而不是假造一个期。
+                return Sentence(
+                    verdict=(
+                        f"观察期已到——{facts.label} 还没公告，"
+                        "而这只股票我们从未记过报告，"
+                        "这条判据暂时没有被求值"
+                    ),
+                    crossed=False,
+                    adjudicable=False,
+                )
+            head = (
+                f"观察期已到——{facts.label} 还没公告，"
+                f"你当时最新能看到的是 {facts.latest_announced_period_end}，"
+            )
+            return Sentence(
+                verdict=f"{head}这条判据暂时没有被求值",
                 crossed=False,
                 adjudicable=False,
             )

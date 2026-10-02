@@ -106,7 +106,8 @@ class MetricStateRead(BaseModel):
     state: CriterionVerdict = Field(
         description=(
             "⭐ `crossed` / `not_crossed` are facts about the comparison. "
-            "`warming` / `undetermined` / `no_bars` are facts about **us**, and the page "
+            "`warming` / `undetermined` / `no_bars` / `not_announced` are facts "
+            "about **us**, and the page "
             "must not present them as facts about the reader's decision."
         )
     )
@@ -133,6 +134,15 @@ class MetricStateRead(BaseModel):
             "counting trading days in TypeScript would be a second implementation of a "
             "quantity this side knows exactly, and wrong by the number of public holidays "
             "— the failure spec 038 found in the indicator layer, one layer down."
+        ),
+    )
+    latest_announced_period_end: str | None = Field(
+        default=None,
+        description=(
+            "⭐ 截止日当时**已公告**的最新报告期**，仅对 `not_announced` 有意义。"
+            "Not a date to wait for: the announcement lag was measured at 25 / 46 / 93 "
+            "days (`providers/financial.py:372-377`), so this field carries the last "
+            "known period and never an estimate of the next one."
         ),
     )
 
