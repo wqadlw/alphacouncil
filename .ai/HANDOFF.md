@@ -89,13 +89,32 @@
 （已因此踩过一次，见 `regressions/0004` §变异检查。）
 
 **网络（关键坑）**：
-- ✅ **已解决（2026-09-28）：`github.com` 走 Clash 代理，端口 `127.0.0.1:7897`。**
-  进程名 `clash-verge` / `verge-mihomo`。**已写进本仓库的 `.git/config`**
-  （`git config --local http.proxy http://127.0.0.1:7897`），所以
-  `git push` / `fetch` / `ls-remote` **不需要再带任何参数**。
-  ⚠️ 只改了**仓库级**配置，没动用户全局 —— 端口若变，先
-  `Test-NetConnection -ComputerName 127.0.0.1 -Port 7897` 确认再改。
-  直连 `github.com:443` 仍然被墙，所以**这个代理不是可选项**。
+- ⚠️⚠️ **代理可用性必须每次量，不能当已知（2026-10-02 修正）** —— 这一条曾经写着
+  「已解决（2026-09-28）」，**而 2026-10-02 实测三个半句全不成立**：
+
+  | 探测 | 结果 |
+  |---|---|
+  | `clash-verge` / `verge-mihomo` 进程 | ❌ **不存在** |
+  | `127.0.0.1:7897` 监听 | ❌ 无 |
+  | `git config --show-origin --get-regexp 'http.*proxy'` | 只有**全局** `~/.gitconfig` 指向 7897；⚠️ **仓库级那条已不在** |
+  | `github.com:443` TCP | ✅ 可连 |
+  | HTTPS 直连 `ls-remote` | ❌ `TLS connect error: unexpected eof while reading` |
+
+  ⚠️⭐ **最容易被读成「通了」的一行是 `Test-NetConnection -Port 443` 返回 `True`** ——
+  TCP 通而 TLS 握手拿到 EOF，**失败的表现是「看起来成功了」**。
+  ⇒ **判据必须是 `ls-remote` 能不能完成，不是端口开没开。**
+
+  ⇒ **开工先量**：`Test-NetConnection -ComputerName 127.0.0.1 -Port 7897`
+  （通 → `git push origin main`，**并确认仓库级 proxy 仍在**；
+  不通 → **别试第四种配置**，直连 / 全局代理 / 仓库级代理都指向同一个没在跑的端口）。
+
+  ⭐ **反复试配置直到某一次碰巧成功，等于把「哪条路能用」留在这轮对话里而不是仓库里**，
+  而本仓已经为此付过一次账（`0003`：一次测量报告了一个数，没人核对这个数）。
+
+  ⭐ **一个会过期的事实被写成常驻事实，读者就会拿它当事实用** ——
+  「已解决（某日）」这种写法只对「恢复方式不会变」的事实成立。
+  ⭐ 而**同一份文件下面那段本来就写着「不要照抄任何一种，先测」** ——
+  错的是上面这一条把一次观测写成了常驻状态。
 - ✅ **悬空 ref 已修**：原因不是"对象不存在"，而是 `origin/main` 停在
   `fe9750b`（上一位 agent 用 Git Data API 推送后手工 `update-ref` 写进去的）。
   一次 `git fetch` 就把它快进到了真实的 `74e497f`。
