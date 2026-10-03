@@ -72,8 +72,13 @@ def default_router(
     One global ordering, two different effective priorities. That is the whole
     point of declaring capabilities instead of hard-coding names.
     """
+    # The financial source is wired for its **declaration** — that is what makes
+    # `/api/v1/capabilities` stop claiming the panel can never open. The fetch
+    # entry point (`get_financial` on the router) is the next step, and until it
+    # exists this router knows a source it cannot be asked through.
     return MarketDataRouter(
         [EastmoneyProvider(), TencentProvider(), SinaProvider()],
+        financial=[BaostockFinancial()],
         cache=cache if cache is not None else MemoryCache(),
         tracer=tracer,
     )

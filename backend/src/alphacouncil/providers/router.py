@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import contextlib
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
@@ -46,6 +46,7 @@ from alphacouncil.models.market import (
 )
 from alphacouncil.providers.base import Dataset, MarketDataProvider, now
 from alphacouncil.providers.cache import Cache
+from alphacouncil.providers.financial import FinancialDataProvider
 
 log = structlog.get_logger(__name__)
 
@@ -150,12 +151,24 @@ class MarketDataRouter:
         self,
         providers: list[MarketDataProvider],
         *,
+        financial: Sequence[FinancialDataProvider] = (),
         cache: Cache | None = None,
         clock: Callable[[], float] = time.monotonic,
         tracer: TraceHook | None = None,
     ) -> None:
-        """``providers`` is in priority order: first is the preferred source."""
+        """``providers`` is in priority order: first is the preferred source.
+
+        ⭐ ``financial`` is a **second protocol**, and it is a separate list on purpose.
+        `providers/financial.py:160-164` is why: a financial source cannot serve
+        ``get_daily``, and folding it into one list would force it to declare a
+        capability it does not have. ⇒ It joins capability_matrix and **nothing else** --
+        see `_declarations` and `_candidates`.
+        """
         self._providers = list(providers)
+        #: ⭐ Kept apart, because these two lists answer different questions and only
+        #: one of them is allowed near a fetch. `_declarations()` reads both;
+        #: `_candidates()` reads only the first.
+        self._financial = list(financial)
         self._cache = cache
         self._clock = clock
         self._tracer = tracer
@@ -223,7 +236,7 @@ class MarketDataRouter:
             for market in Market:
                 declaring = [
                     provider
-                    for provider in self._providers
+                    for provider in self._declarations()
                     if dataset in provider.capabilities.datasets
                     and market in provider.capabilities.markets
                 ]
@@ -369,6 +382,17 @@ class MarketDataRouter:
         return DataResult.error(
             ErrorCode.DATA_SOURCE_UNAVAILABLE, source="router", fetched_at=now()
         )
+
+    def _declarations(self) -> list[MarketDataProvider | FinancialDataProvider]:
+        """Every provider whose **declaration** the capability matrix should read.
+
+        ⭐ Deliberately wider than :meth:`_candidates`. The matrix reads what a source
+        *says it can serve*; the fetch path needs sources that can serve a **market**
+        request. Reporting ``FINANCIAL`` as `PENDING` while a financial source is wired
+        is a false product fact, and `/api/v1/capabilities` is what a panel gates on
+        (spec 008 FR-5) — so it would never open.
+        """
+        return [*self._providers, *self._financial]
 
     def _candidates(self, dataset: Dataset, symbol: Symbol) -> list[MarketDataProvider]:
         """Providers that declare the dataset, can serve the venue, and are awake."""

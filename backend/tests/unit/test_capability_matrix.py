@@ -27,9 +27,15 @@ STAMP = datetime(2026, 9, 27, 12, 0, tzinfo=UTC)
 MOUTAI = Symbol(market=Market.SH, code="600519")
 
 #: The production capability map, written dead (constitution 8.3). Derived
-#: from the providers' declared datasets x venues on 2026-09-27; changing a
-#: declaration without changing this table fails here first, which is the
-#: point — a silently dumb page is worse than a red test.
+#: from the providers' declared datasets x venues; changing a declaration
+#: without changing this table fails here first, which is the point — a
+#: silently dumb page is worse than a red test.
+#:
+#: ⭐ **2026-10-03, D4 wiring:** `BaostockFinancial` joined `default_router()` **for its
+#: declaration** (`router.py:_declarations`), so `financial x sh` and `financial x sz`
+#: moved `pending` → `usable`. ⚠️ **`financial x bj` is still `pending`**, and it is
+#: pending for a reason about the world rather than about wiring: the source
+#: declares `SH` and `SZ` only. This table went red first, on purpose.
 EXPECTED_STATES: dict[tuple[str, str], str] = {
     ("adj_factor", "sh"): "usable",
     ("adj_factor", "sz"): "usable",
@@ -37,8 +43,8 @@ EXPECTED_STATES: dict[tuple[str, str], str] = {
     ("daily", "sh"): "usable",
     ("daily", "sz"): "usable",
     ("daily", "bj"): "pending",
-    ("financial", "sh"): "pending",
-    ("financial", "sz"): "pending",
+    ("financial", "sh"): "usable",
+    ("financial", "sz"): "usable",
     ("financial", "bj"): "pending",
     ("instruments", "sh"): "pending",
     ("instruments", "sz"): "pending",
@@ -62,7 +68,12 @@ def _states(router: MarketDataRouter) -> dict[tuple[str, str], str]:
 
 
 def test_the_production_matrix_is_exactly_what_the_declarations_say() -> None:
-    """Six usable cells, nine pending, zero candidates — as declared."""
+    """Eight usable cells, seven pending, zero candidates — as declared.
+
+    ⭐ Two of them are financial, and they moved when the source was wired. The count
+    is in this docstring on purpose: a reader who changes a declaration sees the
+    sentence disagree with the table before the assertion fires.
+    """
     router = default_router(cache=None)
 
     assert _states(router) == EXPECTED_STATES
@@ -74,7 +85,10 @@ def test_pending_cells_carry_the_not_wired_yet_reason() -> None:
     router = default_router(cache=None)
 
     cells = {(cell.dataset.value, cell.market.value): cell for cell in router.capability_matrix()}
-    financial = cells[("financial", "sh")]
+    # ⭐ **`financial x sh` is no longer an example of anything** — it is usable now.
+    # `bj` is the cell that stays pending, and it stays pending because the source
+    # does not declare that venue.
+    financial = cells[("financial", "bj")]
 
     assert financial.state is CapabilityState.PENDING
     assert financial.sources == []
@@ -187,3 +201,66 @@ def test_a_blocked_source_turns_its_cells_into_candidates() -> None:
         assert by_name["refusing"].healthy is False
         assert by_name["healthy"].healthy is True
         assert by_name["healthy"].cooldown_remaining_s is None
+
+
+class TestTheFinancialSourceIsDeclaredButNotRoutable:
+    """⭐ The distinction this whole step rests on.
+
+    `providers/financial.py:160-164` argues that a financial source is a **second protocol**
+    rather than a mode of `MarketDataProvider`, 「and the router can hold both」. Holding both
+    is only safe if **holding** and **routing to** are separate, which is what
+    `_declarations()` and `_candidates()` are for.
+
+    ⚠️ `router._candidates` is private, and the test reaches it on purpose: the claim is about
+    that private's contract, not about a public result. A public assertion could only prove
+    that *something* is routed, not *this* is not.
+    """
+
+    def test_the_matrix_reports_the_financial_source_for_its_venues(self) -> None:
+        from alphacouncil.providers.financial import BaostockFinancial
+
+        router = default_router(cache=None)
+        cells = {
+            (cell.dataset.value, cell.market.value): cell for cell in router.capability_matrix()
+        }
+
+        for venue in ("sh", "sz"):
+            cell = cells[("financial", venue)]
+            assert cell.state is CapabilityState.USABLE
+            assert [source.name for source in cell.sources] == [BaostockFinancial().name]
+
+    def test_its_cells_come_from_the_wiring_and_not_from_something_else(self) -> None:
+        """⭐ Drop `financial=` and the cells go back to `pending`.
+
+        This is the control: without it, 「the cells are usable」 could be caused by anything,
+        and the tripwire table above would be updated for the wrong reason.
+        """
+        bare = MarketDataRouter([])
+        cells = {(cell.dataset.value, cell.market.value): cell for cell in bare.capability_matrix()}
+
+        assert cells[("financial", "sh")].state is CapabilityState.PENDING
+        assert cells[("financial", "sh")].reason is not None
+
+    def test_the_market_path_would_not_try_to_hand_it_a_price_request(self) -> None:
+        """⭐ The failure `_candidates` must never produce: `_route()` would call `get_daily`.
+
+        Today this also holds by coincidence — no market provider happens to declare
+        `FINANCIAL` — so the assertion is here because ⭐ **coincidence is not a guard**: the
+        day one does, the market path would start calling `get_daily` on a source that has no
+        such method.
+        """
+        router = default_router(cache=None)
+
+        assert router._candidates(Dataset.FINANCIAL, MOUTAI) == []
+        assert router._candidates(Dataset.DAILY, MOUTAI), "the market path still works"
+
+    def test_the_two_lists_are_not_the_same_object(self) -> None:
+        """⭐ Cheap structural check: appending to one must not touch the other."""
+        router = default_router(cache=None)
+        before_market = list(router._providers)
+        before_financial = list(router._financial)
+
+        router._financial.append(object())  # type: ignore[arg-type]
+
+        assert router._providers == before_market
+        assert len(router._financial) == len(before_financial) + 1
