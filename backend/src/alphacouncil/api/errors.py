@@ -30,6 +30,11 @@ from alphacouncil.domain.review import ReviewError
 from alphacouncil.domain.scheduling import SchedulingError
 from alphacouncil.domain.watchlist import WatchlistError
 
+# ⭐ Spec 052 §12.2: the provider hierarchy needs a base registered here ⭐ **and
+# it is the first one that does not subclass `ValueError`** ⭐ which is why the
+# comment on `CODED_ERRORS` had to change rather than just grow.
+from alphacouncil.providers.base import ProviderError
+
 #: The HTTP status each coded failure deserves.
 #:
 #: The domain does not know about HTTP, and this map is why it does not have to.
@@ -93,6 +98,44 @@ _STATUS_BY_CODE: dict[str, int] = {
     # decision that does not exist. 404, so the client can say "no such decision"
     # instead of implying the reader sent something malformed.
     ErrorCode.DECISION_NOT_FOUND.value: 404,
+    # ⭐⭐ Spec 052 §12.2. **The first source failure that had no HTTP edge at all.**
+    # `sources.py:97-125` is the only place a `ProviderError` becomes something with a
+    # status, and it is on the market path ⭐ **so the financial and universe protocols had
+    # nowhere to land** ⭐ and a source being down produced Starlette's default 500 with no
+    # `code` ⭐ **which is the fifth-time failure this file records, and the sixth instance:**
+    # not a base missing from the tuple, but an edge missing entirely.
+    #
+    # ⭐ **`DATA_SOURCE_FORBIDDEN` is 502, not 403.** The upstream refused *our* request, so
+    # a 403 would be a sentence about the person using the product produced by a fact about
+    # a socket ⭐ **and that is `metrics.py:38-41`'s named failure** ⭐ the program speaking
+    # for the reader ⭐ reached from a different direction.
+    #
+    # ⭐ **`DATA_SOURCE_IP_BLOCKED` is 503, not 429.** A rate limit and a ban have different
+    # recoveries ⭐ **and §4.5 is a product sentence about exactly that** ⭐ so the statuses
+    # must not blur them either. ⭐ `Retry-After` is deliberately absent: we know the ban is
+    # 20 hours because `_IP_BLOCKED_COOLDOWN_S` says so ⭐ **and putting a number in a header
+    # would turn our own recovery policy into a promise about the source's.**
+    ErrorCode.DATA_SOURCE_RATE_LIMITED.value: 429,
+    ErrorCode.DATA_SOURCE_IP_BLOCKED.value: 503,
+    ErrorCode.DATA_SOURCE_FORBIDDEN.value: 502,
+    ErrorCode.DATA_SOURCE_UNREACHABLE.value: 503,
+    # `ProviderProtocolError`: the source answered, in a shape we cannot read. ⭐ That is
+    # 502's definition exactly ⭐ **an upstream returned something invalid.**
+    ErrorCode.DATA_UNVERIFIABLE.value: 502,
+    # The bare `ProviderError` case ⭐ **which is what an unrecognised upstream code
+    # becomes** ⭐ (see `providers/_baostock.py::classify`: unknown is a real answer, and
+    # the default is a plain `ProviderError`). 502 rather than 500 ⭐ **because the request
+    # was well-formed and the fault is upstream** ⭐ and a reader must not be told their own
+    # request broke the data source.
+    ErrorCode.DATA_FETCH_ERROR.value: 502,
+    # ⭐⚠️ `DATA_NO_DATA` is 404 **and this is the least-wrong status, not the right one.**
+    # `ProviderEmptyError` means 「the source answered and there is genuinely nothing」 ⭐
+    # which is §4.6's `no_data`, a legitimate answer rather than a fault ⭐ **and there is
+    # no status for 「looked, and there is nothing」.** ⇒ An endpoint that can render 「没有」
+    # must catch it itself and answer in its own four-state shape ⭐ **and this row is the
+    # backstop for the endpoints that do not.** ⚠️ Recorded as a known limit in
+    # spec 052 §12.2 rather than papered over.
+    ErrorCode.DATA_NO_DATA.value: 404,
 }
 
 _DEFAULT_STATUS = 400
@@ -178,4 +221,15 @@ CODED_ERRORS: tuple[type[Exception], ...] = (
     # places to touch, not two: the enum, the doc table, and this tuple — and the
     # third is the one that is easy to miss because nothing fails when it is.
     LessonError,
+    # ⭐⭐ Spec 052 §12.2. **The first base here that is not a `ValueError`**, so the
+    # sentence at the top of this tuple is now half true ⭐ **and being half true is
+    # why the test was written.** It used to read 「Every base subclasses ValueError,
+    # and Starlette picks the most specific handler, so the plain ValueError handler
+    # still catches everything else」 ⭐ **that second half is the load-bearing one and
+    # it still holds** ⭐ registration is by class, not by base, so `ProviderError`
+    # catches all seven of its subclasses ⭐ **including the two that are siblings
+    # rather than subclasses** (`ProviderRateLimitedError` and
+    # `ProviderIpBlockedError`, `base.py:106-108`) ⭐ which a chain of `except` clauses
+    # would have separated by ordering luck.
+    ProviderError,
 )
