@@ -30,6 +30,13 @@ from typing import Any
 import pytest
 
 from alphacouncil.models.market import Market, Symbol
+
+# ⭐ **The session state moved** (spec 052 §12.1) ⭐ **and this fixture moved with it.**
+# The names below are module globals guarding one process-wide socket, so leaving
+# them pointed at `fin` would leave this file **patching nothing** ⭐ **and the
+# symptom would be a test passing for the wrong reason** — the exact failure the
+# comment on this fixture was written to prevent.
+from alphacouncil.providers import _baostock as baostock_session
 from alphacouncil.providers import financial as fin
 from alphacouncil.providers.base import (
     Dataset,
@@ -143,12 +150,12 @@ def _no_socket(monkeypatch: pytest.MonkeyPatch) -> FakeBaostock:
     """
     fake = FakeBaostock()
     monkeypatch.setitem(sys.modules, "baostock", fake)
-    monkeypatch.setattr(fin, "_LOGGED_IN", False)
-    monkeypatch.setattr(fin, "_LAST_CALL", None)
+    monkeypatch.setattr(baostock_session, "LOGGED_IN", False)
+    monkeypatch.setattr(baostock_session, "LAST_CALL", None)
     # ⭐ Zero the floor, so no test in this file sleeps. The throttle's *arithmetic* is
     # asserted separately, in `TestTheThrottle`, with a fake clock.
-    monkeypatch.setattr(fin, "_MIN_INTERVAL_S", 0.0)
-    monkeypatch.setattr(fin, "_JITTER_S", 0.0)
+    monkeypatch.setattr(baostock_session, "MIN_INTERVAL_S", 0.0)
+    monkeypatch.setattr(baostock_session, "JITTER_S", 0.0)
     return fake
 
 
@@ -499,7 +506,7 @@ class TestTheBanIsItsOwnCode:
         on the code. ⭐ One shared code is exactly how 「等 20 小时」 became 「等 5 分钟」.
         """
         with pytest.raises(ProviderIpBlockedError, match="banned"):
-            fin._raise_for(fin.IP_BLOCKED_CODE, "IP blocked")
+            baostock_session.raise_for(fin.IP_BLOCKED_CODE, "IP blocked")
 
     def test_the_ban_code_is_the_string_the_wire_carries(self) -> None:
         """⭐ A string, not an int: a typo in an int is invisible until a real ban."""
@@ -523,10 +530,10 @@ class TestTheBanIsItsOwnCode:
         source twenty hours of cooldown over a symbol that simply has no Q3.
         """
         with pytest.raises(ProviderEmptyError):
-            fin._raise_for("-3", "no data")
+            baostock_session.raise_for("-3", "no data")
 
         with pytest.raises(ProviderIpBlockedError):
-            fin._raise_for(fin.IP_BLOCKED_CODE, "banned")
+            baostock_session.raise_for(fin.IP_BLOCKED_CODE, "banned")
 
     def test_no_period_is_not_a_ban(self) -> None:
         """⭐ A guard against the guard: the mapping must not be over-broad.
@@ -536,12 +543,12 @@ class TestTheBanIsItsOwnCode:
         no Q3.
         """
         with pytest.raises(ProviderEmptyError):
-            fin._raise_for("-3", "no data")
+            baostock_session.raise_for("-3", "no data")
 
     def test_an_unknown_code_stays_unknown(self) -> None:
         """⭐ Unknown means unknown -- never the most severe reading available."""
         with pytest.raises(ProviderError) as caught:
-            fin._raise_for("99999", "?")
+            baostock_session.raise_for("99999", "?")
 
         assert not isinstance(caught.value, ProviderIpBlockedError)
 
@@ -557,7 +564,7 @@ class TestTheBanIsItsOwnCode:
         with pytest.raises(ProviderIpBlockedError):
             _provider().get_financial(_moutai(), years=1)
 
-        assert fin._LOGGED_IN is False
+        assert baostock_session.LOGGED_IN is False
 
 
 # --------------------------------------------------------------------------
@@ -584,7 +591,7 @@ class TestEmptyIsNotZero:
         construction (see :data:`_ABSENT_CELLS`), so the next spelling a source invents is
         covered by the shape rather than by a second thought.
         """
-        assert fin._number(raw) is None
+        assert baostock_session.number(raw) is None
 
     @pytest.mark.parametrize(
         "raw",
@@ -600,7 +607,7 @@ class TestEmptyIsNotZero:
         it is a real reading). ⭐ SQLite stores both happily in a `REAL` column under
         ``STRICT``.
         """
-        assert fin._number(raw) is None
+        assert baostock_session.number(raw) is None
 
     def test_a_cell_that_overflows_to_infinity_becomes_none(self) -> None:
         """⭐ ⭐ The case the *string* pattern cannot catch, and the reason
@@ -611,8 +618,8 @@ class TestEmptyIsNotZero:
         ⭐ So the pattern above misses it entirely, and the only thing left is to look at
         the *parsed* value. This test is the reason the guard is there at all.
         """
-        assert fin._number("1e400") is None
-        assert fin._number("-1e400") is None
+        assert baostock_session.number("1e400") is None
+        assert baostock_session.number("-1e400") is None
 
     @pytest.mark.parametrize("raw", ["", "  ", "--", "abc", "12,5", "1/2", "三倍"])
     def test_an_unparseable_cell_is_treated_as_absent_not_raised(
@@ -626,7 +633,7 @@ class TestEmptyIsNotZero:
         exception escapes the whole fetch. ⭐ The honest reading of 「what number is this?」
         when the answer is not a number is 「none」.
         """
-        assert fin._number(raw) is None
+        assert baostock_session.number(raw) is None
 
     @pytest.mark.parametrize("raw", ["0", "0.0", "-0.0", "1e-9", "-1", "12.56", "0.24"])
     def test_a_present_number_is_never_treated_as_absent(
@@ -638,7 +645,7 @@ class TestEmptyIsNotZero:
         missing one, and a missing reading is reported to the user as 「该指标不可算」 —
         ⭐ which is a sentence about the world, made out of our own parsing mistake.
         """
-        assert fin._number(raw) == pytest.approx(float(raw))
+        assert baostock_session.number(raw) == pytest.approx(float(raw))
 
     def test_a_real_zero_survives(self) -> None:
         """⭐ ``0.0`` is a legitimate value and the fix must not eat it.
@@ -647,11 +654,11 @@ class TestEmptyIsNotZero:
         written as 「reject anything that looks absent」 and implemented as 「reject 0.0」
         would throw away a real gross margin.
         """
-        assert fin._number("0.0") == 0.0
+        assert baostock_session.number("0.0") == 0.0
 
     def test_a_negative_margin_is_kept(self) -> None:
         """⭐ Loss-making companies exist and ``npMargin`` is negative for them."""
-        assert fin._number("-0.31") == pytest.approx(-0.31)
+        assert baostock_session.number("-0.31") == pytest.approx(-0.31)
 
     def test_a_row_with_blanks_keeps_its_good_cells(
         self, _no_socket: FakeBaostock
@@ -746,12 +753,12 @@ class TestWhatTheProviderClaims:
         ⭐ ``000001`` is the Shanghai Composite on ``sh`` and Ping An Bank on ``sz``, so a
         rule that guesses from the digits is a rule that will be wrong once.
         """
-        assert fin._symbol("sh.600519") == Symbol(market=Market.SH, code="600519")
-        assert fin._symbol("sz.000001") == Symbol(market=Market.SZ, code="000001")
+        assert baostock_session.symbol("sh.600519") == Symbol(market=Market.SH, code="600519")
+        assert baostock_session.symbol("sz.000001") == Symbol(market=Market.SZ, code="000001")
 
     def test_an_unknown_prefix_is_a_protocol_error(self) -> None:
         with pytest.raises(ProviderProtocolError, match="market"):
-            fin._symbol("xx.600519")
+            baostock_session.symbol("xx.600519")
 
 
 # --------------------------------------------------------------------------
@@ -845,7 +852,7 @@ class TestOrderingAndShape:
         with pytest.raises(ProviderIpBlockedError):
             _provider().get_financial(_moutai(), years=1)
 
-        assert fin._LAST_CALL is not None
+        assert baostock_session.LAST_CALL is not None
 
     def test_a_call_that_raised_still_moves_the_timestamp(
         self, _no_socket: FakeBaostock
@@ -858,7 +865,7 @@ class TestOrderingAndShape:
         with pytest.raises(ProviderIpBlockedError):
             _provider().get_financial(_moutai(), years=1)
 
-        before = fin._LAST_CALL
+        before = baostock_session.LAST_CALL
         with pytest.raises(ProviderIpBlockedError):
             _provider().get_financial(_moutai(), years=1)
 
@@ -880,13 +887,19 @@ class TestTheThrottle:
         something the module does not claim to export — ⭐ and mypy is right to say so.
         """
         slept: list[float] = []
-        monkeypatch.setattr("alphacouncil.providers.financial.time.sleep", slept.append)
+                # ⭐ **The string path moved with the module** (spec 052 §12.1). ⭐ It is a
+        # string and not an attribute because `time` is not in `__all__` ⭐ **and a
+        # string says 「I know this is not the contract」 out loud.** ⭐ The flip
+        # side, learned here: a string path is a comment about where something lives,
+        # ⭐ **and a refactor makes it wrong without any tool noticing** ⭐ the fixture
+        # noticed, five times, as ModuleNotFoundError at setup.
+        monkeypatch.setattr("alphacouncil.providers._baostock.time.sleep", slept.append)
         return slept
 
     def test_the_first_call_waits_for_nothing(self, _slept: list[float]) -> None:
         """⭐ There is no previous access to be spaced away from, so an unconditional sleep
         would only make the cold path visibly slower."""
-        fin._throttle_wait()
+        baostock_session._throttle_wait()
 
         assert _slept == []
 
@@ -895,12 +908,12 @@ class TestTheThrottle:
     ) -> None:
         """⭐ The floor on its own: the throttle is a **minimum gap between starts**, and
         the elapsed time is subtracted rather than added."""
-        monkeypatch.setattr(fin, "_MIN_INTERVAL_S", 0.35)
-        monkeypatch.setattr(fin, "_JITTER_S", 0.0)
-        monkeypatch.setattr(fin, "_LAST_CALL", 100.0)
-        monkeypatch.setattr(fin, "_monotonic", lambda: 100.0)
+        monkeypatch.setattr(baostock_session, "MIN_INTERVAL_S", 0.35)
+        monkeypatch.setattr(baostock_session, "JITTER_S", 0.0)
+        monkeypatch.setattr(baostock_session, "LAST_CALL", 100.0)
+        monkeypatch.setattr(baostock_session, "_monotonic", lambda: 100.0)
 
-        fin._throttle_wait()
+        baostock_session._throttle_wait()
 
         assert _slept == [pytest.approx(0.35)]
 
@@ -908,12 +921,12 @@ class TestTheThrottle:
         self, _slept: list[float], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """⭐ A caller that took longer than the interval must not pay it twice."""
-        monkeypatch.setattr(fin, "_MIN_INTERVAL_S", 0.35)
-        monkeypatch.setattr(fin, "_JITTER_S", 0.0)
-        monkeypatch.setattr(fin, "_LAST_CALL", 100.0)
-        monkeypatch.setattr(fin, "_monotonic", lambda: 100.9)
+        monkeypatch.setattr(baostock_session, "MIN_INTERVAL_S", 0.35)
+        monkeypatch.setattr(baostock_session, "JITTER_S", 0.0)
+        monkeypatch.setattr(baostock_session, "LAST_CALL", 100.0)
+        monkeypatch.setattr(baostock_session, "_monotonic", lambda: 100.9)
 
-        fin._throttle_wait()
+        baostock_session._throttle_wait()
 
         assert _slept == []
 
@@ -922,12 +935,12 @@ class TestTheThrottle:
     ) -> None:
         """⭐ The jitter's whole job is that two sessions do not converge on the same
         instant, so it is **added**, never taken out of the floor."""
-        monkeypatch.setattr(fin, "_MIN_INTERVAL_S", 0.35)
-        monkeypatch.setattr(fin, "_JITTER_S", 0.20)
-        monkeypatch.setattr(fin, "_LAST_CALL", 100.0)
-        monkeypatch.setattr(fin, "_monotonic", lambda: 100.0)
+        monkeypatch.setattr(baostock_session, "MIN_INTERVAL_S", 0.35)
+        monkeypatch.setattr(baostock_session, "JITTER_S", 0.20)
+        monkeypatch.setattr(baostock_session, "LAST_CALL", 100.0)
+        monkeypatch.setattr(baostock_session, "_monotonic", lambda: 100.0)
 
-        fin._throttle_wait()
+        baostock_session._throttle_wait()
 
         assert 0.35 <= _slept[0] <= 0.55
 
@@ -936,13 +949,13 @@ class TestTheThrottle:
     ) -> None:
         """⭐ A jitter of zero is not a jitter, and the shape of the call looks the same
         either way -- so this asserts the **spread**, not the existence of a call."""
-        monkeypatch.setattr(fin, "_MIN_INTERVAL_S", 0.0)
-        monkeypatch.setattr(fin, "_JITTER_S", 0.20)
-        monkeypatch.setattr(fin, "_monotonic", lambda: 0.0)
+        monkeypatch.setattr(baostock_session, "MIN_INTERVAL_S", 0.0)
+        monkeypatch.setattr(baostock_session, "JITTER_S", 0.20)
+        monkeypatch.setattr(baostock_session, "_monotonic", lambda: 0.0)
 
         for _ in range(20):
-            monkeypatch.setattr(fin, "_LAST_CALL", 0.0)
-            fin._throttle_wait()
+            monkeypatch.setattr(baostock_session, "LAST_CALL", 0.0)
+            baostock_session._throttle_wait()
 
         assert len(set(_slept)) > 1
 
@@ -951,5 +964,5 @@ class TestImportingThisModuleOpensNothing:
     def test_the_session_state_is_inert_before_any_call(self) -> None:
         """⭐ Importing must not log in: the state is *false*, not *unknown*, so a module
         that is imported by a CLI, a test and a request handler all start the same way."""
-        assert fin._LOGGED_IN is False
-        assert fin._LAST_CALL is None
+        assert baostock_session.LOGGED_IN is False
+        assert baostock_session.LAST_CALL is None

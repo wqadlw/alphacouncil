@@ -46,11 +46,7 @@ dependency being added.
 
 from __future__ import annotations
 
-import random
-import threading
-import time
-from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Protocol, runtime_checkable
@@ -58,15 +54,37 @@ from typing import Any, Protocol, runtime_checkable
 import structlog
 
 from alphacouncil.models.market import Market, Symbol
+
+# ⭐⭐ **The session, the throttle and the resultset cursor moved to
+# `providers/_baostock.py` (spec 052 §12.1), and the aliases below are why this diff
+# is one line rather than six.** Renaming the call sites would mean six edits and
+# ⭐ a chance to leave one behind ⭐ — which is `F-221`, twice in one session.
+#
+# ⭐ **The reason they moved is a bug, not a taste.** `_LOCK` / `LOGGED_IN` /
+# `_LAST_CALL` guarded ONE process-wide socket ⭐ **and a second provider module with
+# its own globals would be a second floor over that same socket.** The measured
+# 「45 calls then a connection reset」 would become 「45 per module」, and §4.5 is
+# about the address, not about which module asked.
+from alphacouncil.providers._baostock import (
+    IP_BLOCKED_CODE,
+)
+from alphacouncil.providers._baostock import (
+    day as _day,
+)
+from alphacouncil.providers._baostock import (
+    number as _number,
+)
+from alphacouncil.providers._baostock import (
+    rows as _rows,
+)
+from alphacouncil.providers._baostock import (
+    session as _session,
+)
 from alphacouncil.providers.base import (
     BatchSemantics,
     Dataset,
     ProviderCapabilities,
-    ProviderEmptyError,
-    ProviderError,
-    ProviderIpBlockedError,
     ProviderProtocolError,
-    ProviderUnreachableError,
 )
 
 log = structlog.get_logger(__name__)
@@ -81,36 +99,14 @@ __all__ = [
 #: BaoStock's own code for 「your address is on the blacklist」. ⭐ A string, because it is
 #: a wire value from another system: a typo in an int would be invisible until a real
 #: ban happened.
-IP_BLOCKED_CODE = "10001011"
-
 #: ⭐ Gap between calls, in seconds. §4.5 requires 最小间隔; this is a **floor, not a
 #: budget** — ⭐ and the jitter below is what keeps several sessions from converging on
 #: the same instant. BaoStock's docs do not publish a rate limit, so this number is a
 #: guess that is honest about being one.
-_MIN_INTERVAL_S = 0.35
-_JITTER_S = 0.20
-
 #: ⭐ `float("inf")` parses without raising, so the finiteness check has to be explicit.
 #: One number, no dependency: `math.isfinite` would do the same thing and this is the
 #: only place that needs it.
-_MAX_FINITE = float("inf")
-
 #: One session per process. ⭐ **Not** per request — see the module docstring.
-_LOCK = threading.Lock()
-_LOGGED_IN = False
-_LAST_CALL: float | None = None
-_MONOTONIC: Any = None
-
-
-def _monotonic() -> float:
-    global _MONOTONIC
-    if _MONOTONIC is None:
-        import time
-
-        _MONOTONIC = time.monotonic
-    return float(_MONOTONIC())
-
-
 @dataclass(frozen=True, slots=True)
 class FinancialPeriod:
     """One reported period, as announced.
@@ -182,167 +178,6 @@ class FinancialDataProvider(Protocol):
         because those are different sentences and §4.6 is about keeping them apart.
         """
         ...
-
-
-@contextmanager
-def _session() -> Iterator[Any]:
-    """Serialise every BaoStock call, and throttle between them.
-
-    ⭐ Three mechanisms, and they are the three §4.5 names for this layer: **串行化**
-    (the lock, because the library is not thread-safe), **最小间隔** (``_MIN_INTERVAL_S``)
-    and **随机抖动** (the jitter, so two sessions do not line up).
-
-    ⭐ **The lock is held across the caller's body**, not only around the one library call.
-    That is deliberate and it is the opposite of what a tighter-looking design would do:
-    the thing being protected is the **session**, which is a single process-wide socket,
-    so a caller that interleaves two library calls would let the other thread log in on top
-    of it. ⭐ The cost is real — one slow caller delays every other caller — and it is paid
-    knowingly, because the alternative is a corruption that is intermittent and therefore
-    unreproducible.
-    """
-    global _LOGGED_IN, _LAST_CALL
-
-    with _LOCK:
-        import baostock as bs
-
-        if not _LOGGED_IN:
-            result = bs.login()
-            if getattr(result, "error_code", "0") != "0":
-                _raise_for(getattr(result, "error_code", ""), getattr(result, "error_msg", ""))
-            _LOGGED_IN = True
-            log.info("baostock.session_opened")
-
-        _throttle_wait()
-        try:
-            yield bs
-        finally:
-            # ⭐ The timestamp moves in `finally`, so a **failed** call still counts.
-            # §7.8 says this in as many words: 「失败也算一次访问」, and a throttle that
-            # forgives failures is exactly the one that gets an address banned.
-            _LAST_CALL = _monotonic()
-
-
-def _throttle_wait() -> None:
-    """Sleep until this call is allowed to happen.
-
-    ⭐ **The floor plus a jitter, minus however long the last call took** — so a caller
-    that spent 30s doing its own work comes back with credit instead of paying the
-    full interval again. Clamped at zero, which is the only reason the subtraction is safe.
-
-    ⭐ **The first call is not delayed.** There is no previous access to be spaced away
-    from, and adding an unconditional sleep to the first request of a process makes the
-    cold path visibly slower for no compliance benefit.
-    """
-    if _LAST_CALL is None:
-        return
-    # `random` is a fine source of jitter and a terrible source of anything else, so the
-
-    # one who should have to see the justification.
-    wait = _MIN_INTERVAL_S + random.uniform(0.0, _JITTER_S) - (  # noqa: S311
-        _monotonic() - _LAST_CALL
-    )
-    if wait > 0.0:
-        time.sleep(wait)
-
-
-def _raise_for(error_code: str, message: str) -> None:
-    """Map a BaoStock error code onto this project's own vocabulary.
-
-    ⭐ §4.5: 「限流」 and 「封 IP」 are two things with different recovery, so they are two
-    error codes. Collapsing them would leave the router unable to tell 「slow down」 from
-    「come back tomorrow」 — and the operator unable to tell a transient from a ban.
-    """
-    if error_code == IP_BLOCKED_CODE:
-        # ⭐ **The ban code, not the refusal code.** BaoStock's ``10001011`` names the ban
-        # outright, and §4.5's two different recoveries are then real: 20 hours of no
-        # requests from this address, rather than five minutes of 「come back later」.
-        raise ProviderIpBlockedError(f"baostock banned this address: {message}") from None
-    if error_code in {"-1"}:
-        raise ProviderUnreachableError(f"baostock network error: {message}") from None
-    if error_code in {"-2"}:
-        raise ProviderProtocolError(f"baostock rejected the request: {message}") from None
-    if error_code in {"-3"}:
-        # ⭐ `ProviderEmptyError`, not something 「unavailable」: BaoStock answered and
-        # said 「this period has no data」. ⭐ That is §4.6's `no_data` — a business
-        # result — and calling it 「存在但无法确认」 would put a sentence about *our*
-        # knowledge where the source stated a fact.
-        raise ProviderEmptyError(f"baostock has no data for that period: {message}") from None
-    raise ProviderError(f"baostock error {error_code}: {message}")
-
-
-def _rows(result: Any) -> Iterator[dict[str, str]]:
-    """Walk a BaoStock ``QueryResult`` into dicts, checking the shape on the way.
-
-    ⭐ The library returns **strings** for every field, including numbers. A silent
-    ``float("")`` failure would look like 「no data」, so the shape is checked here
-    rather than at each call site.
-    """
-    if getattr(result, "error_code", "0") != "0":
-        _raise_for(result.error_code, getattr(result, "error_msg", ""))
-    fields: Sequence[str] = getattr(result, "fields", ())
-    while result.next():
-        row = result.get_row_data()
-        if len(row) != len(fields):
-            raise ProviderProtocolError(
-                f"baostock returned {len(row)} values for {len(fields)} fields"
-            )
-        yield dict(zip(fields, row, strict=True))
-
-
-def _number(raw: str | None) -> float | None:
-    """A BaoStock numeric cell, or ``None``.
-
-    ⭐ **One rule: not a finite number → absent.** ``""``, ``"--"``, ``"n/a"``,
-    ``"None"``, ``"abc"``, ``"nan"``, ``"inf"``, ``"1e400"`` all end up as ``None``, and
-    ``"0"`` and ``"-1"`` come through as themselves. ⭐ Nothing becomes ``0.0`` because it
-    failed to parse — red line 6: a company that reported nothing did not report zero.
-
-    ⭐⭐ **This used to be a list of 「absent」 spellings plus a parse attempt, and the
-    mutation check deleted the list.** Every single value it named — ``""``, ``"--"``,
-    ``"None"``, ``"null"``, ``"n/a"`` — also happens to make ``float()`` raise, and the two
-    cases it *did not* cover (``"nan"``, ``"1e400"``) are handled by the finiteness check.
-    ⭐ So the list was pure redundancy: a guard that no test can tell apart from its own
-    absence. ⭐ Deleting it is the fix, and the reason is recorded here because 「there used
-    to be a pattern here」 is exactly the kind of thing a later reader should not
-    re-add.
-
-    ⭐ Unparseable becomes ``None`` rather than raising, on purpose: one odd cell must not
-    cost the other nine, and this table's purpose is to be read partially. ⭐ The opposite
-    choice — raise a protocol error — turns 「this field is odd」 into 「this instrument has
-    no financial data for 32 quarters」, because the exception escapes the whole fetch.
-
-    ⭐⭐ **``nan`` is why the finiteness check is not optional.** ``float("nan")`` does not
-    raise. ⭐ And a stored `nan` is *worse* than a ``NULL``: ``nan > 0.5`` is false, so a
-    criterion reads it as 「not met」, while ``nan != 0`` is **true**, so anything comparing
-    against zero believes it is a real reading. ⭐ SQLite will store it in a ``REAL`` column
-    under ``STRICT`` without complaint. A missing number must be missing, not a number that
-    disagrees with arithmetic.
-    """
-    if raw is None:
-        return None
-    try:
-        value = float(raw)
-    except ValueError:
-        return None
-    return value if -_MAX_FINITE < value < _MAX_FINITE else None
-
-
-def _day(raw: str) -> date:
-    return date.fromisoformat(raw.strip())
-
-
-def _symbol(code: str) -> Symbol:
-    """``sh.600519`` → :class:`Symbol`.
-
-    ⭐ The market comes from BaoStock's own prefix and is **never inferred from the
-    number** — red line 16, because ``000001`` is the Shanghai Composite on ``sh`` and
-    Ping An Bank on ``sz``, and a rule that guesses is a rule that will be wrong once.
-    """
-    market, _, digits = code.partition(".")
-    try:
-        return Symbol(market=Market(market), code=digits)
-    except ValueError as exc:
-        raise ProviderProtocolError(f"baostock code {code!r} has no known market") from exc
 
 
 class BaostockFinancial:

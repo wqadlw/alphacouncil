@@ -211,8 +211,23 @@ CREATE TABLE index_universe_sweeps (
         CHECK (strftime('%Y-%m-%dT%H:%M:%fZ', fetched_at) = fetched_at)
 ) STRICT;
 
+-- 「这个指数我们知道的最后一天」——定义「当前成分」的那一个查询。
+--
+-- ⭐⚠️ **末位 `grid_point DESC` 是承重的，而 `source` 原本卡在中间，那是一个真实的缺陷。**
+-- 第一版写成 `(index_code, source, grid_point DESC)`，理由是「一个扫描点由 (index_code,
+-- grid_point, source) 标识，所以三者都在索引里」。⚠️ **而主查询不按 `source` 过滤**：
+-- 它问「我们知道的最后一天是几号」，那是一个 `max(grid_point)` ⭐ **B-tree 的前缀在
+-- `source` 处断掉，末位的 DESC 根本用不上。**
+-- ⇒ **一个索引把三列都收进来，而查询只用前两列，第三列就成了装饰。**
+--
+-- ⭐ 而这与 `0011:129-136` 那条警告是同一族：**「取最新」的确定性可以来自索引也可以
+-- 来自查询，两者都在时无法互相区分，删掉其中一个另一个会补上。**
+-- ⇒ 所以这里只把**驱动条件**放前面（`index_code`），把**排序键**放末位，
+-- 并且**不把 `source` 放在中间**：查询若要按源过滤，那是一次显式的多源比对，
+-- 它该走 `idx_index_universe_sweeps_latest` 之外的路，或者干脆全表扫 ——
+-- ⭐ **而不是让一个索引假装自己三列都能用。**
 CREATE INDEX idx_index_universe_sweeps_latest
-    ON index_universe_sweeps(index_code, source, grid_point DESC);
+    ON index_universe_sweeps(index_code, grid_point DESC);
 
 -- ---------------------------------------------------------------------------------------
 -- append-only：与 0011:144-154 同理由，不是「日志表要加触发器」是因为这样

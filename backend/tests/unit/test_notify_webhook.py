@@ -32,7 +32,13 @@ import pytest
 
 from alphacouncil.domain.criterion_eval import CriterionVerdict
 from alphacouncil.notify import dispatch, webhook
+
+# ⭐ The right-hand side of the assertion below now names the shared BaoStock
+# session (spec 052 §12.1). ⭐ **The assertion still means what it meant**: the
+# notify module keeps its own floor, so two providers still have two floors —
+# which is the §4.5 rule, and the reason the shared module exists at all.
 from alphacouncil.notify.webhook import ChannelConfig, send_webhook
+from alphacouncil.providers import _baostock as baostock_session
 from alphacouncil.storage import migrate
 from alphacouncil.storage.repositories import notifications as repository
 
@@ -360,7 +366,7 @@ class TestTheChannel:
         """
         from alphacouncil.providers import financial
 
-        assert webhook._MIN_INTERVAL_S != financial._MIN_INTERVAL_S
+        assert webhook._MIN_INTERVAL_S != baostock_session.MIN_INTERVAL_S
         assert webhook._GATE is not getattr(financial, "_GATE", object())
 
     def test_a_broken_channel_stops_being_tried(self, client: _Client) -> None:

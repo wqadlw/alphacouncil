@@ -216,14 +216,28 @@ CONSTRUCTION_SITES: frozenset[Path] = frozenset(
     {
         Path("core/http.py"),  # the one place an HTTP client is constructed
         Path("notify/email.py"),  # the one place an SMTP session is opened
-        # ⭐ `providers/financial.py` (spec 043) is here for a reason the other two are
-        # not: it never calls a transport API, it **imports a library that opens one**.
+        # ⭐⭐ `providers/_baostock.py` (spec 052 §12.1) is here for a reason the other two
+        # are not: it never calls a transport API, it **imports a library that opens one**.
         # `bs.login()` is what opens the socket, and that happens inside BaoStock. Naming
-        # the module here is the *only* way the rule can see it at all -- ⭐ and it is a
-        # declaration, not a derivation: nothing verified that this file is the sole
-        # importer of `baostock`, which is the gap `NETWORK_MODULES_ARE_MAINTAINED_BY_HAND`
-        # admits to.
-        Path("providers/financial.py"),
+        # the module here is the *only* way the rule can see it at all.
+        #
+        # ⭐⭐ **And the extraction made the sentence above true rather than merely
+        # caveated.** The comment used to read 「nothing verified that this file is the
+        # sole importer of `baostock`, which is the gap `NETWORK_MODULES_ARE_MAINTAINED_BY_
+        # HAND` admits to」 ⭐ — and the plan for a *second* provider (a universe source)
+        # would have made the gap real, because a second module importing `baostock` would
+        # have to be added here too and nobody would have checked whether a third appeared.
+        #
+        # ⇒ Instead: **one module imports `baostock`, and every provider goes through it.**
+        # `providers/financial.py` and `providers/universe.py` will both hold the session,
+        # the throttle and the resultset cursor, and neither names the library. ⭐ So the
+        # count below stays at four, and 「sole importer」 is now a fact about the tree
+        # rather than a hope about it.
+        #
+        # ⚠️ **That also means a provider that wants its own socket has to add itself here**,
+        # and the test's `len(sites) <= 4` ceiling is what will say no ⭐ which is the right
+        # place for that argument to happen.
+        Path("providers/_baostock.py"),
     }
 )
 

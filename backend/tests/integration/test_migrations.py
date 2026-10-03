@@ -982,8 +982,12 @@ class TestTheVersionNumberItself:
         assert versions == list(range(1, len(versions) + 1)), (
             f"migration versions are not contiguous from 1: {versions}"
         )
-        assert versions[-1] == 12, (
-            f"the newest migration is {versions[-1]}, not 12. "
+        # 12 -> 13 on 2026-10-03 (spec 052 · index universe). ⭐ This number is meant to be
+        # edited by hand ⭐ **and the only thing that makes it trustworthy is that editing
+        # it is visible.** It went red the moment migration 0013 landed, which is the
+        # assertion working: a number nobody had to touch would be a number nobody checked.
+        assert versions[-1] == 13, (
+            f"the newest migration is {versions[-1]}, not 13. "
             "If that is intended: bump this number, and check that the release notes "
             "and .ai/status.md agree with it."
         )
