@@ -152,6 +152,28 @@ APPEND_ONLY_TABLES = frozenset(
         # that the row cannot be removed either: un-promoting would leave a card
         # whose declared origin no longer exists.
         "lesson_promotions",
+        # index_constituents (spec 052): the first table here that holds **neither a
+        # ledger nor anything the reader wrote nor anything about the market** — it
+        # holds *a fact about the world, at the resolution the source publishes it*.
+        # ⭐ And the reason it cannot be rewritten is the sharpest version of the
+        # `financial_reports` argument: an `UPDATE` here does not look like editing a
+        # note, it looks like **correcting a roster**. The failure is not 「somebody
+        # tampered with the past」 ⭐ **it is that a quietly-corrected roster produces a
+        # perfectly plausible wrong answer about who was in an index**, which is the
+        # one question this product's own PIT tables exist to answer.
+        #
+        # ⭐ The `UPDATE` temptation is specifically large here, and that is why the
+        # trigger message says 「上次扫错了就再扫一次」: a re-scan is a **new
+        # observation** with its own `fetched_at` in the primary key, so the honest
+        # repair exists and does not require an overwrite.
+        "index_constituents",
+        # index_universe_sweeps (spec 052): the same argument, one level up, and a
+        # **stronger** one. Its rows are not facts about the index ⭐ **they are facts
+        # about what we knew and when** — 「我们知道的最后一天」. ⭐ Editing a row here
+        # turns 「我们当时就知道」 into 「我们当时还不知道」 after the fact, ⭐ which is
+        # the one thing `data-sources.md:137` calls a 僵尸报价 in a different costume:
+        # silence, no error, and a reader who cannot tell.
+        "index_universe_sweeps",
     }
 )
 

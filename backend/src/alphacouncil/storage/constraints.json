@@ -336,6 +336,32 @@
         "watchlist_events_supersedes_check": "conditional_required",
         "watchlist_events_occurred_at_check": "identity"
       }
+    },
+    "index_constituents": {
+      "append_only": true,
+      "constraints": {
+        "index_constituents_index_check": "enum",
+        "index_constituents_symbol_check": "enum",
+        "index_constituents_code_check": "required",
+        "index_constituents_name_check": "required",
+        "index_constituents_first_observed_on_check": "identity",
+        "index_constituents_last_observed_on_check": "identity",
+        "index_constituents_window_check": "comparison",
+        "index_constituents_vendor_update_date_check": "identity",
+        "index_constituents_fetched_at_check": "identity",
+        "index_constituents_observed_before_fetched_check": "comparison"
+      }
+    },
+    "index_universe_sweeps": {
+      "append_only": true,
+      "constraints": {
+        "index_universe_sweeps_index_check": "enum",
+        "index_universe_sweeps_grid_point_check": "identity",
+        "index_universe_sweeps_members_positive_check": "comparison",
+        "index_universe_sweeps_failures_check": "comparison",
+        "index_universe_sweeps_grid_before_fetched_check": "comparison",
+        "index_universe_sweeps_fetched_at_check": "identity"
+      }
     }
   }
 }

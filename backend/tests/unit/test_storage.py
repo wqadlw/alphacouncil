@@ -568,13 +568,26 @@ class TestTheLedgerMatchesTheSchema:
         #                   declared-table filter exists)
         #   0009 +21 = 127  (spec 028 · note_schedule 8 · note_reviews 13, of which
         #                   two pairs are the note-specific `reset` guards)
+        #   0010 +29 = 156  (spec 030 · lessons 8 · lesson_schedule 6
+        #                   · lesson_reviews 14 · lesson_promotions 1)
+        #   0011 +8  = 164  (spec 043 · financial_reports, eight named CHECKs)
+        #   0012 +4  = 168  (spec 044 · notifications_sent, four named CHECKs)
+        #   0013 +16 = 184  (spec 052 · index_constituents 10
+        #                   · index_universe_sweeps 6)
+        #
+        # ⚠️⭐ 0010 and 0012 were **guessed** the first time this note was extended —
+        # "+24" and "+9" ⭐ **and measuring them gave 29 and 4.** This comment has
+        # already failed exactly the way the paragraph below describes, one commit
+        # after saying it must not. ⭐ The fix is not careful typing; it is that the
+        # numbers came from `CONSTRAINT <name>` counted per file, which is also how
+        # the assertion above extracts them.
         #
         # 0007 also **widened the category set** by two — `forbidden_value` and
         # `referential` — because two of its constraints match none of the
         # original seven. Filing them under a near-miss would have made the
         # ledger wrong rather than merely incomplete, which is the worse failure
         # precisely because it is invisible.
-        assert len(bodies) == 168, f"expected 168 named constraints, found {len(bodies)}"
+        assert len(bodies) == 184, f"expected 184 named constraints, found {len(bodies)}"
 
     def test_every_constraint_uses_a_declared_category(self) -> None:
         for table, constraints in _ledger_constraints().items():

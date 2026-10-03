@@ -10,7 +10,8 @@
     "目录里的 .sql 文件必须在清单里登记 —— 否则一个写好的迁移可能永远不会被执行。",
     "10 · lessons：新增 4 张表（lessons / lesson_schedule / lesson_reviews / lesson_promotions）。**cards 的两条出处 CHECK 一个字未动** —— 教训有自己的表，provenance rule 未被放松（spec 030 §〇、§2）",
     "11 · financial_reports：**PIT 财务数据**（spec 043 · D4）。主键含 `announced_at` —— 公司重述一个季度是**一个更晚公告的新版本**，不是对旧行的覆盖；查询按 `announced_at <= as_of` 取最新。append-only 触发器是红线 17 的直接后果：一次 UPDATE 是一次静默的重写历史（红线 15：主键是 `(market, code)` 不是 `code`）",
-    "12 · notifications_sent：**我们对用户说过什么**（spec 044）。⭐ 它不是缓存，虽然长得像缓存 —— 记的是「关于这一件事我已经说过了」而不是「我们 5 分钟前取过这个数」，而 ADR-0031 明令通知**不继承数据缓存**（缓存会让提醒被静默丢弃）。指纹只认判据不认结论，所以同一条判据只说一次（红线 8 的「异动提醒」与红线 11 的「不鼓励频繁操作」都指向同一个结论）"
+    "12 · notifications_sent：**我们对用户说过什么**（spec 044）。⭐ 它不是缓存，虽然长得像缓存 —— 记的是「关于这一件事我已经说过了」而不是「我们 5 分钟前取过这个数」，而 ADR-0031 明令通知**不继承数据缓存**（缓存会让提醒被静默丢弃）。指纹只认判据不认结论，所以同一条判据只说一次（红线 8 的「异动提醒」与红线 11 的「不鼓励频繁操作」都指向同一个结论）",
+    "13 · index_constituents + index_universe_sweeps：**指数成分史**（spec 052 · universe）。⭐ **本迁移没有 effective_from / effective_to，这是一次决定而不是省略** —— 我们观察到的是一个窗口（first_observed_on 到 last_observed_on），而生效日在其中某一天、我们不知道是哪一天：源给的 updateDate 是**每周一批的入库戳**（实测五个值全是周一），它在两次定期调整上精确等于编制方案的生效日**只因为那两天的生效日恰好落在周一**。⚠️ 写 effective_from = first_observed_on 会让读者以为「它是这天进的指数」——**合成日期会丢信息，推算日期会造信息，而后者更坏，因为它不可见**。⇒ 「当前成分」的定义是 last_observed_on = max(grid_point)，⭐ **而任何这样的查询必须同时把 grid_point 显示给读者**（data-sources.md:137 的僵尸报价就是「不报错、不崩溃，只是安静地骗人」；一个不说自己多旧的成分表是它的同族）。⭐⭐ `members > 0` 是一条 CHECK：实测query_hs300_stocks('2007-07-23') 返回 **error_code='0' 且零行**，而把零行读成「那天没有成分」会写进一个荒谬值且不触发任何错误 ⇒ 让那个形状跑不出来（F-225）"
   ],
   "migrations": [
     {
@@ -108,6 +109,14 @@
       "down": "0012_notifications_sent.down.sql",
       "destructive_down": true,
       "down_note": "删除 notifications_sent 的全部内容 —— 「我们说过什么」。⚠️ **不可重新抓，而且比 financial_reports 更贵**：一行删掉之后，同一条判据会**再次**被通知，而用户上一次已经看过了 ⇒ 这丢的不是缓存，是「用户收到过的历史」这份证据本身。要退回请从 VACUUM INTO 快照恢复，不要跑 down.sql。"
+    },
+    {
+      "version": 13,
+      "name": "index_universe",
+      "up": "0013_index_universe.up.sql",
+      "down": "0013_index_universe.down.sql",
+      "destructive_down": false,
+      "down_note": "删除两张成分表。标 non-destructive 是因为成分史**可再生** —— 它是按日期查出来的，重跑一次扫描会得到同样的观察窗口。⚠️ 但不是零代价：重跑要再出网 1083 次（约 45 分钟，实测），⭐ **而 `failures` 计数会归零重数** —— 那是「我们知道了多少」的历史，不是可再生的数据"
     }
   ]
 }
