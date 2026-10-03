@@ -453,3 +453,173 @@ adjustflag, turn, tradestatus, pctChg, isST
   **病因**：⭐ **「吻合」不是「定义」。** 一个字段在 N 个已知真值上都吻合，
   只说明它可能是那个量的一个代理；第 N+1 个样本（`2025-07-07`，一个非调整日）就推翻了它。
   ⇒ 判据从此是：⭐ **用来定量的字段，必须有一个样本能证伪它的定义，而不只是吻合。**
+
+
+---
+
+## §十二 执行计划（三路盘点 + 数据实测之后）
+
+> 这一节写在三份只读盘点（provider 协议层 / storage 仓库层 / 前端页面层）与两轮数据
+> 探针之后。⭐ **它推翻了 §五 与 §十-1 的两处次序**，理由在开头那一行。
+
+### ⭐ 计划的头号发现：一个缺口，而它决定了次序
+
+⚠️⚠️ **本仓目前不存在任何一条「provider 抛错 → HTTP 响应」的路。**
+
+| 层 | 行情路径 | 财务 / 成分路径 |
+|---|---|---|
+| provider 抛 `ProviderError` | ✅ | ✅ |
+| ⭐ 翻译成 `DataResult` | ✅ `sources.py:97-125` `_failure()` | ❌ **不存在** |
+| router 冷却 `_record()` 收 `DataResult` | ✅ | ❌ **收不到** |
+| API 边接住并给五键信封 | ✅ 恒 200，四态在 body 里 | ❌ → **Starlette 默认 500** |
+
+⚠️ 而 `api/errors.py:135` 的 `domain_failure()` 里 `getattr(exc, "code", None)` **本来就能用**
+——`ProviderError.code` 存在（`base.py:85`）。**缺的只是一个 handler。**
+
+⇒ **所以「先接 provider」是错的次序**：那样做出来的页面**无法报告源挂了**，
+而四态纪律（`ok` / `no_data` / `error` / `unavailable`）在这一条路上**一次都不会生效**。
+⇒ **§十二.2 是那个缺口，§十二.3 才是 provider。**
+
+### §十二.0 已完成
+
+| 项 | 证据 |
+|---|---|
+| 成分史扫描 759 个周一网格点（2006-01-02 → 2020-07-20） | 并集 **808** 只 · `sh 467` / `sz 341` |
+| ⭐ **沪深300 无北交所成分**（实测 `bj: 0`） | ⇒ §十-2 的答案是**关于世界的事实**，不是「没接线」 |
+| 双源互验：新浪历史成分表 243 个代码，重合 **234** | ⇒ 两个独立源互证时点性 |
+| 迁移 `0013` + `down` + manifest + constraints 台账 | 16 条 CHECK **逐条真跑过** |
+| `S-04` 的 `APPEND_ONLY_TABLES` 两张新表 | `test_storage.py` 63 过 |
+
+⚠️ **扫描停在 759/1083**：源开始返回 `WinError 10054`（连接被重置），连续 12 次失败后熔断。
+**不立刻重跑** —— `spec 043:133` 写的就是这件事。⇒ 剩下 324 个网格点等冷却后再取，
+断点续传已证明能接上。
+
+### §十二.1 先做，因为它决定后面所有重复
+
+**把 baostock 的私有解析层提出来。** 现状：`providers/financial.py:273-345` 的 `_rows()` /
+`_number()` / `_day()` / `_symbol()` 是**模块私有**且**与数据集无关**的纯函数。
+新文件要用它们只有三条路：复制（⭐ **两个家**，而这个仓库对「两个家」的容忍度是零）、
+改 `financial.py` 的纪律、或者提到 `providers/_baostock.py`。
+
+⇒ **选第三个。** 门禁：`mypy` + ruff + `test_financial_provider.py` 63 条**不许变红**。
+
+### §十二.2 ⭐ 补上 provider 错误到 HTTP 的那条路
+
+1. `api/errors.py`：把 `ProviderError` 接进 `_STATUS_BY_CODE` / `CODED_ERRORS`。
+   ⭐ 验收：`ProviderRateLimitedError` → **429**、`ProviderIpBlockedError` → 有理由的降级、
+   `ProviderEmptyError` → **四态里的 `no_data` 而非 500**。
+2. ⭐ **一条测试断言「provider 失败时 HTTP 状态码与 body 形状」** —— 因为现在一条都没有。
+3. ⭐ **不许把 provider 错误降级成 200**（那是行情路径已有的做法，
+   它成立是因为 `DataResult` 就是那个接口的返回类型；成分端点返回的是记录，不是 `DataResult`）。
+
+⚠️ **不做**：改 `DomainError` 的基类。`.ai/` 里记着「第五次这个 tuple 需要新 base」，
+而那次要的不是 domain base，是 provider base —— **`api/errors.py` 加一个 handler 就行**。
+
+### §十二.3 provider：第三个协议
+
+| # | 文件 | 做什么 | 漏了会怎样 |
+|---|---|---|---|
+| 1 | `providers/universe.py`（新） | `UniverseDataProvider` Protocol + `BaostockUniverse` | — |
+| 2 | `providers/router.py:386` | ⭐ **联合类型加第三个成员** —— 全仓**唯一一处**硬约束 | mypy 失败 |
+| 3 | `providers/router.py:150-158` / `:168-175` | 加 `universe=` 参数槽 + 赋值 | `AttributeError` |
+| 4 | `providers/router.py:395` | `_declarations()` 并入 | ⭐ **`/capabilities` 会说 `instruments` 是 `pending`，而那在 provider 存在时是假话** |
+| 5 | `checks/rules/no_raw_http.py:215-228` | 加 `Path("providers/universe.py")` | `test_static_checks.py:610-621` 当场红 |
+| 6 | ⭐ `providers/financial.py:164` | 那句中文「一个说行情的协议, 一个说财务的」**列了两种** | 无门禁，但它是「协议数」唯一的显式命名，而它会说谎 |
+| 7 | `providers/financial.py:3-10` | 模块 docstring「adding the other five is adding a **method**」 | 同上 |
+| 8 | `providers/__init__.py` | import + `__all__`（字母序）+ `default_router()` 注册 | `no_implicit_reexport` |
+
+⚠️ **三处盘点发现、spec 未记的**：
+
+- ⭐ **节流是两个模块各一份。** `_LOCK` / `_LOGGED_IN` / `_LAST_CALL` 是 `financial.py` 的
+  模块全局，新文件会是另一份 ⇒ **两个 provider 打同一个 socket 而节流不共享。**
+  ⇒ §六.1 的配额规矩必须因此重述：**节流是 per-module 的，不是 per-socket 的。**
+- ⚠️ **`BatchSemantics` / `supports_batch` 全仓零读者** —— 声明了，从未执行。
+  而 `base.py:47-48` 说 `COLLATERAL` 是「observed in the wild on **index-snapshot endpoints**」，
+  ⭐ **那个行为从未被实现。** ⇒ 新 provider 声明 `INDEPENDENT`（诚实），
+  并把那句 docstring 改成「声明了但目前无人执行」——这是本仓一贯做法。
+- ⚠️ **本端点的两个错误码不在 `_raise_for` 的表里**：`10004010`（日期格式）与 `10002007`
+  会落到裸 `ProviderError`。⇒ 成分端点要一张自己的码表，
+  且 **`10004010` 该映射到 `ProviderProtocolError` 而非 `ProviderEmptyError`** ——
+  ⭐ 「日期格式不对」不是「那天没有数据」。
+
+### §十二.4 能力矩阵三格
+
+`instruments × sh/sz` → `usable`；⭐ **`bj` 仍是 `pending`，而它的理由要从
+「no provider declares it yet」换掉** —— 因为沪深300 没有北交所成分是**关于世界的事实**。
+
+⚠️ 这要改 `router.py:256-258` 那个写死的 `reason` 字符串，并同步
+`test_capabilities_api.py:61` 与 `test_capability_matrix.py:96`。
+⭐ **更便宜且更诚实的替代**：沿用 `DATA_SOURCE_NOT_SUPPORTED` 的语义
+（`.ai/error-codes.md:65`：「该源**不声明**支持这个数据集或交易所（**未发请求**）」，severity=info）——
+不新增码，只在 `universe.py` 的 `notes` 里写明。**这是产品决定，标为待你点头。**
+
+### §十二.5 repository 与摄取命令
+
+1. `storage/repositories/universe.py`：`current_members(as_of)` / `intervals(symbol)` /
+   `sweep_status()` / `record(...)`。
+   ⭐ **返回约定照 `financial.py`：空集合表示「确实没有」，异常表示「坏了」，
+   永不返回 `[None]`。**
+2. ⭐ **摄取命令的形状（§六.1 四条 + §6.3 三条）**：配额上限 · 按最近在指数里的优先 ·
+   失败不写行 · 不做调度器 · provider 层设读超时且设不成功要说「此处无法监督」 ·
+   断点续传是监督的前提。
+3. ⭐ **必须是 `dev.py` 的新命令**，不是界面按钮 —— 理由是 `§4.5` 与 `spec 043:133`，
+   而**配额是让它跑不出那条禁令的结构**。
+
+### §十二.6 API 与那句必须上屏的话
+
+⚠️ **`grid_point` 必须与「当前成分」同屏。** 五个先例里
+`KlineChart.tsx:371-375` 最全（区间 + 来源 + **这个源不提供什么**），
+`TodayPage.tsx:84-88` 最接近新鲜度页眉（**并提前反驳误读**：「这不是故障，也不是过期的数据」）。
+
+⚠️ **没有共享组件** —— 五个先例各自内联。⇒ 要么一次收敛成一个
+`FreshnessLine.tsx`，要么**明确写下为什么还没有**（这个仓库对「两个家」零容忍）。
+
+⚠️ **那句「周分辨率、至多 7 天滞后」是产品句子，不是 error envelope** ——
+`api.ts:731-736` 说 `message` 是服务端的原话、前端不翻译，
+所以这句话要另找地方说，不能塞进 `ApiError`。
+
+### §十二.7 前端页面
+
+⭐⭐ **唯一的静默失败面：`App.tsx:167` 的六个并列三元。**
+加了 `ROUTES` 一行而忘了它 ⇒ 导航 / ⌘K / `document.title` 全对，`#/universe` 画一个空
+frame，**零红**。⚠️ 而这正是 `F-211` / `regressions/0005` 那个形状，
+**它已经被修过一次，修在 `routing.ts:212-219`** —— 同仓库、同类问题、第二次没被应用。
+
+⇒ **所以这一条不做「照抄三元」，而做 `Record<RouteName, ReactNode>`。**
+⭐ 那让「加了路由忘了页面」从零红变成**编译错**，而这正是 `F-211` 当初要求它的理由。
+
+| # | 文件 | 做什么 |
+|---|---|---|
+| 1 | `src/routing.ts:54` + `:93-105` | union 加成员 + `ROUTES` 加一行 |
+| 2 | `src/components/ui/Icon.tsx:69-78` | 注册图标（否则 `RouteDef.icon` 编译红） |
+| 3 | ⭐ `src/App.tsx` | import + **改成 `Record<RouteName, ReactNode>`** |
+| 4 | `src/UniversePage.tsx` | 新页面 |
+| 5 | `src/api.ts` | 类型镜像 + 函数。⚠️ **必须写在 `api.ts`** —— `S-17` 只扫 `api.ts` / `notes.ts` / `lessons.ts`，另建一个 `src/universe.ts` 客户端则**门禁扫不到** |
+| 6 | `backend/checks/rules/no_enum_drift.py:86-89` | 那句 `"the five entries of ROUTES"` 会变成假的 |
+
+⚠️ **宪法边界的唯一技术杠杆是「不给 `sortValue`」** —— `DataTable` 内建排序，
+不给 `sortValue` 的列就彻底不出现排序控件。
+⭐ 而 `PoolPage.tsx` 有四个 `sortValue`，⇒ **universe 表一列都不该有**，
+并抄 `PoolPage.tsx:574-580` 的页脚体例 + 一条 e2e 断言。
+
+⚠️ **`notesContract.test.ts` 是唯一的字段级前端契约检查先例** ——
+因为 `S-16` 只比枚举、不比字段，⇒ **新 Pydantic model 的字段漏写会全绿**
+（vitest / Playwright / tsc / `S-17` / `S-16` 全部绿）。
+
+### §十二.8 门禁与变异
+
+| 变异 | 期望 |
+|---|---|
+| 把 `_declarations()` 漏掉第三个列表 | ⭐ `/capabilities` 说谎 ⇒ `EXPECTED_STATES` 红 |
+| 把「失败不写行」改成「失败写空集」 | `members > 0` CHECK 红 |
+| 把 `_candidates` 加上 universe 列表 | `test_capability_matrix.py:244-255` 那条契约红 |
+| 把 `App.tsx` 的 `Record` 退回三元 | ⭐ **「加了路由忘了页面」重新变成零红** —— 变异要证明新形状真的挡住了 |
+| 把 `grid_point` 从响应里删掉 | e2e 的新鲜度断言红 |
+
+### §十二.9 仍然悬着、需要你点头的三件
+
+1. ⭐ **`instruments × bj` 的 reason 形状**（§十二.4）—— 改 `router.py` 那个写死的字符串
+   并同步两处测试，还是沿用 `DATA_SOURCE_NOT_SUPPORTED` 的语义不动字符串。
+2. ⚠️ **`FreshnessLine.tsx` 要不要一次收敛五个先例** —— 收敛是干净的，
+   不收敛要写下「为什么还没有」，因为这个仓库对两个家零容忍。
+3. ⚠️ **`baostock` 加进 `pyproject.toml` 的 `dependencies`** —— §十-4 已报备，等一句确认。
