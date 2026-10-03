@@ -145,6 +145,14 @@ class MetricStateRead(BaseModel):
             "known period and never an estimate of the next one."
         ),
     )
+    period_end: str | None = Field(
+        default=None,
+        description=(
+            "⭐ The report period this value summarises. Meaningful only for a reported"
+            " figure — a price fact has none, and `period` (how many bars) is a"
+            " different question that happens to share the word."
+        ),
+    )
 
 
 class AttentionRead(BaseModel):

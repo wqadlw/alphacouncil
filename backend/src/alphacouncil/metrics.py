@@ -43,7 +43,7 @@ own record that nobody checked.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
@@ -119,6 +119,17 @@ class MetricStatus(StrEnum):
     #:
     #: ⇒ So the reading carries the **latest period we knew** rather than a date to wait for.
     NOT_ANNOUNCED = "not_announced"
+    #: ⭐⭐ **The report for that period was announced, and it does not carry
+    #: this figure.** Not `NOT_ANNOUNCED`, which would be a lie: the report is out.
+    #:
+    #: ⚠️ Measured, not imagined: `_number` (`providers/financial.py:292-298`)
+    #: turns `"--"`, `""` and `"n/a"` into `None`, and the schema's eight figure
+    #: columns are all nullable. The same docstring already carries the rule this
+    #: state exists to keep: 「a company that reported nothing did not report zero」.
+    #:
+    #: ⭐ **And no promise at all** — not even the cautious one `NOT_ANNOUNCED` makes.
+    #: A `--` is how a company says the number is undefined, so it may never appear.
+    NOT_REPORTED = "not_reported"
     #: ⚠️ **今天还没有生产路径能返回它**(spec 051 的前半段,2026-10-02)。
     #: `read_metric()` 只有四个返回:
     #: UNKNOWN_METRIC / NO_BARS / WARMING / OK。
@@ -294,7 +305,56 @@ def catalogue_labels() -> dict[str, str]:
     return {**prices, **reported}
 
 
-def read_metric(metric: str, bars: Sequence[Quote]) -> MetricReading:
+def _read_reported(
+    entry: _FinancialEntry, row: Mapping[str, object] | None
+) -> MetricReading:
+    """⭐ The three answers a stored report can give, and **no more than three**.
+
+    Cutoff-agnostic on purpose: the row is whatever the caller decided to hand over, and
+    ⛔ which row that is — today's knowledge or the reader's — is the route's decision, not
+    this function's. Baking either one in here would make the other impossible to test.
+
+    1. **No row** → `NOT_ANNOUNCED`, and no period to name — nothing was known by the cutoff.
+    2. **Row, figure present** → `OK`, with the period attached, because a reported figure is
+       meaningless without the period it summarises (`research.md` §8).
+    3. **Row, figure absent** → `NOT_REPORTED`, with the period attached, because the report
+       *was* announced and saying otherwise would be a lie about a fact we hold.
+    """
+    label, column = entry
+    if row is None:
+        return MetricReading(
+            status=MetricStatus.NOT_ANNOUNCED,
+            value=None,
+            as_of=None,
+            label=label,
+            period=None,
+            grain=MetricGrain.PERIOD,
+            period_end=None,
+            latest_announced_period_end=None,
+        )
+
+    period_end = row.get("period_end")
+    period = period_end if isinstance(period_end, str) else None
+    raw = row.get(column)
+    value = raw if isinstance(raw, float | int) else None
+    return MetricReading(
+        status=MetricStatus.OK if value is not None else MetricStatus.NOT_REPORTED,
+        value=float(value) if value is not None else None,
+        # ⚠️ `as_of` stays `None`: for a price reading it is 「the bar the value came
+        # from」, and there is no bar here. The two dates this reading carries are `period_end`
+        # (which period) and, on `NOT_ANNOUNCED`, the latest period we did know.
+        as_of=None,
+        label=label,
+        period=None,
+        grain=MetricGrain.PERIOD,
+        period_end=date.fromisoformat(period) if period is not None else None,
+        latest_announced_period_end=None,
+    )
+
+
+def read_metric(
+    metric: str, bars: Sequence[Quote], *, financial: Mapping[str, object] | None = None
+) -> MetricReading:
     """Read one metric off a series of daily bars.
 
     ⭐ The order of the three early returns is the whole design. An unknown name is
@@ -302,6 +362,9 @@ def read_metric(metric: str, bars: Sequence[Quote]) -> MetricReading:
     that might return something plausible for it.
     """
     entry = CATALOGUE.get(metric)
+    reported = FINANCIAL_CATALOGUE.get(metric)
+    if reported is not None:
+        return _read_reported(reported, financial)
     if entry is None:
         return MetricReading(
             status=MetricStatus.UNKNOWN_METRIC,

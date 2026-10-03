@@ -29,6 +29,7 @@
 | [0022](0022-a-static-join-accused-the-whole-frontend.md) | 一个静态对拍报「几乎全坏」，那是在说它自己 | P3 | ✅ 已修 · `S-17` 已加 · 变异 M1–M4 与 M5a/M5b 已确认 · 自检（`PLAUSIBILITY_FLOOR`）已加 | 2026-10-02 |
 | [0023](0023-a-gate-called-its-own-scanner-a-code-defect.md) | 一条门禁把自己的扫描器误报成代码缺陷 | P3 | 已修 · `S-16` 学会了带注释的 union | 
 | [0024](0024-a-derivation-used-once-means-the-substitution-missed.md) | 一个只出现一次的模块级名字，是「替换没发生」的证据 | P2 | 已修 |
+| [0025](0025-symptom-gone-is-not-cause-handled.md) | 症状消失和病因处理了是两句话 | P2 | 已修 |
 
 ### 第 14 轮（spec 048，2026-10-02）：**缺口不是「按钮」，是「读」**
 

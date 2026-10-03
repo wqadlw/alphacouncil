@@ -88,6 +88,13 @@ class CriterionVerdict(StrEnum):
     #: `research.md` §四: the period is the x-axis and the cutoff is the lens, so a reader who is
     #: told only 「it has not been announced」 learns nothing they can act on.
     NOT_ANNOUNCED = "not_announced"
+    #: ⭐⭐ **The report came out and it does not carry this figure.**
+    #: ⚠️ **A fifth kind of 「we do not know」, and the only one with no remedy at
+    #: all**: `NOT_ANNOUNCED` resolves when the next report lands, `WARMING` when the
+    #: next bar does, and 「the company wrote `--`」 resolves when nothing does. So its sentence
+    #: states two facts — which period was announced, and that this figure is not in
+    #: it — and stops.
+    NOT_REPORTED = "not_reported"
     #: ⚠️ 与 `MetricStatus.NOT_ANNOUNCED` 同状:**已声明、未可达**(2026-10-02)。
     #: 它有句子、有前端镜像、有路由映射,但**没有任何读数路径会产生它**。
     #: → 接线完成后这两行必须删掉;留着就是在说谎。
@@ -143,6 +150,7 @@ _VERDICT_FOR_STATUS: dict[MetricStatus, CriterionVerdict] = {
     MetricStatus.UNKNOWN_METRIC: CriterionVerdict.UNDETERMINED,
     MetricStatus.NO_BARS: CriterionVerdict.NO_BARS,
     MetricStatus.NOT_ANNOUNCED: CriterionVerdict.NOT_ANNOUNCED,
+    MetricStatus.NOT_REPORTED: CriterionVerdict.NOT_REPORTED,
 }
 
 

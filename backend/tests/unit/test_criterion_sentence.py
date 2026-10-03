@@ -446,6 +446,9 @@ class TestNoRecommendationVocabularyExists:
             # no_boolean_state` turns red on a field called `has_announced`, and this one
             # carries the date the reader can act on instead of a bit about it.
             "latest_announced_period_end",
+            # ⭐ period_end — the span a reported figure summarises. It could not
+            # go in period, which means bars; that is why metrics.py carries a grain.
+            "period_end",
         }
 
 

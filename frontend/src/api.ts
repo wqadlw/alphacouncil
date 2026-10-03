@@ -537,6 +537,11 @@ export type MetricState =
   | 'undetermined'
   | 'no_bars'
   | 'not_announced'
+  // ⭐⭐ `not_reported` — the report came out and does not carry this figure.
+  // ⚠️ **It is not `not_announced`**: that one resolves when the next report lands.
+  // This one has no remedy — `--` is how a company says the number is undefined — so
+  // the screen must not imply a date. (`S-02`: a `has_*` field here would be red.)
+  | 'not_reported'
 
 export interface MetricReading {
   state: MetricState
@@ -562,6 +567,13 @@ export interface MetricReading {
    * does not keep.
    */
   bars_available: number | null
+  /** ⭐ The latest report period that *had* been announced when this period had
+   *  not. Meaningful only for `not_announced`, and it is a fact rather than a flag
+   *  (`S-02` would be red on a `has_*` name here). */
+  latest_announced_period_end: string | null
+  /** ⭐ The report period this value summarises. `period` above is a
+   *  different question that happens to share the word: how many *bars* it needs. */
+  period_end: string | null
 }
 
 export interface AttentionItem {

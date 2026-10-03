@@ -256,11 +256,11 @@ def _without_comment_lines(text: str) -> str:
     about the scanner. The body pattern closes on 「a newline not followed by `|`」, and a
     `//` line satisfies that, so everything after the first comment was invisible.
 
-    ⚠️ **Whole-line only, and deliberately.** A trailing comment on a value's own line
-    would still truncate, and fixing that needs comment positions rather than comment
-    lines — which is a bigger change than the shape warrants. ⇒ This handles the case
-    people actually write (a comment block between the values) and says so, rather than
-    pretending to handle the rest.
+    ⚠️ **Whole-line comments, and that turns out to be enough.** A *trailing*
+    # comment on a value’s own line (| 'a' // why) does not truncate the body either,
+    # because the literals are read out of the quoted text rather than by splitting on
+    # |. An earlier version of this docstring claimed the opposite and the claim was
+    # wrong; 	est_a_trailing_comment_is_not_a_hazard exists so it cannot come back.
 
     ⚠️ String state is tracked because `//` inside a string is not a comment and a naive
     stripper would delete the rest of the line — turning a passing file into one that looks
@@ -270,7 +270,22 @@ def _without_comment_lines(text: str) -> str:
     quote: str | None = None
     for line in text.splitlines():
         stripped = line.strip()
-        in_string = False
+
+        # ⭐⭐ **The prefix test comes first, and that ordering is the whole fix.**
+        # A line that opens with `//` or `#` is a comment, and nothing inside a comment can
+        # change the scanner's state — a backtick in prose is a backtick, not a delimiter.
+        # Testing it after the string scan is what made this miss: a comment containing
+        # backticks left `quote` set, and from there every line counted as inside a string
+        # (`0025`).
+        if stripped.startswith(("//", "#")):
+            # ⭐ **Dropped, not blanked.** Blanking leaves an empty line, and the union
+            # pattern closes on 「a newline not followed by `|`」 — so a *blank* line
+            # truncates the body exactly as a comment does. ⭐ That is why the first version
+            # of this helper looked like it worked and did not: it was only ever exercised
+            # after the comment had been moved out of the union by hand, so the fix itself
+            # was never tested. `regressions/0025`.
+            continue
+
         j = 0
         while j < len(line):
             char = line[j]
@@ -283,10 +298,6 @@ def _without_comment_lines(text: str) -> str:
             elif char in "'\"`":
                 quote = char
             j += 1
-        _ = in_string
-        if (not quote and stripped.startswith("#")) or (not quote and stripped.startswith("//")):
-            out.append("")
-            continue
         out.append(line)
     return "\n".join(out)
 

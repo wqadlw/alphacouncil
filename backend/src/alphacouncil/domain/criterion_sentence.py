@@ -97,6 +97,12 @@ class MetricFacts:
     #: 无为 `None` 时句子退化为「还没公告」而不是「没拿到过任何一期」,
     #: 因为后者意味着我们从未开始记过这只股票。
     latest_announced_period_end: str | None = None
+    #: ⭐ The report span a `PERIOD` reading summarises, as ISO. `None` for a price
+    #: fact. ⚠️ It cannot go in `period`, which means **bars** — and that is the
+    #: ⭐ The report span a `PERIOD` reading summarises, as ISO. `None` for a price
+    #: fact. ⚠️ It cannot go in `period`, which means **bars** — and that is the
+    #: whole reason `metrics.py` carries a grain tag.
+    period_end: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,6 +248,20 @@ def sentence_for(facts: MetricFacts) -> Sentence:
             )
             return Sentence(
                 verdict=f"{head}这条判据暂时没有被求值",
+                crossed=False,
+                adjudicable=False,
+            )
+        case "not_reported":
+            # ⚠️ ⭐ **这一支不能说时间。** 与 `not_announced` 不同:那一支不能办原因是
+            # 公告滞后实测 25 / 46 / 93 天;这一支不能办的原因是
+            # **`--` 意味着这个数定义不了,它可能永远不出现** ——
+            # 所以里面只说两件已经发生的事,一件次次都不给。
+            period = facts.period_end or "报告期"
+            return Sentence(
+                verdict=(
+                    f"观察期已到——{facts.label} 那一期（{period}）已公告，"
+                    "但里面没有这个数，这条判据暂时没有被求值"
+                ),
                 crossed=False,
                 adjudicable=False,
             )
