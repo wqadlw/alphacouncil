@@ -52,6 +52,7 @@ from alphacouncil.domain.trading import (
 )
 from alphacouncil.models.market import AssetType, DataStatus, Market, Quote, Symbol
 from alphacouncil.storage.repositories import decisions as decision_repository
+from alphacouncil.storage.repositories import financial as financial_repository
 from alphacouncil.storage.repositories import reviews as review_repository
 from alphacouncil.storage.repositories import scheduling as scheduling_repository
 
@@ -136,7 +137,7 @@ class MetricStateRead(BaseModel):
             "— the failure spec 038 found in the indicator layer, one layer down."
         ),
     )
-    latest_announced_period_end: str | None = Field(
+    latest_announced_period_end: date | None = Field(
         default=None,
         description=(
             "⭐ 截止日当时**已公告**的最新报告期**，仅对 `not_announced` 有意义。"
@@ -145,7 +146,7 @@ class MetricStateRead(BaseModel):
             "known period and never an estimate of the next one."
         ),
     )
-    period_end: str | None = Field(
+    period_end: date | None = Field(
         default=None,
         description=(
             "⭐ The report period this value summarises. Meaningful only for a reported"
@@ -289,6 +290,41 @@ def today(connection: DatabaseConnection, market_data: MarketData) -> TodayRead:
     # but 「it happens to be cached today」 is not a property the code can rely on, and
     # §4.5 treats repeated egress as the thing that gets the IP banned.
     bars_by_symbol: dict[Symbol, list[Quote]] = {}
+    # ⭐⭐ **Keyed by the cutoff as well as the symbol, and the extra key is
+    # load-bearing.** `bars_by_symbol` caches the *unfiltered* series and every criterion
+    # narrows it afterwards, so one fetch serves every cutoff. ⚠️ A reported figure cannot
+    # work that way: the query is `WHERE announced_at <= ?`, so a row read for one cutoff is
+    # **irreversibly filtered** and is *wrong* for another. Caching it under the symbol alone
+    # would hand the first criterion's knowledge to the second, and the symptom would be a
+    # confidently wrong verdict with no error anywhere — `S-08`'s shape.
+    reported_by_cutoff: dict[tuple[Symbol, date], dict[str, object] | None] = {}
+
+    def reported_for(symbol: Symbol, *, as_of: date) -> dict[str, object] | None:
+        """The latest report announced at or before ``as_of``, or ``None``.
+
+        ⭐ **A repository read, not a provider fetch**, and that is the point of the
+        step. `bars_for` may fetch live because a price's value *today* is well defined; a
+        reported figure's value on a past day is only defined by what had been announced
+        by then.
+        """
+        key = (symbol, as_of)
+        if key not in reported_by_cutoff:
+            # ★ Named `found`, not `row`: the enclosing loop binds `row` to a `DecisionRow`,
+            # and a local of that name resolves to it — which is what mypy said last time.
+            found = financial_repository.as_of(
+                connection,
+                market=symbol.market.value,
+                code=symbol.code,
+                # ⭐ A `date`, not its string form — and that is not style. Step 2
+                # made this parameter a `date`, so the old `.isoformat()` is now a
+                # **compile error** rather than a silent string comparison: it would
+                # still have sorted `2026-9-20` before `2026-09-20` and dropped a report.
+                as_of=as_of,
+            )
+            # Cached as ``None`` too, for the reason `bars_for` does it: one decision with
+            # four criteria must not ask the same question four times.
+            reported_by_cutoff[key] = found
+        return reported_by_cutoff[key]
 
     def bars_for(symbol: Symbol) -> list[Quote] | None:
         if symbol in bars_by_symbol:
@@ -320,8 +356,33 @@ def today(connection: DatabaseConnection, market_data: MarketData) -> TodayRead:
             # would have ended up in a second language the first time anything outside a
             # browser needed it.
             facts = MetricFacts(state=CriterionVerdict.NO_BARS, label=criterion.metric)
-            if bars is not None:
-                evaluation = evaluate(criterion, bars, as_of=today_date)
+            # ⭐ **The reader's cutoff, not today's date.** `decision.py:190-194` says
+            # ``as_of`` is a point-in-time cutoff, not a deadline, and the page passed
+            # ``today_date``, which made that sentence false. Judging a past decision with
+            # today's knowledge is hindsight bias (Vohs et al. 2012), and ⚠️ **a verdict that
+            # changes when a new report lands is not an update** — it is this record
+            # rewriting itself with no action from the reader.
+            cutoff = criterion.as_of
+            reported = reported_for(symbol, as_of=cutoff)
+            # ⭐ And the latest period we *did* know, for the two 「we don't know」
+            # sentences. ⚠️ **It is not the same question as 「this metric has no
+            # value」**, and `None` here means 「we knew nothing by this date」.
+            # ⭐ Narrowed through a local on purpose: mypy narrows the expression it was
+            # handed, and an index is not that expression — `isinstance(reported.get(..), str)`
+            # says nothing about `reported[..]`. Two indexes also read worse than one.
+            announced_period = reported.get("period_end") if reported is not None else None
+            latest_period = (
+                date.fromisoformat(announced_period)
+                if isinstance(announced_period, str)
+                else None
+            )
+            # ⚠️ `bars` alone was the gate, and a purely financial criterion on a halted
+            # or newly listed instrument would have been judged `no_bars` — a sentence about
+            # daily bars attached to a criterion that has none.
+            if bars is not None or reported is not None:
+                evaluation = evaluate(
+                    criterion, bars or [], as_of=cutoff, financial=reported
+                )
                 facts = MetricFacts(
                     state=evaluation.verdict,
                     label=evaluation.reading.label,
@@ -334,7 +395,17 @@ def today(connection: DatabaseConnection, market_data: MarketData) -> TodayRead:
                     # ⭐ No bars at all means there is nothing to count towards the
                     # period, so the count would be a fabrication.
                     period=evaluation.reading.period if evaluation.reading.as_of else None,
-                    bars_available=len(bars) if evaluation.reading.as_of else None,
+                    bars_available=(
+                        len(bars) if bars is not None and evaluation.reading.as_of else None
+                    ),
+                    period_end=(
+                        evaluation.reading.period_end.isoformat()
+                        if evaluation.reading.period_end
+                        else None
+                    ),
+                    latest_announced_period_end=(
+                        latest_period.isoformat() if latest_period else None
+                    ),
                 )
                 metric = MetricStateRead(
                     state=evaluation.verdict,
@@ -342,7 +413,11 @@ def today(connection: DatabaseConnection, market_data: MarketData) -> TodayRead:
                     value=evaluation.reading.value,
                     as_of=evaluation.reading.as_of,
                     period=evaluation.reading.period if evaluation.reading.as_of else None,
-                    bars_available=len(bars) if evaluation.reading.as_of else None,
+                    bars_available=(
+                        len(bars) if bars is not None and evaluation.reading.as_of else None
+                    ),
+                    period_end=evaluation.reading.period_end,
+                    latest_announced_period_end=latest_period,
                 )
             sentence = sentence_for(facts)
             attention.append(
