@@ -42,7 +42,7 @@ condition the reader wrote about their own record, arriving on the day it says i
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
@@ -166,10 +166,34 @@ def _bars_as_of(bars: Sequence[Quote], as_of: date) -> list[Quote]:
 
 
 def evaluate(
-    criterion: KillCriterion, bars: Sequence[Quote], *, as_of: date
+    criterion: KillCriterion,
+    bars: Sequence[Quote] = (),
+    *,
+    as_of: date,
+    financial: Mapping[str, object] | None = None,
 ) -> CriterionEvaluation:
-    """Evaluate one criterion against a series of daily bars, as of one day."""
-    reading = read_metric(criterion.metric, _bars_as_of(bars, as_of))
+    """Evaluate one criterion against one day's worth of knowledge.
+
+    ⭐ **Two sources, and which one answers is decided by the metric's name, not by the
+    caller.** A name in `CATALOGUE` reads bars; a name in `FINANCIAL_CATALOGUE` reads the
+    stored report row. They are different grains (`research.md` §8), so a row and a series
+    are not interchangeable and this function does not pretend they are.
+
+    ⭐ **`bars` defaults to empty on purpose.** A criterion like 「roe_avg < 0.2」 is entirely
+    financial and its instrument may have no bars at all — halted, newly listed, delisting.
+    Writing `[]` at the call site reads as 「no data」; the default says **not applicable**,
+    which `read_metric` does treat differently: a name in neither catalogue is
+    `unknown_metric`, and a financial name never reaches the bars branch at all.
+
+    ⭐ **`financial` is handed over, not chosen.** The row is whatever the caller decided a
+    reader on `as_of` could have known; deciding that here would make the other reading
+    untestable. It is the reader's cutoff, not today's date — judging a past decision with
+    today's knowledge is hindsight bias (Vohs et al. 2012), and spec 051 §11 records the
+    decision.
+    """
+    reading = read_metric(
+        criterion.metric, _bars_as_of(bars, as_of), financial=financial
+    )
     verdict = _VERDICT_FOR_STATUS[reading.status]
     # ⭐ Only an `ok` reading reaches the comparison. Every other status keeps its own
     # verdict, so 「we don't know」 can never fall through into 「it didn't hold」.
