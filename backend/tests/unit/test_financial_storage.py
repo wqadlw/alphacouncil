@@ -21,13 +21,18 @@ against a schema that had quietly thrown the whole point away.
 
 from __future__ import annotations
 
+import inspect
 import sqlite3
 from collections.abc import Iterator
+from datetime import date
 from pathlib import Path
 
 import pytest
 
+from alphacouncil.models.market import Market, Symbol
+from alphacouncil.providers.financial import FinancialPeriod
 from alphacouncil.storage import migrate
+from alphacouncil.storage.repositories import financial as storage
 
 pytestmark = pytest.mark.unit
 
@@ -602,3 +607,166 @@ def test_the_migration_files_are_both_listed() -> None:
 
     assert "0011_financial_reports.up.sql" in entries
     assert Path("src/alphacouncil/storage/migrations/0011_financial_reports.down.sql").exists()
+
+pytestmark = pytest.mark.unit
+SH = Symbol(market=Market.SH, code="600519")
+SOURCE = "fixture"
+def report(*, period_end: date, announced_at: date, roe_avg: float) -> FinancialPeriod:
+    """
+    One announced period. `roe_avg` is the only figure the tests below assert on.
+
+    ⚠️ `source` and `fetched_at` are **not** fields on `FinancialPeriod` — they are keyword-only
+    arguments to `insert()` (`repositories/financial.py:123-124`), because they describe the
+    *observation* rather than the reported period. ⭐ Guessing that shape was the first version
+    of this helper, and `TypeError` said so immediately.
+    """
+    return FinancialPeriod(
+        symbol=SH,
+        period_end=period_end,
+        announced_at=announced_at,
+        roe_avg=roe_avg,
+        np_margin=0.1,
+        gp_margin=0.3,
+        net_profit=1_000.0,
+        eps_ttm=1.5,
+        revenue=10_000.0,
+        total_shares=100.0,
+        float_shares=80.0,
+    )
+
+
+class TestTheCutoffIsADateAndNotAString:
+    """⭐ Pinned, because there is nothing else to test: the fix *is* the type."""
+
+    def test_as_of_takes_a_date(self) -> None:
+        parameters = inspect.signature(storage.as_of).parameters
+        assert parameters["as_of"].annotation == "date", (
+            "relaxing this back to `str` brings back 「2026-9-20 sorts before 2026-09-20」"
+        )
+
+    def test_the_wrapper_takes_a_date_too(self) -> None:
+        parameters = inspect.signature(storage.latest_announced_period).parameters
+        assert parameters["as_of"].annotation == "date"
+
+    def test_it_returns_a_date(self) -> None:
+        returns = inspect.signature(storage.latest_announced_period).return_annotation
+        assert returns == "date | None", "the sentence layer needs a period, not a string"
+
+
+class TestThePitReadSurvivesARestatement:
+    """⭐ The one test the clean path cannot replace."""
+
+    def test_a_restatement_does_not_reach_backwards(self, db: sqlite3.Connection) -> None:
+        """Same period, announced twice, and the earlier reader still sees the earlier number.
+
+        The gap between the two announcements is **93 days** because that is what
+        `providers/financial.py:373-374` measured for a 2024 annual report — so the dates are a
+        real measurement rather than a convenient fixture value.
+        """
+        first = storage.insert(
+            db,
+            report(period_end=date(2024, 12, 31), announced_at=date(2025, 3, 25), roe_avg=0.21),
+            source=SOURCE,
+            fetched_at="2025-03-25T00:00:00.000Z",
+        )
+        restated = storage.insert(
+            db,
+            report(period_end=date(2024, 12, 31), announced_at=date(2025, 6, 25), roe_avg=0.14),
+            source=SOURCE,
+            fetched_at="2025-06-25T00:00:00.000Z",
+        )
+        assert first and restated, "both versions must coexist; that is the schema's job"
+
+        # ⭐ The reader who looked on 2025-04-01 saw 0.21, and must still see 0.21.
+        before = storage.as_of(db, market="sh", code="600519", as_of=date(2025, 4, 1))
+        assert before is not None
+        assert before["roe_avg"] == pytest.approx(0.21)
+        assert before["announced_at"] == "2025-03-25"
+
+        # ⭐ And the reader who looked after the restatement sees the new number.
+        after = storage.as_of(db, market="sh", code="600519", as_of=date(2025, 7, 1))
+        assert after is not None
+        assert after["roe_avg"] == pytest.approx(0.14)
+        assert after["announced_at"] == "2025-06-25"
+
+    def test_the_restatement_is_a_leak_measured_as_a_difference(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """⭐ The `leak` column, stated as a number.
+
+        `research.md` §3: compute what the reader could have known and what we read today, and
+        report the difference. ⭐ **On a clean path that difference is zero** — which is why
+        this test needs the two rows above to exist before it means anything.
+        """
+        storage.insert(
+            db,
+            report(period_end=date(2024, 12, 31), announced_at=date(2025, 3, 25), roe_avg=0.21),
+            source=SOURCE,
+            fetched_at="2025-03-25T00:00:00.000Z",
+        )
+        storage.insert(
+            db,
+            report(period_end=date(2024, 12, 31), announced_at=date(2025, 6, 25), roe_avg=0.14),
+            source=SOURCE,
+            fetched_at="2025-06-25T00:00:00.000Z",
+        )
+
+        known = storage.as_of(db, market="sh", code="600519", as_of=date(2025, 4, 1))
+        latest = storage.as_of(db, market="sh", code="600519", as_of=date(2030, 1, 1))
+        assert known is not None and latest is not None
+        assert known["roe_avg"] is not None and latest["roe_avg"] is not None
+        leak = latest["roe_avg"] - known["roe_avg"]
+        assert leak == pytest.approx(-0.07)
+
+
+class TestTheLatestAnnouncedPeriod:
+    """⭐ The fact the `not_announced` sentence carries, as its own shape."""
+
+    def test_it_is_the_period_not_the_announcement_date(self, db: sqlite3.Connection) -> None:
+        """⚠️ Two different dates, and conflating them is the mistake this guards."""
+        storage.insert(
+            db,
+            report(period_end=date(2025, 12, 31), announced_at=date(2026, 3, 28), roe_avg=0.19),
+            source=SOURCE,
+            fetched_at="2026-03-28T00:00:00.000Z",
+        )
+        got = storage.latest_announced_period(
+            db, market="sh", code="600519", as_of=date(2026, 4, 1)
+        )
+        assert got == date(2025, 12, 31), "the period, not 2026-03-28"
+
+    def test_it_is_none_when_we_knew_nothing_yet(self, db: sqlite3.Connection) -> None:
+        """⚠️ `None` means 「we know nothing at this point」, not 「there is no data」."""
+        storage.insert(
+            db,
+            report(period_end=date(2025, 12, 31), announced_at=date(2026, 3, 28), roe_avg=0.19),
+            source=SOURCE,
+            fetched_at="2026-03-28T00:00:00.000Z",
+        )
+        early = storage.latest_announced_period(
+            db, market="sh", code="600519", as_of=date(2026, 1, 1)
+        )
+        assert early is None
+
+    def test_it_is_none_for_a_code_we_never_fetched(self, db: sqlite3.Connection) -> None:
+        absent = storage.latest_announced_period(
+            db, market="sh", code="000001", as_of=date(2030, 1, 1)
+        )
+        assert absent is None
+
+    def test_the_two_shapes_never_disagree(self, db: sqlite3.Connection) -> None:
+        """⭐ The wrapper is a view onto `as_of`, not a second query — so they must agree."""
+        storage.insert(
+            db,
+            report(period_end=date(2025, 12, 31), announced_at=date(2026, 3, 28), roe_avg=0.19),
+            source=SOURCE,
+            fetched_at="2026-03-28T00:00:00.000Z",
+        )
+        for cutoff in (date(2026, 1, 1), date(2026, 4, 1), date(2030, 1, 1)):
+            row = storage.as_of(db, market="sh", code="600519", as_of=cutoff)
+            period = storage.latest_announced_period(
+                db, market="sh", code="600519", as_of=cutoff
+            )
+            expected = None if row is None else row["period_end"]
+            actual = None if period is None else period.isoformat()
+            assert actual == expected, cutoff

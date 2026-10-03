@@ -235,7 +235,7 @@ class TestBothDatesSurvive:
                 conn, _period(), source="baostock", fetched_at="2026-09-29T00:00:00.000Z"
             )
             read_back = financial_repository.as_of(
-                conn, market="sh", code="600519", as_of="2025-06-01"
+                conn, market="sh", code="600519", as_of=date(2025, 6, 1)
             )
 
             assert written is True
@@ -278,10 +278,10 @@ class TestBothDatesSurvive:
             )
 
             before = financial_repository.as_of(
-                conn, market="sh", code="600519", as_of="2025-06-01"
+                conn, market="sh", code="600519", as_of=date(2025, 6, 1)
             )
             after = financial_repository.as_of(
-                conn, market="sh", code="600519", as_of="2025-09-01"
+                conn, market="sh", code="600519", as_of=date(2025, 9, 1)
             )
 
             assert before is not None and before["roe_avg"] == pytest.approx(0.24)
@@ -340,7 +340,7 @@ class TestBothDatesSurvive:
             answers = []
             for _ in range(5):
                 row = financial_repository.as_of(
-                    conn, market="sh", code="600519", as_of="2030-01-01"
+                    conn, market="sh", code="600519", as_of=date(2030, 1, 1)
                 )
                 assert row is not None
                 answers.append(row["roe_avg"])
@@ -417,7 +417,7 @@ class TestBothDatesSurvive:
 
             everything = financial_repository.history(conn, market="sh", code="600519")
             current = financial_repository.as_of(
-                conn, market="sh", code="600519", as_of="2030-01-01"
+                conn, market="sh", code="600519", as_of=date(2030, 1, 1)
             )
 
             assert [row["announced_at"] for row in everything] == [

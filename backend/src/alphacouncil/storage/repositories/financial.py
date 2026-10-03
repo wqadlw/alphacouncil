@@ -35,11 +35,19 @@ exists to reject would vanish instead of being refused, and nothing would log it
 from __future__ import annotations
 
 import sqlite3
+from datetime import date
 from typing import Any
 
 from alphacouncil.providers.financial import FinancialPeriod
 
-__all__ = ["apply_migrations", "as_of", "history", "insert", "open_database"]
+__all__ = [
+    "apply_migrations",
+    "as_of",
+    "history",
+    "insert",
+    "latest_announced_period",
+    "open_database",
+]
 
 _INSERT = """
 INSERT INTO financial_reports (
@@ -143,23 +151,66 @@ def insert(
     return True
 
 
+def _as_of_row(
+    connection: sqlite3.Connection, *, market: str, code: str, as_of: date
+) -> dict[str, Any] | None:
+    """⭐ **The one implementation** of ``announced_at <= as_of``.
+
+    Both public shapes below delegate here, per this module's own discipline that the
+    repository is the **only** place allowed to write that line.
+    """
+    row = connection.execute(_SELECT_PIT, (market, code, as_of.isoformat())).fetchone()
+    return None if row is None else dict(zip(_COLUMNS, row, strict=True))
+
+
 def as_of(
-    connection: sqlite3.Connection, *, market: str, code: str, as_of: str
+    connection: sqlite3.Connection, *, market: str, code: str, as_of: date
 ) -> dict[str, Any] | None:
     """⭐ **The PIT read.** The newest announcement at or before ``as_of``, or ``None``.
 
-    ⭐ ``market`` and ``code`` are separate keyword arguments rather than a
-    :class:`Symbol`, because that makes it impossible to call this with a symbol whose
-    venue came from nowhere. ⭐ ``as_of`` is a plain string on purpose: it is a *comparison
-    key*, and the schema's CHECKs already guarantee it parses, so re-parsing it here would
-    be a second place to disagree about what a date is.
+    ``market`` and ``code`` are separate keyword arguments rather than a :class:`Symbol`,
+    because that makes it impossible to call this with a symbol whose venue came from nowhere.
 
-    ⭐ ``None`` means 「we know nothing at this point」 — not 「there is no data」. That is
+    ⭐ **``as_of`` is a :class:`~datetime.date`, and it used to be a string.** The earlier
+    version argued for a string on purpose — 「the schema's CHECKs already guarantee it
+    parses, so re-parsing it here would be a second place to disagree about what a date
+    is」 — and ⚠️ **that argument rests on the CHECKs covering the parameter,
+    which they never did.** They cover the columns. Measured: ``"2026-9-20"`` was accepted,
+    sorts before ``"2026-09-20"``, and dropped a report from the result with no error
+    (`spec 051` §3.5). ⇒ **A type makes that unexpressible rather than rejected**, which
+    is stronger than a check, and it *answers* the original objection — there is now one
+    definition of a date and the signature names it.
+
+    ``None`` means 「我们在这个时点什么都不知道」, **not** 「没有数据」 — that is
     §4.6's ``no_data`` vs ``undetermined`` split, and a caller that cannot tell them apart
     will eventually report the second as the first.
     """
-    row = connection.execute(_SELECT_PIT, (market, code, as_of)).fetchone()
-    return None if row is None else dict(zip(_COLUMNS, row, strict=True))
+    return _as_of_row(connection, market=market, code=code, as_of=as_of)
+
+
+def latest_announced_period(
+    connection: sqlite3.Connection, *, market: str, code: str, as_of: date
+) -> date | None:
+    """⭐ **The latest report period that *had* been announced by ``as_of``**, or ``None``.
+
+    A different shape of answer from :func:`as_of`, on purpose: this is the *fact* the
+    ``not_announced`` sentence needs — 「你当时最新能看到的是 2025 年报」 —
+    rather than a row the caller has to know the third key of. ⭐ And **no new query**:
+    ``as_of`` already orders by ``announced_at``, and its row already carries ``period_end``.
+
+    ⚠️ It calls the **private** core. This function's parameter is also called ``as_of``,
+    so inside it that name resolves to the ``date`` rather than the query — a shadow that
+    ``mypy`` caught and nothing else in the toolchain did.
+
+    ⚠️ **``None`` keeps :func:`as_of`'s meaning**, 「我们在这个时点什么都不知道」,
+    **not** 「没有数据」.
+    And it is **not** the same ``None`` as 「这个指标那天没公告」 — the sentence layer keeps
+    those two apart, and this function's job is to hand it the fact rather than a boolean.
+    """
+    row = _as_of_row(connection, market=market, code=code, as_of=as_of)
+    if row is None:
+        return None
+    return date.fromisoformat(row["period_end"])
 
 
 def history(
