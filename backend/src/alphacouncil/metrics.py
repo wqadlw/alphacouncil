@@ -64,11 +64,35 @@ from alphacouncil.models.market import Quote
 
 __all__ = [
     "CATALOGUE",
+    "FINANCIAL_CATALOGUE",
     "MetricReading",
     "MetricStatus",
     "catalogue_labels",
     "read_metric",
 ]
+
+
+class MetricGrain(StrEnum):
+    """⭐ What one row of a reading measures, and it is **not** a decoration.
+
+    Two families share one catalogue. A price fact is a **point**: the value is what was true
+    on a day. A reported figure is a **span**: it summarises a period, so it is meaningless
+    without which period.
+
+    > Declare the grain — define exactly what a single row represents;
+    > **different grains must not be mixed in one table.**
+
+    ⚠️ That rule is why this is a tag rather than a nullable field. `MetricReading`
+    already carries `period` meaning 「how many bars」, and `criterion_sentence.py`
+    subtracts `bars_available` from it, so a report period dropped into that field would
+    produce 「还差 3 根日线」. ⭐ And the tag belongs **on the type**:
+    「which field is null」 is an inference, and an inference is how a sentence lies.
+    """
+
+    #: A point in time: the value is what was true on `as_of`.
+    POINT = "point"
+    #: A span: the value summarises `period_end`, so it has no meaning without it.
+    PERIOD = "period"
 
 
 class MetricStatus(StrEnum):
@@ -87,7 +111,7 @@ class MetricStatus(StrEnum):
     #:
     #: ⚠️ **Not `WARMING`, and the difference is the whole point.** `WARMING` counts
     #: *bars*, and 「还差 N 根日线才有值」 is a promise that resolves on its own — which is what
-# makes
+    #: makes
     #: it different from a shrug. This one has **no such promise**: the announcement lag was
     #: measured at 25 / 46 / 93 days (`providers/financial.py:372-377`), so ⭐ **any number
     #: here would be invented**. `spec 043:41-45` already overturned the vendor's
@@ -120,6 +144,16 @@ class MetricReading:
     #: of 「算不出来」 — a deferral with a date attached rather than a dead end. ``None``
     #: for a price fact, which needs exactly one bar and so never warms up.
     period: int | None
+    #: ⭐ Which grain this row is at. Defaults to `POINT` so the four existing construction
+    #: sites are correct **unchanged**, which is the cheapest proof the tag is not decorative.
+    grain: MetricGrain = MetricGrain.POINT
+    #: ⭐ The span a `PERIOD` row summarises. `None` for a `POINT` row, and ⚠️ **`None`
+    #: for a `PERIOD` row is a defect** — the two together are the value.
+    period_end: date | None = None
+    #: ⭐ The latest report period that *had* been announced, when the current one had not.
+    #: This is the fact `NOT_ANNOUNCED` exists to carry; without it the sentence would say
+    #: 「还没公告」 and the reader would not know what they could see.
+    latest_announced_period_end: date | None = None
 
 
 def _last(series: Sequence[Indicator]) -> Indicator:
@@ -221,10 +255,43 @@ CATALOGUE: dict[str, _CatalogueEntry] = {
     "bollinger_lower": ("布林下轨", 20, _bollinger_part("lower")),
 }
 
+#: ⭐ **The eight reported figures, at a different grain** (research.md §8). A second
+#: catalogue rather than a widened reader: `_CatalogueEntry`'s reader takes `Sequence[Quote]`,
+#: so widening it would touch all 24 existing readers, and ⚠️ **not one of them needs
+#: the second parameter.**
+#:
+#: The admission rule at the top of this module is **already satisfied** — each of these is a
+#: named field on `FinancialPeriod` (`providers/financial.py:114-153`). The rule was not waiting
+#: for an exception; it was waiting for this.
+#:
+#: The column is spelled out per entry instead of assumed equal to the name, because
+#: `revenue` is `MBRevenue` at the provider (`financial.py:441`): guessing works today and
+#: silently yields `None` the day the two names diverge.
+_FinancialEntry = tuple[str, str]
+
+FINANCIAL_CATALOGUE: dict[str, _FinancialEntry] = {
+    "roe_avg": ("ROE 平均", "roe_avg"),
+    "np_margin": ("销售净利率", "np_margin"),
+    "gp_margin": ("销售毛利率", "gp_margin"),
+    "net_profit": ("净利润", "net_profit"),
+    "eps_ttm": ("EPS 滚动十二个月", "eps_ttm"),
+    "revenue": ("营业收入", "revenue"),
+    "total_shares": ("总股本", "total_shares"),
+    "float_shares": ("流通股本", "float_shares"),
+}
+
+
 
 def catalogue_labels() -> dict[str, str]:
-    """``name → label`` for the frontend's picker. ⭐ A copy, not a live view."""
-    return {name: label for name, (label, _, _) in CATALOGUE.items()}
+    """``name -> label`` for the frontend's picker. ⭐ A copy, not a live view.
+
+    ⚠️ **It has no callers**, so a metric entering either catalogue does not reach a
+    picker. That is recorded rather than fixed here — whether a picker exists is a decision
+    about the reader, not about this function.
+    """
+    prices = {name: label for name, (label, _, _) in CATALOGUE.items()}
+    reported = {name: label for name, (label, _) in FINANCIAL_CATALOGUE.items()}
+    return {**prices, **reported}
 
 
 def read_metric(metric: str, bars: Sequence[Quote]) -> MetricReading:
