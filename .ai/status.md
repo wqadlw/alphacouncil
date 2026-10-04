@@ -79,10 +79,15 @@
 | **B1** | **D4 财务整栈零生产路径** —— spec 043 已交付，**只差没插** | `providers/__init__.py:24` 导出了它，`default_router():75-79` 不含它；`repositories/financial.py` 176 行零 import |
 | **B2** | **`audit_log` 表有 append-only 触发器、零写入者** —— 宪法 6.3 的审计轨迹是空的 | `0001_initial.up.sql:167,216-220`；而 `check_append_only_triggers.py:85` 强制这张表必须存在 |
 | **B3** | **卡片与决策的复习历史既无 API 也无界面** —— **笔记有** | `scheduling.py:402` / `reviews.py:198` 都在，零路由调用 ⇒ spec 028 的问题只在笔记那边修了一半 |
-| **B4** | **`check-data` 门禁声明 24 条检查、写了 0 条** ⇒ `dev.py check` 永远 INCOMPLETE | `dev.py:112-117, 288-292` |
+| **B4** | ⚠️ **`check-data` 声明 24 条检查、写了 0 条，而且它不在门禁清单里** —— 2026-10-04 实测：`dev.py:112-117` 有 `implemented=False`，⭐ **`dev.CHECK` 里没有它**（11 个名字，实测）⇒ **`dev.py check` 退出码 0，一句都不提** | `dev.py:112-117,159-173` |
 
-⚠️ **B4 是一个长期工程做成永久红的门禁**，而本仓自己的判断是
-**「长期工程做成永久红的门禁会训练所有人忽略汇总」** ⇒ 要么写，要么从门禁清单里删掉并说明理由。
+⚠️⚠️ **B4 的结论在 2026-10-04 被实测推翻了，而这一行原来写的是「⇒ `dev.py check` 永远 INCOMPLETE」。**
+`_summarise` 的 INCOMPLETE 分支（`dev.py:288-292`）只能对 `CHECK` 里的名字触发，⭐ 而 `check-data` 不在其中。
+⭐ **真正的洞比「门禁是红的」更坏：门禁是看不见的。** 红的门禁有人看见。
+
+⚠️ **同一个错误结论还写在 `.ai/memory/2026-10-02.md:186` 与 `.ai/logs/changes/2026-10-02-plan.md:95`。**
+⭐ 那两处在 `.ai/logs/` 与 `memory/` 下，受 `constitution.md:664`「台账只增不改」约束，⭐ **所以按规矩只能追加更正、不能就地改** ——
+⭐ **就地改会让台账不再能作为「当时 believed 什么」的证据，而那正是它存在的理由。**
 
 ## 〇之四、spec 050 收尾（2026-10-02）
 

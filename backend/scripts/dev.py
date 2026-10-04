@@ -154,8 +154,25 @@ GATES: dict[str, Gate] = {
     ),
 }
 
-# `check` is the CI gate set: everything, including the not-yet-written ones, so
-# the run cannot claim to be complete while gates are missing.
+# ⚠️⚠️ **This comment used to claim something false, and three ledgers repeated it.**
+#
+# It said: "`check` is the CI gate set: **everything, including the not-yet-written
+# ones**, so the run cannot claim to be complete while gates are missing."
+#
+# ⭐ **Measured 2026-10-04: `check-data` is in `GATES` and is NOT in `CHECK`.** So
+# `_summarise`'s INCOMPLETE branch (below) can only fire for names present here, and
+# `dev.py check` **exits 0 with `check-data` unimplemented**. Three ledgers
+# (`.ai/status.md`, `.ai/memory/2026-10-02.md`, `.ai/logs/changes/2026-10-02-plan.md`)
+# each concluded 「`check-data` 未实现 ⇒ **`dev.py check` 永远 INCOMPLETE**」 ⭐ — a
+# conclusion that reads like a self-policing mechanism and is false.
+#
+# ⚠️ **The real hole is not "the gate is red". It is that the gate is invisible.** ⭐
+# A gate that is absent from the list is worse than one that is red: red is noticed.
+# ⇒ Adding `check-data` here is the fix, and it is deliberately **not** done in this
+# commit ⭐ — writing it in would make `check` exit 1 forever, ⭐ and
+# `.ai/logs/changes/2026-10-02-plan.md:107-117` already ruled that ordering wrong:
+# **「先让漂移可见, 再修漂移」**. ⇒ Until the 24 checks exist, this list must be
+# accurate about what it does not run.
 CHECK: tuple[str, ...] = (
     "lint",
     "typecheck",

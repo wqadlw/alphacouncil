@@ -182,9 +182,24 @@ SAME_VALUES_DIFFERENT_MEANING: dict[str, str] = {
 #: lets a continuation line join the body; without it a multi-line union stops at its
 #: own first newline.
 #:
-#: ⭐ And it is probed rather than trusted: `tests/unit/test_static_checks.py` runs it
-#: against ten shapes, **two of which it must not match** (`type X = SomethingElse` and
-#: an `interface`).
+#: ⚠️⚠️ **This comment used to describe a probe that does not exist, and the mechanism it
+#: named was not the one doing the work.** It said: 「`tests/unit/test_static_checks.py`
+#: runs it against ten shapes, **two of which it must not match** (`type X =
+#: SomethingElse` and an `interface`)」.
+#:
+#: ⭐ **Measured 2026-10-04: zero hits.** `grep 'S-16|no_enum_drift'` in
+#: `test_static_checks.py` returns nothing, ⭐ and `test_enum_drift.py` has **no negative
+#: case at all** — its nine tests all assert a positive parse.
+#:
+#: ⚠️ And the guard is a different one from the one claimed. `type X = SomethingElse` is
+#: not kept out because the regex knows an alias from a union ⭐ — `LITERAL` finds zero
+#: literals in it and `:329-330` drops any union with fewer than two. ⭐ An `interface` is
+#: excluded only because `UNION` matches `type X =` and nothing else ⭐ — **true, and
+#: untested.**
+#:
+#: ⚠️⚠️ **The larger hole this comment was covering up: `run()` — the whole comparison
+#: half, `:347-515` — has no test that calls it.** ⭐ Nine tests of a scanner and none of
+#: the decision. Spec 053's `AC-6` exists because of this line.
 UNION = re.compile(
     r"^[ \t]*(?:export\s+)?(?:declare\s+)?type\s+(\w+)\s*=\s*"
     r"([^;]*?)(?:;|(?=\n(?![ \t]*\|))|\Z)",
