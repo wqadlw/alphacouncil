@@ -28,6 +28,7 @@ const VIEWS = [
   { hash: '#/pool', label: '关注池' },
   { hash: '#/review', label: '复习' },
   { hash: '#/retrospective', label: '复盘' },
+  { hash: '#/universe', label: '指数成分' },
 ]
 
 /** Enough fixtures that no view is left waiting on a 404 mid-assertion. */

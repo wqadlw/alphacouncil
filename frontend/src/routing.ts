@@ -51,7 +51,20 @@ import type { QueueName } from './api'
  * but it also makes `RouteName` depend on declaration order, and the explicit
  * union is the one line a reader can check by eye.
  */
-export type RouteName = 'today' | 'pool' | 'review' | 'retrospective' | 'vault'
+export type RouteName =
+  | 'today'
+  | 'pool'
+  | 'review'
+  | 'retrospective'
+  | 'vault'
+  /**
+   * ⭐ Spec 052. The CSI 300 roster, as a **read-only reference**. It answers one
+   * question — 「这只是不是在指数里」 — ⭐⭐ **and no sort, no score, and no way to ask
+   * which of these to look at.** `constitution.md:802-803` puts a searchable list on the
+   * ✅ side of that line and a shortlist on the ❌ side, ⭐ **and the difference between
+   * the two is one table column.**
+   */
+  | 'universe'
 
 export interface RouteDef {
   /**
@@ -102,6 +115,13 @@ export const ROUTES: readonly RouteDef[] = [
     icon: 'retrospective',
   },
   { name: 'vault', href: '#/vault', label: '知识库', title: '知识库', icon: 'vault' },
+  {
+    name: 'universe',
+    href: '#/universe',
+    label: '指数成分',
+    title: '指数成分',
+    icon: 'universe',
+  },
 ]
 
 /**

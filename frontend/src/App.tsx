@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import InstrumentPage from './InstrumentPage'
 import PoolPage from './PoolPage'
 import RetrospectivePage from './RetrospectivePage'
@@ -6,11 +6,63 @@ import ReviewPage from './ReviewPage'
 import { StartupPage } from './StartupPage'
 import { isHomeAddress, launchSeenToday, markLaunchSeen } from './launchLogic'
 import TodayPage from './TodayPage'
+import UniversePage from './UniversePage'
 import VaultPage from './VaultPage'
 import { AppShellFrame } from './app/AppShellFrame'
 import { todayLabel } from './format'
-import { POOL_HREF, titleFor, useRoute } from './routing'
+import { POOL_HREF, titleFor, useRoute, type Route } from './routing'
 
+/**
+ * ⭐⭐ One page per enumerated view, as a `Record` ⭐ **and that is the fix, not the
+ * tidying.**
+ *
+ * ⚠️⚠️ **This was six parallel ternaries**, and the repository already knows what that
+ * costs: `F-211` and `regressions/0005` record a ternary over a union that was *not*
+ * exhaustive, and the same lesson had to be learned twice in this file's neighbourhood ⭐
+ * `routing.ts` fixed `queueHref` exactly this way ⭐ **and `App.tsx` kept the old shape.**
+ *
+ * ⭐ **The failure a parallel ternary cannot report.** Adding a row to `ROUTES` without
+ * adding a line here compiles, passes `tsc`, passes vitest, passes Playwright ⭐ **and the
+ * nav row, the ⌘K entry and `document.title` all work** ⭐ — because they are derived from
+ * `ROUTES` ⭐ **while `#/universe` paints an empty frame. Zero red.**
+ *
+ * ⇒ A `Record<RouteName, ReactNode>` turns 「added a route, forgot the page」 from silence
+ * into **a compile error**, ⭐ which is the same bargain `queueHref` made and the reason
+ * `regressions/0005` exists at all.
+ *
+ * ⭐ `instrument` is **not** here ⭐ **on purpose**: it is a parsed route rather than an
+ * enumerated one (`routing.ts` `Route`), it carries two parameters, and it is the one that
+ * needs a `key` so switching targets remounts the page ⭐ — so it stays an explicit branch
+ * above, where its `key` and its arguments are visible.
+ */
+/**
+ * ⭐⭐ **They are thunks, not elements, and the first version of this was not.**
+ *
+ * ⭐ A module-level `Record<ViewName, ReactNode>` holding *elements* **passed `tsc`,
+ * passed vitest, and failed E2E** ⭐ with `strict mode violation: getByTestId('card-schedule-out')
+ * resolved to 2 elements` ⭐ — ⭐ **the review page mounted twice.**
+ *
+ * ⭐ The reason: a ternary `{c ? <X /> : null}` builds a **fresh element every render**,
+ * and React's reconciler relies on that to unmount the old page when the type changes. ⭐
+ * A constant element is one object reused forever, ⭐ so the old subtree was never torn
+ * down and the new one went in beside it.
+ *
+ * ⇒ **The `Record` buys exhaustiveness and costs element freshness, and only the second
+ * one is visible ⭐ ** in a gate, and only as a duplicated test id.** ⭐ That is the most
+ * expensive shape this repository knows: a defect whose symptom is three files away from
+ * its cause.
+ */
+type ViewName = Exclude<Route['name'], 'instrument'>
+
+const VIEWS: Record<ViewName, () => ReactNode> = {
+  pool: () => <PoolPage />,
+  review: () => <ReviewPage />,
+  retrospective: () => <RetrospectivePage />,
+  today: () => <TodayPage />,
+  universe: () => <UniversePage />,
+  vault: () => <VaultPage />,
+  unknown: () => <UnknownRoute raw={window.location.hash} />,
+}
 export default function App() {
   const route = useRoute()
   const name = titleFor(route)
@@ -158,13 +210,9 @@ export default function App() {
           market={route.market}
           code={route.code}
         />
-      ) : null}
-      {route.name === 'pool' ? <PoolPage /> : null}
-      {route.name === 'review' ? <ReviewPage /> : null}
-      {route.name === 'retrospective' ? <RetrospectivePage /> : null}
-      {route.name === 'today' ? <TodayPage /> : null}
-      {route.name === 'vault' ? <VaultPage /> : null}
-      {route.name === 'unknown' ? <UnknownRoute raw={route.raw} /> : null}
+      ) : (
+        VIEWS[route.name]()
+      )}
     </AppShellFrame>
   )
 }

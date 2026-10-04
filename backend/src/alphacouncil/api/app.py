@@ -27,6 +27,7 @@ from alphacouncil.api.routes import (
     notes,
     reviews,
     today,
+    universe,
     watchlist,
 )
 from alphacouncil.core.config import Settings, get_settings
@@ -180,6 +181,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(instruments.router)
     app.include_router(decisions.router)
     app.include_router(today.router)
+    # Spec 052. ⭐ The only router whose answer carries its own freshness, and that
+# is the point of it: the source publishes weekly, so the roster is a fact about
+# a Monday rather than about today ⭐ **and a reader is told which Monday.**
+    app.include_router(universe.router)
     app.include_router(capabilities.router)
     app.include_router(cards.router)
     # Spec 026. The knowledge vault: notes sit **beside** cards, not inside them.

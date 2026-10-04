@@ -2,6 +2,7 @@ import { type ComponentProps } from 'react'
 import {
   BookOpen,
   History,
+  Layers,
   ListChecks,
   RotateCcw,
   Target,
@@ -75,6 +76,7 @@ const REGISTRY = {
   review: RotateCcw,
   retrospective: History,
   vault: BookOpen,
+  universe: Layers,
 } as const satisfies Record<string, LucideIcon>
 
 /**

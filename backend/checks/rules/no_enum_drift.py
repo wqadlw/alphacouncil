@@ -84,8 +84,15 @@ FRONTEND_ONLY: dict[str, str] = {
     "IconSize": "the three sizes the icon registry may render at; a glyph is not on the wire",
     "Pane": "whether an indicator is drawn over the chart or in its own pane; a rendering decision",
     "RouteName": (
-        "the five entries of ROUTES; a navigation concept, and the server deliberately "
-        "sends no URLs"
+        "the six entries of ROUTES (spec 052 added 指数成分); a navigation concept, and "
+        "the server deliberately sends no URLs"
+    ),
+    "ViewName": (
+        "RouteName plus `unknown` ⭐ **and the union exists only because `App.tsx` "
+        "replaced six parallel ternaries with a `Record`** (spec 052) ⭐ so that adding a "
+        "view without a page is a compile error rather than an empty frame with no red "
+        "test. ⭐ It is `Exclude<Route['name'], 'instrument'>` ⭐ **derived, not written "
+        "out** ⭐ and it is here because the rule reads unions by shape, not by meaning."
     ),
     "TimelineTone": (
         "RecordTimeline's own two tones; the timeline renders events, not a backend enum"
@@ -94,7 +101,7 @@ FRONTEND_ONLY: dict[str, str] = {
         "the up/down/flat convention format.ts applies to a number; direction is "
         "derived, never sent"
     ),
-    "View": "the five filters of the knowledge page; a UI-only grouping",
+    "View": "the filters of the knowledge page; a UI-only grouping",
 }
 
 #: ⭐⭐ **Backend vocabularies the client deliberately does not mirror.**

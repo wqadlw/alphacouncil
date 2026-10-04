@@ -1085,3 +1085,72 @@ export function getDaily(
   const suffix = search.size > 0 ? `?${search.toString()}` : ''
   return request<DailyResult>(`/api/v1/instruments/${market}/${code}/daily${suffix}`)
 }
+
+// ---------------------------------------------------------------------------
+// 沪深300 成分（spec 052）
+// ---------------------------------------------------------------------------
+
+/**
+ * 一段被观察到的成员资格。
+ *
+ * ⚠️ first_observed_on / last_observed_on 是**我们观察到的窗口**，不是生效日。
+ * 源给的 updateDate 是每周一批的入库戳（实测：五个值全是周一，而它在两次定期调整上
+ * 精确等于编制方案的生效日，只因为那两天的生效日恰好落在周一）。
+ */
+export interface UniverseMembership {
+  market: string
+  code: string
+  name: string
+  first_observed_on: string
+  last_observed_on: string
+  is_latest: boolean
+}
+
+/**
+ * 「我们知道的最后一天」—— 它跟着每一个答案走。
+ *
+ * ⭐ resolution 是一个**事实**，程序可以据此分支；
+ * ⚠️ 而那句「至多落后七天，这不是故障」是**产品文案**，写在这一页而不是后端 ——
+ * pyproject.toml 记着 display wording 历来住在 frontend/。
+ */
+export interface UniverseFreshness {
+  index_code: string
+  latest_grid_point: string | null
+  members: number | null
+  source: string | null
+  resolution: string
+  /** ⭐ False = 「我们从来没取过」，那**不是**「名单是空的」。 */
+  ever_swept: boolean
+}
+
+export interface Universe {
+  freshness: UniverseFreshness
+  members: UniverseMembership[]
+}
+
+/**
+ * 名单，加上它自己有多旧。
+ *
+ * ⚠️ 与名单分开，是因为**它们的新鲜度不同**：名单可以被缓存，
+ * 而 useResource 在失败时不清 data（useResource.ts:88），
+ * 所以一个不自带新鲜度的列表会在源挂掉时看起来仍然新鲜。
+ */
+export function getUniverse(q?: string): Promise<Universe> {
+  const search = new URLSearchParams()
+  if (q !== undefined && q.trim() !== '') search.set('q', q.trim())
+  const suffix = search.size > 0 ? `?${search.toString()}` : ''
+  return request<Universe>(`/api/v1/universe${suffix}`)
+}
+
+/**
+ * ⭐ 一只票的全部区间 —— **不是只有当前那一段**。
+ *
+ * ⚠️ 一只 2013 年被摘出去的票在最新名单里**没有行**，而读者翻自己 2013 年的决策
+ * 需要那一行来显示名字。⇒ 这是「出现过的」真正需要的端点，名单本身补不回来。
+ */
+export function getUniverseHistory(
+  market: string,
+  code: string,
+): Promise<UniverseMembership[]> {
+  return request<UniverseMembership[]>(`/api/v1/universe/history/${market}/${code}`)
+}
