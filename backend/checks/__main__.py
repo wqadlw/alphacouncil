@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 # `python -m checks` puts `backend/` on sys.path, not `backend/scripts/`, so the
@@ -46,6 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from _console import use_utf8
 
+from checks.data_registry import DATA_RULES, DataRule
 from checks.framework import Issue, ScanContext, Severity, apply_exemptions
 from checks.registry import RULES, Rule, registry_meta
 
@@ -65,12 +67,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"usage error: {repo_root} has no backend/ directory", file=sys.stderr)
         return 2
 
-    selected, unknown = _select(args.only)
+    registry = tuple(DATA_RULES) if args.data else tuple(RULES)
+    selected, unknown = _select(args.only, registry)
     if unknown:
         print(f"usage error: unknown rule id(s): {', '.join(unknown)}", file=sys.stderr)
         return 2
 
-    ctx = ScanContext(repo_root=repo_root, registry=registry_meta())
+    metas = tuple(rule.meta for rule in selected) or registry_meta()
+    ctx = ScanContext(repo_root=repo_root, registry=metas)
     findings: list[Issue] = []
     skipped: list[tuple[str, str]] = []
     crashed: list[str] = []
@@ -105,7 +109,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         _write_json(selected, findings, skipped, crashed, ran)
     else:
-        _write_human(selected, findings, skipped, crashed, ran)
+        _write_human(
+            "check-data" if args.data else "check-static",
+            selected,
+            findings,
+            skipped,
+            crashed,
+            ran,
+        )
 
     errors = sum(1 for issue in findings if issue.severity is Severity.ERROR)
     if crashed:
@@ -128,6 +139,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--root", default=str(REPO_ROOT), help="repository root to scan")
     parser.add_argument("--only", default=None, help="comma-separated rule ids, e.g. S-01,S-05")
+    parser.add_argument(
+        "--data",
+        action="store_true",
+        help="run the data checks (D-nn) instead of the static ones (S-nn)",
+    )
     parser.add_argument("--json", action="store_true", help="write one JSON document to stdout")
     parser.add_argument(
         "--strict",
@@ -137,12 +153,22 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _select(only: str | None) -> tuple[list[Rule], list[str]]:
-    """The rules to run, plus any requested id that does not exist."""
+def _select(
+    only: str | None, registry: tuple[Rule | DataRule, ...]
+) -> tuple[list[Rule | DataRule], list[str]]:
+    """The rules to run, plus any requested id that does not exist.
+
+    ⭐ The registry is a parameter rather than a module global because ``S-01`` and
+    ⭐ ``D-01`` have the same shape, ⭐ and an id that does not resolve in the registry the
+    ⭐ flag selected must be a **usage error** ⭐ — ⭐ not a silent no-op, ⭐ because
+    ⭐ ``scripts/eval.py:226-229`` already set the rule this repository holds: ⭐ a thing
+    ⭐ that never runs is not a thing, ⭐ and its mirror is that a selection which
+    ⭐ resolves to nothing is not a selection.
+    """
     if not only:
-        return list(RULES), []
+        return list(registry), []
     wanted = [part.strip().upper() for part in only.split(",") if part.strip()]
-    by_id = {rule.meta.check_id: rule for rule in RULES}
+    by_id = {rule.meta.check_id: rule for rule in registry}
     unknown = [check_id for check_id in wanted if check_id not in by_id]
     return [by_id[check_id] for check_id in wanted if check_id in by_id], unknown
 
@@ -171,7 +197,8 @@ def _dedupe(findings: list[Issue]) -> list[Issue]:
 
 
 def _write_human(
-    selected: list[Rule],
+    gate: str,
+    selected: Sequence[Rule | DataRule],
     findings: list[Issue],
     skipped: list[tuple[str, str]],
     crashed: list[str],
@@ -203,7 +230,7 @@ def _write_human(
 
     print("", file=out)
     print("=" * 72, file=out)
-    print("  AlphaCouncil · check-static", file=out)
+    print(f"  AlphaCouncil · {gate}", file=out)
     print("=" * 72, file=out)
     for rule in selected:
         check_id = rule.meta.check_id
@@ -247,7 +274,7 @@ def _write_human(
 
 
 def _write_json(
-    selected: list[Rule],
+    selected: Sequence[Rule | DataRule],
     findings: list[Issue],
     skipped: list[tuple[str, str]],
     crashed: list[str],

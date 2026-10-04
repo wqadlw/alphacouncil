@@ -216,7 +216,38 @@ class TestGateVerdictRules:
     """
 
     def test_a_gate_outside_check_is_rejected(self) -> None:
-        ok, why = runner._gate_ok({"gate": "check-data", "file": "frontend/e2e/pool.spec.ts"})
+        """⭐ ⭐ **The example is `test-cov`, and that is not incidental.**
+
+        ⭐ This test used `check-data` ⭐ — ⭐ and `check-data` was in `GATES` but **not** in
+        ⭐ `CHECK` ⭐ ⭐ because spec 054 had not implemented it yet ⭐ ⭐ so it was the perfect
+        ⭐ example of the case under test.
+
+        ⭐⭐ **And on 2026-10-04 spec 054 implemented it and put it in `CHECK`** ⭐ ⭐ so this
+        ⭐⭐ test went red ⭐ ⭐ with ``assert True is False`` ⭐ ⭐ and the reason was that the
+        ⭐⭐ thing it was testing no longer existed.
+
+        ⭐⭐ **That is not a fixture that rotted ⭐ ⭐ it is a gate list changing under a test
+        ⭐⭐ that named one of its entries** ⭐ ⭐ and the honest repair is to use a gate that
+        ⭐⭐ is outside `CHECK` **by the current design** ⭐ ⭐ namely `test-cov` ⭐ ⭐ which is
+        ⭐⭐ excluded because coverage is slow ⭐ ⭐ and to say so here.
+
+        ⭐ And the assertion below also *checks* that ⭐ ⭐ — ⭐ because a future edit that put
+        ⭐ ⭐ `test-cov` into `CHECK` should fail **here** ⭐ ⭐ with a sentence that explains
+        ⭐ ⭐ why this test then needs a different example ⭐ ⭐ rather than failing with a bare
+        ⭐ ⭐ ``True is not False`` ⭐ ⭐ which says nothing about which half moved.
+
+        ⭐ ``dev`` is the module-level import at the top of this file ⭐ ⭐ not
+        ⭐ ``from scripts import dev`` ⭐ ⭐ which reads the same file under a second module
+        ⭐ ⭐ name ⭐ ⭐ and mypy refuses it: ⭐ 「Source file found twice under different
+        ⭐ ⭐ module names」 ⭐ ⭐ — ⭐ ⭐ a first draft of this test made that import locally
+        ⭐ ⭐ and mypy caught it ⭐ ⭐ which is the check doing its job.
+        """
+        assert "test-cov" in dev.GATES, "test-cov is no longer a declared gate"
+        assert "test-cov" not in dev.CHECK, (
+            "test-cov is now in CHECK ⭐ — ⭐ pick another gate outside CHECK for this test, "
+            "⭐ and say in that gate's entry why it is excluded"
+        )
+        ok, why = runner._gate_ok({"gate": "test-cov", "file": "frontend/e2e/pool.spec.ts"})
         assert ok is False
         assert "CHECK" in why or "does not exist" in why
 

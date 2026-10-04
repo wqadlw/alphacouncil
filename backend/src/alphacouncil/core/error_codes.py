@@ -236,4 +236,9 @@ class ErrorCode(StrEnum):
     # ⭐ S-16's usual answer is "change the client", ⭐ and S-18's is often
     # "this schema has no client consumer, say so in a waiver".
     CHECK_RESPONSE_DRIFT = "CHECK_RESPONSE_DRIFT"
+    # ⭐⭐ `CHECK_DATA_INTEGRITY` (spec 054, three data checks share it) ⭐ — one code and
+    # not three, because a data finding has no fixed shape to describe: a static finding is
+    # a *file*, a data finding is a set of *rows*. Three codes would be three registrations
+    # all saying the same sentence.
+    CHECK_DATA_INTEGRITY = "CHECK_DATA_INTEGRITY"
     CHECK_RUNNER_ERROR = "CHECK_RUNNER_ERROR"

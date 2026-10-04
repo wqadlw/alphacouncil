@@ -81,6 +81,13 @@ APPEND_ONLY_TABLES = frozenset(
         # honestly graded. ADR-0014: it is a separate table precisely so it never
         # writes back onto `decisions`.
         "reviews",
+        # ⭐ `thesis_versions` ⭐ — ⭐ **no migration creates it yet, and that is deliberate.**
+        # ⭐ Constitution 5.4.1 names the thesis history ⭐ ⭐ ADR-0013 designs it ⭐ ⭐ so the
+        # ⭐ list records the intent before there is code to check ⭐ ⭐ and `test_storage.py`'s
+        # ⭐⭐ `test_the_static_rule_still_expects_the_tables_that_do_not_exist_yet`
+        # ⭐⭐ says so in as many words and pins the set to exactly this one name.
+        # ⭐ When J2 lands ⭐⭐ the migration creates the table and that assertion becomes
+        # ⭐⭐ `set()` ⭐⭐ which is the point of pinning it.
         "thesis_versions",
         "audit_log",
         "watchlist_events",
@@ -222,6 +229,33 @@ def run(ctx: ScanContext) -> CheckResult:
             "decision journal, the review conclusions, the thesis history and the audit "
             "trail to exist, so their absence is a gap rather than a pass."
         )
+    # ⭐⭐⚠️ **A finding lived here for part of 2026-10-04 and was removed ⭐ by a test.**
+    #
+    # ⭐ The measurement was right: ⭐ `APPEND_ONLY_TABLES` holds **15** names ⭐ and **14**
+    # ⭐ were created by any migration ⭐ ⭐ `thesis_versions` being the fifteenth. ⭐ A first
+    # ⭐ draft of this rule reported that as an error ⭐ ⭐ removed the entry ⭐ ⭐ and shipped a
+    # ⭐ test to keep the two in step.
+    #
+    # ⚠️⭐ **And the measurement was the wrong thing to conclude from.** ⭐ The forward
+    # ⭐ declaration is deliberate ⭐ ⭐ documented ⭐ ⭐ and pinned by `test_storage.py`'s
+    # ⭐ `test_the_static_rule_still_expects_the_tables_that_do_not_exist_yet` ⭐ which
+    # ⭐ ⭐ says that a declaration about a table not yet created is the point ⭐ ⭐ so the
+    # ⭐ list cannot be quietly narrowed. ⭐ So the silence is correct ⭐ ⭐ and reporting
+    # ⭐ it would have been the defect.
+    #
+    # ⭐⭐⭐ **How it went wrong, because the shape is the lesson:** ⭐ I read this rule ⭐
+    # ⭐ `.ai/status.md` ⭐ ⭐ ADR-0013 ⭐ ⭐ `constitution.md` ⭐ ⭐
+    # ⭐ `.ai/memory/decisions.md` ⭐ ⭐ five places ⭐ ⭐ and not the tests ⭐ ⭐ which
+    # ⭐ ⭐ is where the rationale lived ⭐ ⭐ including the one sentence
+    # ⭐⭐ that would have stopped me. ⭐⭐ **A decision recorded only in a test's
+    # ⭐⭐ docstring is a decision nobody reading the code finds** ⭐⭐ and that goes into
+    # ⭐⭐ `.ai/memory` ⭐⭐ but it did not license the edit ⭐⭐ the test was already
+    # ⭐⭐ doing its job.
+    #
+    # ⭐ And the shape is the round's own subject ⭐ ⭐ a claim nobody checked ⭐⭐ asserted
+    # ⭐ five times over ⭐⭐ with a docstring ⭐⭐ a comment block ⭐⭐ a test file ⭐⭐ a
+    # ⭐⭐ spec section and a `why_not` string ⭐⭐ before running the suite that held the
+    # ⭐⭐ answer.
     return result
 
 

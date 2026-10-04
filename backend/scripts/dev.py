@@ -112,8 +112,17 @@ GATES: dict[str, Gate] = {
     "check-data": Gate(
         "check-data",
         "database consistency scan (.ai/checks/data/)",
-        implemented=False,
-        why_not="24 checks specified, 0 written",
+        implemented=True,
+        argv=("{py}", "-m", "checks", "--data", "--strict"),
+        why_not=(
+            "⭐ **Three of twenty-four, not twenty-four.** ⭐ Measured 2026-10-04 against the "
+            "real schema: ⭐ eleven name a column that exists nowhere, ⭐ two name a table that "
+            "does not exist (`holdings`), ⭐ four name a column that lives on another table, ⭐ "
+            "and five name no column at all. ⭐ The remaining twenty-one are **unimplementable "
+            "as written**, ⭐ which is a defect in the declaration —— spec 054 §一. ⭐ Runs "
+            "read-only against the configured database, ⭐ and skips with a reason when there "
+            "is none."
+        ),
     ),
     # ---------------------------------------------------------------------
     # Frontend. These four exist because they did not, and CI has run them
@@ -178,6 +187,7 @@ CHECK: tuple[str, ...] = (
     "typecheck",
     "licenses",
     "check-static",
+    "check-data",
     "test",
     # ⭐ Spec 035: the integration suite migrates real databases. It was never in
     # either set, so three of its tests sat red through six migrations.
@@ -250,6 +260,32 @@ def _resolve(argv: tuple[str, ...], python: str) -> list[str] | None:
     return resolved
 
 
+#: ⭐ The tools that need `node_modules` ⭐⭐ named rather than inferred. ⭐⭐ A gate is
+#: ⭐⭐ frontend when its command *is* one of these ⭐⭐ and `npm` is included because
+#: ⭐⭐ the frontend gates all go through it.
+_NODE_TOOLS = frozenset({"npm", "node", "npx", "tsc", "vite", "vitest", "playwright", "oxlint"})
+
+
+def _needs_node(argv: list[str] | None) -> bool:
+    """Whether this command needs `node_modules` — asked of the **command**.
+
+    ⭐⭐ **This used to be `gate.cwd is not None`** ⭐⭐ a proxy for the same question ⭐⭐ and
+    ⭐⭐⭐ every gate written so far agreed with it by coincidence of layout ⭐⭐ so it was
+    ⭐⭐⭐ never wrong ⭐⭐ until `check-data` declared `cwd=Path("backend")` ⭐⭐ which is
+    ⭐⭐⭐ redundant ⭐⭐ since `_run` already defaults to `BACKEND` ⭐⭐ and which made a
+    ⭐⭐⭐ Python gate refuse to start on the grounds that Node was absent.
+
+    ⚠️⭐ **The comparison is on the executable name** ⭐⭐ so `FRONTEND / "node_modules"`,
+    ⭐⭐ `npm.cmd` on Windows ⭐⭐ and `npx` all match ⭐⭐⭐ and a resolved absolute
+    ⭐⭐ path still matches by its stem.  ⭐⭐ The alternative — asking each `Gate` to
+    ⭐⭐ declare `needs_node=True` — puts the same fact in a second place ⭐⭐ which is how
+    ⭐⭐⭐ `APPEND_ONLY_TABLES` ended up naming a table no migration creates.
+    """
+    if not argv:
+        return False
+    return Path(argv[0]).stem.lower() in _NODE_TOOLS
+
+
 def _run(gate: Gate, python: str) -> bool:
     """Run one gate, streaming its output, and report whether it passed."""
     argv = _resolve(gate.argv, python)
@@ -268,10 +304,18 @@ def _run(gate: Gate, python: str) -> bool:
         return False
 
     cwd = gate.cwd or BACKEND
-    # A frontend gate with no `node_modules` fails with "tsc: not found", which
-    # reads like a broken repository rather than an uninstalled dependency. Say
-    # which one it is.
-    if gate.cwd is not None and not (cwd / "node_modules").is_dir():
+    # ⭐⭐⭐ **The question is 「does this command need Node」 ⭐⭐ not 「does this gate
+    # have a working directory」** ⭐⭐ and the second one was a proxy that happened to hold
+    # ⭐⭐ for every gate that existed until `check-data` ⭐⭐ the first backend gate to
+    # ⭐⭐ declare a cwd ⭐⭐ and it failed with a message about `npm`.
+    #
+    # ⭐ Why the message exists at all: a frontend gate with no `node_modules` fails with
+    # ⭐ "tsc: not found" ⭐⭐ which reads like a broken repository rather than an
+    # ⭐ uninstalled dependency ⭐⭐ and that is a real improvement worth keeping ⭐⭐
+    # ⭐⭐ **and it has to be aimed at the command** ⭐⭐ or it is a lie told about a
+    # ⭐⭐ Python gate.  ⭐ A gate that cannot run has not passed (`dev.py:248`) ⭐⭐ and on
+    # ⭐⭐ 2026-10-04 `check-data` was a gate that could not **start**.
+    if _needs_node(argv) and not (cwd / "node_modules").is_dir():
         _say(f"  cannot run: {cwd.name}/node_modules is missing.")
         _say("  Run `npm install` in frontend/ first.")
         return False
