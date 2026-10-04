@@ -203,7 +203,7 @@ class TestContainsToken:
 class TestRegistry:
     """The registry is the contract between the document and the code."""
 
-    def test_seventeen_rules_with_no_gaps_and_no_repeats(self) -> None:
+    def test_eighteen_rules_with_no_gaps_and_no_repeats(self) -> None:
         """The id list is a statement about how many rules there are.
 
         It breaks when a rule is added, which is the point: a renamed count that kept
@@ -225,7 +225,7 @@ class TestRegistry:
         was actually being protected, ⭐ stated directly instead of by coincidence.
         """
         ids = [rule.meta.check_id for rule in RULES]
-        assert sorted(ids) == [f"S-{n:02d}" for n in range(1, 18)]
+        assert sorted(ids) == [f"S-{n:02d}" for n in range(1, 19)]
         assert len(set(ids)) == len(ids), "a rule id appears twice in the registry"
 
     def test_the_priority_claim_has_a_mechanism(self) -> None:

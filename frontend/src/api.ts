@@ -212,6 +212,17 @@ export interface DecisionInput {
 export type DataStatus = 'ok' | 'no_data' | 'error' | 'unavailable'
 
 export interface Quote {
+  /**
+   * ⚠️ Declared and never read.
+   *
+   * ⭐ Every current caller already knows which instrument it asked for — the
+   * watchlist row, the pool row ⭐ — so nothing on a page needs this. ⭐ It is
+   * declared anyway because 「no caller needs it」 and 「the server does not send
+   * it」 are different facts, ⭐ and this interface is the only place that claim
+   * can be written down. `S-18` (spec 053) exists because that claim had been
+   * made the other way round silently, ⭐ on a type where it mattered.
+   */
+  symbol: { market: string; code: string }
   price: number
   prev_close: number
   /** A decimal fraction: -0.0114 is -1.14%. Computed server-side. */
@@ -1015,6 +1026,32 @@ export interface DailyBar {
    * measurement, which is why the model leaves the field nullable.
    */
   amount: number | null
+  /**
+   * The adjustment basis the prices were normalised to. `1.0` is unadjusted.
+   *
+   * `models/market.py:86-89` is why it travels with the bar instead of being
+   * re-derived on arrival: a series can be put back on any basis without
+   * refetching, and refetching is where the answer would change.
+   */
+  adj_factor: number
+  /**
+   * When this bar was pulled, ISO-8601.
+   *
+   * ⚠️ Not read by any page today, and that is its honest state rather than an
+   * oversight: `S-18` (spec 053) measured that the server has been sending this
+   * all along and no check could see that the client had not declared it.
+   * ⭐ Declared now so that the day a page *does* read it, the compiler is
+   * already asking the question.
+   */
+  fetched_at: string
+  /**
+   * Which provider this bar came from.
+   *
+   * ⚠️ Distinct from the envelope's `source` further down, which names the
+   * answer as a whole. ⭐ Two fields with one word in them, and the page caption
+   * shows the envelope's ⭐ — see `KlineChart.tsx:373`.
+   */
+  source: string
 }
 
 /**
@@ -1042,6 +1079,40 @@ export interface DailySeries {
    * rather than draw an empty legend entry.
    */
   indicators: IndicatorSeries[]
+  /**
+   * ⚠️ The `start` **the caller passed**, verbatim ⭐ — not the window the server
+   * fetched. Those differ: `MAX_DAILY_WINDOW_DAYS = 1500` narrows the request to
+   * about four years, and Tencent then caps it at 320 bars, which is about fifteen
+   * months. ⭐ Both clamps used to be invisible, and `?start=2015-01-01` returned
+   * `status="ok"` with no error while delivering nine fewer years than asked for.
+   *
+   * ⚠️ `null` means **the caller passed nothing** ⭐ — which is *not* the same as
+   * 「they asked for nothing」. ⭐ It is 「we chose 320 days for them」, and a page
+   * needs two different sentences for those.
+   */
+  requested_start: string | null
+  requested_end: string | null
+  /** First delivered bar's `trade_date`. `null` when there are no bars at all. */
+  delivered_from: string | null
+  /** Last delivered bar's `trade_date`. `null` when there are no bars at all. */
+  delivered_to: string | null
+  /**
+   * ⭐ True when `delivered_from` is more than **seven days** after
+   * `requested_start` ⭐ — that is, when the gap is wider than a weekend plus this
+   * market's holiday clusters.
+   *
+   * ⚠️⚠️ **It is not the truth. The two dates are.** `requested_start` is a
+   * *calendar* day and `delivered_from` is a *trading* day, ⭐ so the comparison
+   * needs slack, ⭐ and slack is a judgement rather than a measurement ⭐ — the first
+   * version compared them directly and reported `clamped: true` for `2024-01-01`,
+   * which was New Year's Day. ⭐ A page that shows both dates is right even when
+   * this boolean is wrong; ⭐ a page that shows only this boolean is right only when
+   * the judgement was.
+   *
+   * ⭐ And `pyproject.toml:130-132` says display wording lives in `frontend/`,
+   * ⭐ so the sentence itself belongs on the page, not here.
+   */
+  clamped: boolean
 }
 
 /**

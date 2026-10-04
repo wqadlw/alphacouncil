@@ -13,6 +13,11 @@ function bars(count: number): DailyBar[] {
     close: 100 + index,
     volume: 1000,
     amount: null,
+    // Declared in api.ts and unread on the page; carried here because a fixture that
+    // omits a wire field is exactly what S-18 (spec 053) now reports on the backend side.
+    adj_factor: 1,
+    fetched_at: '2026-01-02T00:00:00Z',
+    source: 'tencent',
   }))
 }
 

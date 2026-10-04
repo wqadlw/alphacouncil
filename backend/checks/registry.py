@@ -39,6 +39,7 @@ from checks.rules import (
     no_prediction_field,
     no_print,
     no_raw_http,
+    no_response_drift,
     no_route_drift,
     time_cost_in_stop_loss,
     tool_encoding,
@@ -59,7 +60,10 @@ class Rule:
     run: Callable[[ScanContext], CheckResult]
 
 
-#: Seventeen rules, matching `.ai/checks/static/README.md` §3.
+#: Eighteen rules, matching `.ai/checks/static/README.md` §3. ⭐ The number is
+#: written out rather than counted ⭐ because `test_static_checks.py` asserts it, ⭐ and
+#: that test breaking on every new rule is the point ⭐ — ⭐ a renamed count that kept
+#: its old number would be a test describing something other than what it checks.
 RULES: tuple[Rule, ...] = (
     Rule(no_raw_http.META, no_raw_http.run),
     Rule(no_boolean_state.META, no_boolean_state.run),
@@ -83,6 +87,14 @@ RULES: tuple[Rule, ...] = (
     # S-17 (spec 050). Also constructs the app, for the same reason as S-16 and with the
     # same guard: it **skips** rather than reports when the app cannot be built.
     Rule(no_route_drift.META, no_route_drift.run),
+    # S-18 (spec 053). Third rule that **constructs the app** to read `openapi.json`,
+    # so it sits with S-16 and S-17 and before S-14, ⭐ for the same reason: a syntax
+    # error in the app must make a rule *skip*, ⭐ never mask anything. ⭐ And it reads
+    # the frontend tree as well, ⭐ so it is the third rule that depends on
+    # `checks/frontend.py` answering "what is a frontend source" ⭐ — a second traversal
+    # would mean two places decide that, which is the two-homes failure S-16's
+    # docstring says it exists to catch.
+    Rule(no_response_drift.META, no_response_drift.run),
     # S-14 (spec 032). Last because it is the only rule that reads git rather
     # than the working tree, and it should not mask a syntax error.
     Rule(git_tracked.META, git_tracked.run),

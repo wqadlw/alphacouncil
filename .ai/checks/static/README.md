@@ -68,6 +68,7 @@ Lint  →  Typecheck  →  ★ check-static  →  Test  →  Build
 | **S-11** | `no-bare-except` | 禁止裸 `except:` / `except Exception: pass`（宪法 7.3） |
 | **S-16** | `no-enum-drift` | 后端 `openapi.json` 里的枚举与前端 `type X = 'a' | 'b'` 的镜像不一致（**双向**），或未在豁免表里写下它**是什么**（spec 049） | 同一概念两个家（`styleguide.test.ts` 已记录这个形状） |
 | **S-17** | `no-route-drift` | 前端调用点 × 应用实际提供的路由，\**双向**，且**四个桶**（drift / unverifiable / orphan / ok）（spec 050）| 同一个接口两侧漂移（与 `S-16` 同类）|
+| **S-18** | `no-response-drift` | 后端 `openapi.json` 发布的**字段**，前端没有一个具名类型声明它 —— 判据是**子集**且**只报这一个方向**（spec 053）| ⚠️ **三个已量出的洞**：① **嵌套** schema（`DueRead` 在 `Today.due` 里，⭐ 顶层比较看不见）② **请求体**（`api.ts` 里是函数体内的字面量）③ **只比字段名不比类型**（`volume: number` 改成 `string` 它不红）。⭐ 另有一处**假通过**：小 schema 会被无关类型满足（`Symbol` 的 3 个字段同时满足 3 个类型），⭐ 所以 `LessonCreate` 等是**碰巧**绿的 |
 | **S-14** | `git-tracked` | 源文件在磁盘上却不在 git 里（未跟踪报 error；**被 `.gitignore` 藏起来报 warning** —— `git status` 看不见后者） |
 | **S-12** | `check-doc-sync` | 关键文档里的代码块与实现**不脱同步**（借"测试直接从文档抽取代码执行"的思路） |
 

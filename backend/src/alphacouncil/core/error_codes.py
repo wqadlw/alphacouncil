@@ -229,4 +229,11 @@ class ErrorCode(StrEnum):
     # between the frontend's call sites and the routes the app serves, and its consumer
     # is the check runner, never a request path.
     CHECK_ROUTE_DRIFT = "CHECK_ROUTE_DRIFT"
+    # S-18 (spec 053). Same shape of consumer as the two above: the disagreement is
+    # between what FastAPI publishes and what `api.ts` declares, and nobody but the
+    # check runner ever reads it. ⭐ Worth its own code rather than a reuse of
+    # CHECK_ENUM_DRIFT ⭐ because the two rules have **opposite** fix directions:
+    # ⭐ S-16's usual answer is "change the client", ⭐ and S-18's is often
+    # "this schema has no client consumer, say so in a waiver".
+    CHECK_RESPONSE_DRIFT = "CHECK_RESPONSE_DRIFT"
     CHECK_RUNNER_ERROR = "CHECK_RUNNER_ERROR"

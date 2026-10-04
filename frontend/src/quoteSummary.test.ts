@@ -8,6 +8,9 @@ function ok(overrides: Partial<QuoteResult> = {}): QuoteResult {
   return {
     status: 'ok',
     value: {
+      // `symbol` is declared and never read (see api.ts). The fixture carries it because
+      // `tsc` is the only thing that notices when the server stops sending it.
+      symbol: { market: 'cn', code: '600519' },
       price: 1237.0,
       prev_close: 1251.0,
       change_pct: -0.0112,
