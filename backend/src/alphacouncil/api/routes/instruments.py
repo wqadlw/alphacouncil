@@ -333,6 +333,10 @@ DEFAULT_DAILY_WINDOW_DAYS = 320
 #: The hard ceiling, whatever the caller asks for.
 MAX_DAILY_WINDOW_DAYS = 1500
 
+#: ⭐ **Why 7.** A caller's `start` is a calendar day and a bar's `trade_date` is a trading
+#: day, so 「the first bar is later than I asked」 is true every weekend and every holiday.
+_CLAMP_TOLERANCE_DAYS = 7
+
 
 def _default_end() -> date:
     """Today, in UTC.
@@ -359,14 +363,64 @@ class IndicatorRead(BaseModel):
 
 
 class DailySeriesRead(BaseModel):
-    """Bars and the indicators derived from them, as one value."""
+    """Bars and the indicators derived from them, as one value.
+
+    ⭐⭐ **Plus the window that was asked for and the window that arrived**, because as of
+    2026-10-04 they could differ by four years **and nothing said so.**
+
+    ⚠️⚠️ **Measured, not anticipated.** ``?start=2015-01-01`` returned **320 bars starting
+    2025-06-12**, with ``status="ok"`` and no error. ⭐ Two clamps produce that and neither
+    was visible:
+
+    - ⭐ **this route** (``MAX_DAILY_WINDOW_DAYS = 1500``, ~4 years) rewrites
+      ``resolved_start`` in place ⭐ **and the rewritten value is what gets fetched** ⭐ so
+      the response cannot tell you an ask ever happened.
+    - ⭐ **the provider** caps at 320 bars, which turns those four years into fifteen
+      months.
+
+    ⇒ ⭐ **Both are computable here** ⭐ from the caller's ``start`` and ``bars[0]``,
+    ⭐ **so this costs no extra fetch and no provider change.**
+    """
 
     bars: list[Quote]
     indicators: list[IndicatorRead] = Field(
         default_factory=list,
         description=(
-            "⭐ Empty when the window is shorter than every indicator's period — "
+            "Empty when the window is shorter than every indicator's period "
             "which is a fact about the data, not a failure."
+        ),
+    )
+    #: ⭐ **Null when the caller passed no window at all** ⭐ — which is **not** the same as
+    #: 「they asked for nothing」 ⭐ it is 「we chose 320 days for them」, ⭐ and a page needs
+    #: two different sentences for those.
+    requested_start: date | None = Field(
+        default=None, description="The `start` the caller passed, or null."
+    )
+    requested_end: date | None = Field(
+        default=None, description="The `end` the caller passed, or null."
+    )
+    delivered_from: date | None = Field(
+        default=None, description="First delivered bar's trade_date; null when there are none."
+    )
+    delivered_to: date | None = Field(
+        default=None, description="Last delivered bar's trade_date; null when there are none."
+    )
+    #: ⭐⭐ **The field a page branches on.** ⭐ True when the delivered window is narrower
+    #: than the one asked for — by this route's clamp, by the provider's row cap, or both.
+    #: ⚠️ **It is deliberately a boolean and not a message** ⭐ because `api.ts:731-736`
+    #: says the client's job is not to reword what the server says ⭐ **and a boolean cannot
+    #: be reworded, misread, or translated into a claim the product did not make.**
+    #:
+    #: ⭐ **And it is not the truth — the two dates are.** ⭐ `delivered_from` is a *trading*
+    #: day and `requested_start` is a *calendar* one, ⭐ so this carries
+    #: `_CLAMP_TOLERANCE_DAYS` of slack ⭐ **and the slack is a judgement, not a measurement.**
+    #: ⭐ A page that shows both dates is right even when this boolean is wrong; ⭐ a page that
+    #: shows only this boolean is right only when the judgement was.
+    clamped: bool = Field(
+        default=False,
+        description=(
+            "True when delivered_from is more than _CLAMP_TOLERANCE_DAYS after "
+            "requested_start. Compare the dates rather than trusting this."
         ),
     )
 
@@ -459,7 +513,40 @@ def daily(
         bars = sorted(result.value, key=lambda quote: quote.trade_date)
         # ⭐ Ascending is the contract, not a coincidence: the router merges sources and
         # each returns its own order.
-        series = DailySeriesRead(bars=bars, indicators=_indicators(bars))
+        # ⭐⭐ Both clamps, named. `resolved_start` has already been narrowed by
+        # `MAX_DAILY_WINDOW_DAYS` above ⭐ **and the provider may have narrowed it further**
+        # ⭐ so the comparison is against the *bars*, not against the clamp ⭐ — comparing
+        # against the clamp would report 「nothing was lost」 ⭐ **for a request that lost
+        # nine years**, ⭐ which is the exact defect.
+        delivered_from = bars[0].trade_date if bars else None
+        delivered_to = bars[-1].trade_date if bars else None
+        series = DailySeriesRead(
+            bars=bars,
+            indicators=_indicators(bars),
+            # ⭐⭐ **The caller's own `start`, verbatim — not `resolved_start`.** ⭐ The first
+            # version of this line passed `resolved_start` ⭐ **with a comment arguing that
+            # was the point** ⭐ **and it is the opposite:** measured 2026-10-04, a
+            # `?start=2015-01-01` came back labelled `requested=2022-08-26`, ⭐ **so the four
+            # years the clamp above threw away were invisible** ⭐ **and a caller comparing
+            # the two dates would conclude nothing was lost.** ⭐ The caller can only learn a
+            # clamp happened by seeing their own date come back altered.
+            requested_start=start,
+            requested_end=end,
+            delivered_from=delivered_from,
+            delivered_to=delivered_to,
+            # ⭐ **A declared tolerance, because `start` is a calendar day and `trade_date`
+            # is a trading day ⭐ **and comparing them directly made `?start=2024-01-01`
+            # come back `clamped=True`** ⭐ — that day was New Year's, ⭐ **so the first bar
+            # was the 2nd and the clamp was fiction.** ⭐ A week covers every weekend plus
+            # this market's two-to-three-day holiday clusters ⭐ **and anything wider is a
+            # real clamp.** ⭐ And the two dates remain the truth ⭐ — this constant only
+            # decides which *word* appears, never which *fact*.
+            clamped=bool(
+                delivered_from is not None
+                and start is not None
+                and delivered_from > start + timedelta(days=_CLAMP_TOLERANCE_DAYS)
+            ),
+        )
 
     # ⭐ **One return, both states.** Rebuilding rather than returning `result` unchanged is
     # what keeps the *other* four fields — `stale`, `source`, `fetched_at`, `error_code` —
