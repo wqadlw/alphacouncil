@@ -19,6 +19,31 @@ import type { Backlink } from './components/knowledge/BacklinkList'
 
 export type NoteLinkKind = 'note' | 'card' | 'decision' | 'instrument' | 'lesson'
 
+/**
+ * The body `POST /api/v1/notes/{id}/tags` accepts — `TagWrite` on the wire.
+ *
+ * ⭐ **Named for `S-18` (spec 053), and the reason is measurable.** ⭐ Before this the
+ * body was `{ tag }` written inline in the function, ⭐ so no declaration existed for
+ * `S-18` to read ⭐ and `TagWrite` sat in its waiver table with the reason 「an inline
+ * object literal」. ⭐ The literal is still inline ⭐ — `satisfies` checks it against this
+ * name ⭐ — **so the type is not a second home for the shape, it is the only home.**
+ */
+export interface TagWriteBody {
+  tag: string
+}
+
+/**
+ * The body `POST /api/v1/notes/{id}/defer` accepts.
+ *
+ * ⭐ `days` is **optional server-side**, and that is why the split in `S-18` exists ⭐ —
+ * a field the server accepts and the client never sends is not drift, ⭐ it is a client
+ * that does not exercise an optional path. ⭐ This one always sends it, ⭐ and the field
+ * is here so that if the server ever made it required, `satisfies` would say so.
+ */
+export interface NoteDeferBody {
+  days?: number
+}
+
 export interface NoteLink {
   to_kind: NoteLinkKind
   to_id: string
@@ -126,7 +151,7 @@ export function updateNote(
 export function addNoteTag(id: string, tag: string): Promise<Note> {
   return request<Note>(`/api/v1/notes/${id}/tags`, {
     method: 'POST',
-    body: JSON.stringify({ tag }),
+    body: JSON.stringify({ tag } satisfies TagWriteBody),
   })
 }
 
@@ -280,6 +305,6 @@ export function reviewNote(
 export function deferNote(id: string, days = 7): Promise<NoteReview> {
   return request<NoteReview>(`/api/v1/notes/${id}/defer`, {
     method: 'POST',
-    body: JSON.stringify({ days }),
+    body: JSON.stringify({ days } satisfies NoteDeferBody),
   })
 }

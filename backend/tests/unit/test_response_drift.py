@@ -200,7 +200,7 @@ class TestWhatIsNotAField:
 
 def _only(
     monkeypatch: pytest.MonkeyPatch,
-    schemas: dict[str, frozenset[str]],
+    schemas: dict[str, rule.Wire],
     waivers: dict[str, str] | None = None,
 ) -> None:
     """Pin both halves of what `run()` reads.
@@ -222,7 +222,10 @@ def _repo(tmp_path: Path, api_ts: str) -> ScanContext:
 
 
 FOUR = "export interface T { a: string; b: string; c: string; d: string }"
-FIVE = frozenset({"a", "b", "c", "d", "e"})
+#: ⭐ Five fields, **all required** ⭐ — so a client that declares four of them is an
+#: error, ⭐ not a note. ⭐ The split is the point of this constant's shape: ⭐ the same
+#: five as *optional* would be a note, ⭐ and that difference is the whole rule change.
+FIVE = rule.Wire(frozenset({"a", "b", "c", "d", "e"}), frozenset({"a", "b", "c", "d", "e"}))
 
 
 def _errors(result: CheckResult) -> list[str]:
@@ -265,7 +268,7 @@ class TestTheDecision:
     ) -> None:
         """⭐ Ambiguity has to be said out loud ⭐ — a correspondence that resolves to two
         candidates is a coincidence, ⭐ and reading it as a mirror is how a hole survives."""
-        _only(monkeypatch, {"ThingRead": frozenset({"a", "b"})})
+        _only(monkeypatch, {"ThingRead": rule.Wire(frozenset({"a", "b"}), frozenset({"a", "b"}))})
         source = "export interface One { a: string; b: string }\n"
         source += "export interface Two { a: string; b: string }"
         result = rule.run(_repo(tmp_path, source))
@@ -279,7 +282,10 @@ class TestTheDecision:
         """⭐ `ValidationError` is FastAPI's error body and `DataResult_*` is its generic
         wrapper. ⭐ Neither has a client type, ⭐ and requiring one would mean declaring
         the framework's shapes ⭐ — which is the opposite of this rule's purpose."""
-        _only(monkeypatch, {"ValidationError": frozenset({"loc", "msg"})})
+        _only(
+            monkeypatch,
+            {"ValidationError": rule.Wire(frozenset({"loc", "msg"}), frozenset({"loc", "msg"}))},
+        )
         result = rule.run(_repo(tmp_path, FOUR))
         assert _errors(result) == [] and _notes(result) == []
 
@@ -288,7 +294,11 @@ class TestTheWaiverTable:
     def test_a_waived_schema_is_not_reported(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _only(monkeypatch, {"TagWrite": frozenset({"tag"})}, {"TagWrite": "a real reason here"})
+        _only(
+            monkeypatch,
+            {"TagWrite": rule.Wire(frozenset({"tag"}), frozenset({"tag"}))},
+            {"TagWrite": "a real reason here"},
+        )
         result = rule.run(_repo(tmp_path, FOUR))
         assert _errors(result) == [], f"{_errors(result)}"
 
@@ -298,8 +308,13 @@ class TestTheWaiverTable:
         """⭐ S-16 learned this the expensive way ⭐ — all six of its waivers were reported as
         drift on a clean tree because the first version matched them wrongly ⭐
         (`no_enum_drift.py:430-432`). ⭐ **A waiver that cannot match is not a waiver.**"""
-        monkeypatch.setattr(rule, "wire_schemas", lambda: {"TagWrite": frozenset({"tag"})})
-        monkeypatch.setattr(rule, "NOT_MIRRORED", dict(rule.NOT_MIRRORED))
+        tag = rule.Wire(frozenset({"tag"}), frozenset({"tag"}))
+        monkeypatch.setattr(rule, "wire_schemas", lambda: {"TagWrite": tag})
+        monkeypatch.setattr(
+            rule,
+            "NOT_MIRRORED",
+            {**rule.NOT_MIRRORED, "TagWrite": "a real reason long enough to pass"},
+        )
         gone = "a shape that no longer exists here at all"
         monkeypatch.setattr(rule, "NOT_MIRRORED", {**rule.NOT_MIRRORED, "GoneRead": gone})
         result = rule.run(_repo(tmp_path, FOUR))
@@ -310,7 +325,8 @@ class TestTheWaiverTable:
     ) -> None:
         """⭐ 「不适用」 is a sentence nobody can argue with ⭐ — ⭐ and this file is read in
         six months by someone who needs to disagree with it."""
-        monkeypatch.setattr(rule, "wire_schemas", lambda: {"TagWrite": frozenset({"tag"})})
+        tag = rule.Wire(frozenset({"tag"}), frozenset({"tag"}))
+        monkeypatch.setattr(rule, "wire_schemas", lambda: {"TagWrite": tag})
         monkeypatch.setattr(rule, "NOT_MIRRORED", {"TagWrite": "n/a"})
         result = rule.run(_repo(tmp_path, FOUR))
         assert any("carries no reason" in m for m in _errors(result))
@@ -324,8 +340,13 @@ class TestTheWaiverTable:
         when nobody reads it. ⭐ Measured on the first draft: a field-count floor cut the
         findings from 12 to 4, ⭐ ⭐ and a constant chosen because it makes the number
         smaller is a constant tuned to a fixture."""
-        monkeypatch.setattr(rule, "wire_schemas", lambda: {"TagWrite": frozenset({"tag"})})
-        monkeypatch.setattr(rule, "NOT_MIRRORED", dict(rule.NOT_MIRRORED))
+        tag = rule.Wire(frozenset({"tag"}), frozenset({"tag"}))
+        monkeypatch.setattr(rule, "wire_schemas", lambda: {"TagWrite": tag})
+        monkeypatch.setattr(
+            rule,
+            "NOT_MIRRORED",
+            {**rule.NOT_MIRRORED, "TagWrite": "a real reason long enough to pass"},
+        )
         mirrored = "export interface TagWrite { tag: string; extra: string }"
         result = rule.run(_repo(tmp_path, mirrored))
         assert any("hiding a green result" in m for m in _errors(result))

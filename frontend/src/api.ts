@@ -309,9 +309,32 @@ export function getDueCards(asOf?: string, limit = 50): Promise<Schedule[]> {
   return request<Schedule[]>(`/api/v1/review/due${query ? `?${query}` : ''}`)
 }
 
+/**
+ * The body `POST /api/v1/review/{card_id}` accepts.
+ *
+ * ⭐ **This is the wire shape, and the union below is derived from it** ⭐ — not the other
+ * way round. ⭐ Two declarations of one shape is what `spec 049` removed from this file, ⭐
+ * and re-introducing it here would have been the tidiest-looking way to satisfy a gate.
+ */
+export interface CardReviewBody {
+  outcome: ReviewOutcome
+  rating?: ReviewRating | null
+  days?: number | null
+}
+
+/**
+ * ⭐ **The discrimination is kept** ⭐ — a recall carries a rating and a postponement
+ * carries a day, ⭐ and an interface alone would let a page send `outcome: 'deferred'`
+ * with a rating and find out from the server. ⭐ Derived rather than written out, ⭐ so
+ * the field list exists exactly once.
+ */
+export type CardReviewInput =
+  | (CardReviewBody & { outcome: 'reviewed'; rating: ReviewRating })
+  | (CardReviewBody & { outcome: 'deferred' })
+
 export function recordReview(
   cardId: string,
-  body: { outcome: 'reviewed'; rating: ReviewRating } | { outcome: 'deferred'; days?: number },
+  body: CardReviewInput,
 ): Promise<ReviewReceipt> {
   return request<ReviewReceipt>(`/api/v1/review/${cardId}`, {
     method: 'POST',
@@ -410,12 +433,21 @@ export function getDecisionReview(decisionId: string): Promise<{
  * null, because "I have not scored it yet" and "I scored it as nothing" are
  * different statements and only one of them is a thing this product records.
  */
-export function recordDecisionReview(body: {
+/**
+ * The body `POST /api/v1/decision-reviews` accepts.
+ *
+ * ⭐ `outcome` and `note` are optional **because the review may not be due yet** ⭐ — ⭐ and
+ * 「I have not scored it yet」 and 「I scored it as nothing」 are different statements, ⭐ so
+ * the client omits the field rather than sending null.
+ */
+export interface DecisionReviewBody {
   decision_id: string
   process_score: number
-  outcome?: DecisionOutcome
-  note?: string
-}): Promise<DecisionReview> {
+  outcome?: DecisionOutcome | null
+  note?: string | null
+}
+
+export function recordDecisionReview(body: DecisionReviewBody): Promise<DecisionReview> {
   return request<DecisionReview>('/api/v1/decision-reviews', {
     method: 'POST',
     body: JSON.stringify(body),
@@ -839,6 +871,38 @@ export async function getCardSchedule(cardId: string): Promise<Schedule | null> 
  * the ticker and therefore knows. The parameter stays optional for the other callers
  * that have a `(market, code)` pair already in hand.
  */
+/** The body `POST /api/v1/watchlist` accepts. `reason` is the point of the endpoint. */
+export interface WatchlistAddBody {
+  ticker: string
+  reason: string
+  market?: string | null
+  /** ⭐ Declared and never sent ⭐ — the server defaults it, ⭐ and a client that cannot
+   *  send it is not a client that is missing a field. ⭐ This line is what `S-18`'s
+   *  optional-versus-required split exists to be able to say. */
+  asset_type?: string
+}
+
+/** The body `POST /api/v1/watchlist/reason` accepts. Instrument, not event id. */
+export interface WatchlistReasonBody {
+  ticker: string
+  reason: string
+  market?: string | null
+}
+
+/**
+ * The body `POST /api/v1/watchlist/remove` accepts.
+ *
+ * ⭐ **`reason` is declared and never sent**, ⭐ and that is correct: ⭐ `watchlist.py:72`
+ * says 「A reason is optional — leaving needs no justification」. ⭐ `S-18` reports an
+ * undeclared optional field as a note rather than an error ⭐ precisely so this line can
+ * exist ⭐ — **a client that does not exercise an optional path is not drift.**
+ */
+export interface WatchlistRemovalBody {
+  ticker: string
+  market?: string | null
+  reason?: string | null
+}
+
 export function addToWatchlist(
   ticker: string,
   reason: string,
@@ -846,14 +910,14 @@ export function addToWatchlist(
 ): Promise<RecordedEvent> {
   return request<RecordedEvent>('/api/v1/watchlist', {
     method: 'POST',
-    body: JSON.stringify({ ticker, reason, market }),
+    body: JSON.stringify({ ticker, reason, market } satisfies WatchlistAddBody),
   })
 }
 
 export function removeFromWatchlist(ticker: string, market?: string): Promise<RecordedEvent> {
   return request<RecordedEvent>('/api/v1/watchlist/remove', {
     method: 'POST',
-    body: JSON.stringify({ ticker, market }),
+    body: JSON.stringify({ ticker, market } satisfies WatchlistRemovalBody),
   })
 }
 
@@ -864,7 +928,7 @@ export function reviseReason(
 ): Promise<RecordedEvent> {
   return request<RecordedEvent>('/api/v1/watchlist/reason', {
     method: 'POST',
-    body: JSON.stringify({ ticker, reason, market }),
+    body: JSON.stringify({ ticker, reason, market } satisfies WatchlistReasonBody),
   })
 }
 

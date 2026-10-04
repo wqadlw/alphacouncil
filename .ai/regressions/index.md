@@ -31,7 +31,8 @@
 | [0024](0024-a-derivation-used-once-means-the-substitution-missed.md) | 一个只出现一次的模块级名字，是「替换没发生」的证据 | P2 | 已修 |
 | [0025](0025-symptom-gone-is-not-cause-handled.md) | 症状消失和病因处理了是两句话 | P2 | 已修 |
 | [0026](0026-record-of-elements-mounted-twice.md)
-| [0027](0027-field-level-drift-was-never-checked.md) | 三次「门禁全绿」都抓不住的字段漂移，和一次只有变异检查才能发现的解析器 bug | P1 | ✅ 已修 · `S-18` 已加 · 变异 M1..M6 已确认（⭐ **其中 M5 重排后 findings 完全不变**）| spec 053 | | 修好一个静默失败面的改动，换来了重复挂载 | P2 | ✅ 已修 · e2e 已加 · 变异 M1（宪法那条）/M2 已确认 |
+| [0027](0027-field-level-drift-was-never-checked.md)
+| [0028](0028-one-verdict-for-two-different-facts.md) | 一条门禁在自己写的当天被自己的数据推翻（第二次） | P2 | ✅ 已修 · `S-18` 判决拆两桶 · 七条请求体变真类型 | spec 053 | | 三次「门禁全绿」都抓不住的字段漂移，和一次只有变异检查才能发现的解析器 bug | P1 | ✅ 已修 · `S-18` 已加 · 变异 M1..M6 已确认（⭐ **其中 M5 重排后 findings 完全不变**）| spec 053 | | 修好一个静默失败面的改动，换来了重复挂载 | P2 | ✅ 已修 · e2e 已加 · 变异 M1（宪法那条）/M2 已确认 |
 
 ### 第 14 轮（spec 048，2026-10-02）：**缺口不是「按钮」，是「读」**
 

@@ -39,7 +39,8 @@ not exist** ⭐ — the only difference is that one of them was written down.
 
 ⇒ **Every finding is a fact about the code instead**: 「this is a request body the client
 types inline」, 「this one is nested inside another type」, 「this endpoint has no client
-consumer at all」. ⭐ Twelve such facts, each checkable by reading one file. ⭐ That is a
+consumer at all」. ⭐ **Five such facts now, down from twelve** ⭐ — the seven request
+bodies got named client types and the rule noticed. ⭐ That is a
 longer table than four entries, ⭐ and every entry in it can be *argued with*, which is
 what `no_enum_drift.py:79-82` asks of a reason.
 
@@ -98,6 +99,7 @@ import re
 import sys
 import tempfile
 from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 from checks import frontend as frontend_sources
@@ -128,7 +130,12 @@ EMPTY_REASONS = frozenset(
     {"n/a", "na", "none", "not applicable", "no", "tbd", "todo", "later", "-", "?"}
 )
 
-#: ⭐⭐ **Twelve structural facts, each of which can be checked by reading one file.**
+#: ⭐⭐ **Five structural facts, each of which can be checked by reading one file.**
+#: ⭐⭐ **It was twelve until 2026-10-04**, ⭐ when seven request bodies were given named
+#: client types — ⭐ and the rule said so itself, ⭐ seven times, ⭐ with 「hiding a green
+#: result」. ⭐ The old reason was 「the request body is a literal inside a function」, ⭐
+#: **which is not a fact but a position** —— the literal is still inline, ⭐ it now satisfies
+#: a name.
 #:
 #: ⚠️ **Not "too small to discriminate".** ⭐ An earlier draft of this rule had a field
 #: count floor and these twelve were four of them. ⭐ The floor was removed because a
@@ -143,22 +150,6 @@ NOT_MIRRORED: dict[str, str] = {
     "DueCriterionRead": (
         "mirrored as the inline object literal inside `AttentionItem.item` in api.ts, "
         "which is why AttentionItem declares criterion and decision_id at top level"
-    ),
-    # ---- request bodies, typed inline in the function that sends them ----
-    "TagWrite": "request body: an inline object literal in notes.ts's tag writer",
-    "DeferRequest": "request body: an inline object literal in api.ts's defer call",
-    "WatchlistAddRequest": "request body: an inline object literal in api.ts's add call",
-    "WatchlistReasonRevisionRequest": (
-        "request body: an inline object literal in api.ts's reason revision call"
-    ),
-    "WatchlistRemovalRequest": "request body: an inline object literal in api.ts's remove call",
-    "alphacouncil__api__routes__reviews__ReviewRequest": (
-        "request body: an inline object literal in api.ts; the flattened schema name is "
-        "FastAPI's, because two routes declare a ReviewRequest"
-    ),
-    "alphacouncil__api__routes__decision_reviews__ReviewRequest": (
-        "request body: an inline object literal in api.ts; the flattened schema name is "
-        "FastAPI's, because two routes declare a ReviewRequest"
     ),
     # ---- no client consumer at all ----
     "CapabilityCell": (
@@ -198,8 +189,21 @@ DECLARATION = re.compile(
 MEMBER = re.compile(r"^[ \t]*(?:readonly\s+)?([A-Za-z_$][\w$]*|'[^']+')(\?)?\s*:")
 
 
-def wire_schemas() -> dict[str, frozenset[str]] | None:
-    """Every object schema FastAPI publishes, keyed by name, valued by its properties.
+@dataclass(frozen=True, slots=True)
+class Wire:
+    """One published object schema: what it declares, ⭐ and which of that is load-bearing.
+
+    ⭐ `required` is the server's own statement about which fields break a reader if the
+    client cannot see them ⭐ — ⭐ and reading it is what lets this rule tell 「the client
+    may read `undefined`」 from 「the client does not exercise an optional path」. ⭐ The
+    module docstring has the measurement that forced the split."""
+
+    properties: frozenset[str]
+    required: frozenset[str]
+
+
+def wire_schemas() -> dict[str, Wire] | None:
+    """Every object schema FastAPI publishes, keyed by name.
 
     ⭐ **Constructed, never committed.** ⭐ pydantic generates this schema, ⭐ so it cannot
     drift from the backend ⭐ — and a checked-in copy would be a *new* stale source rather
@@ -223,13 +227,16 @@ def wire_schemas() -> dict[str, frozenset[str]] | None:
     except Exception:  # a rule that cannot build the app must say so, not pass
         return None
 
-    out: dict[str, frozenset[str]] = {}
+    out: dict[str, Wire] = {}
     for name, schema in (spec.get("components") or {}).get("schemas", {}).items():
         if not isinstance(schema, dict):
             continue
         props = schema.get("properties")
         if isinstance(props, dict) and props:
-            out[name] = frozenset(props)
+            out[name] = Wire(
+                properties=frozenset(props),
+                required=frozenset(schema.get("required") or ()),
+            )
     return out
 
 
@@ -450,37 +457,52 @@ def run(ctx: ScanContext) -> CheckResult:
             continue
         if name in NOT_MIRRORED:
             continue
-        fields = schemas[name]
-        holders = sorted(candidate for candidate, (_, got) in types.items() if fields <= got)
+        wire = schemas[name]
+        holders = sorted(
+            candidate for candidate, (_, got) in types.items() if wire.properties <= got
+        )
         if holders:
             if len(holders) > 1:
                 result.note(
                     CODE,
-                    f"`{name}` ({len(fields)} fields) is declared by {len(holders)} client "
-                    f"types at once: {holders[:4]}. The correspondence is ambiguous, so this "
-                    f"pass is a coincidence rather than a mirror",
+                    f"`{name}` ({len(wire.properties)} fields) is declared by {len(holders)}"
+                    f" client types at once: {holders[:4]}. The correspondence is ambiguous,"
+                    f" so this pass is a coincidence rather than a mirror",
                     target=format_target(ctx, root),
-                    fix="If one of them is the real mirror, narrow it; if the schema really "
-                    "is that generic, waive it with a reason that says so.",
+                    fix="If one of them is the real mirror, narrow it; if the schema really is "
+                    "that generic, waive it with a reason that says so.",
                 )
             continue
-        closest = min(
-            (name_ for name_, (_, got) in types.items()),
-            key=lambda candidate: len(fields - types[candidate][1]),
-            default="",
+
+        closest, got = min(
+            ((name_, got_) for name_, (_, got_) in types.items()),
+            key=lambda pair: len(wire.properties - pair[1]),
+            default=("", frozenset()),
         )
-        gap = sorted(fields - types[closest][1]) if closest else sorted(fields)
-        result.error(
+        gap = wire.properties - got
+        missing_required = sorted(gap & wire.required)
+        missing_optional = sorted(gap - wire.required)
+        where = f"`{closest}` in {types[closest][0]}" if closest else "any client type"
+
+        if missing_required:
+            result.error(
+                CODE,
+                f"`{name}` requires {missing_required} and no client type declares them; the "
+                f"closest is {where}",
+                target=format_target(ctx, root),
+                fix=f"Add {missing_required} to {where}, or list the schema in NOT_MIRRORED "
+                "with a reason that names a fact about the code. Spec 053 §FR-1.",
+            )
+            continue
+
+        result.note(
             CODE,
-            f"`{name}` publishes {sorted(fields)} and no client type declares them; the "
-            f"closest is `{closest}`, missing {gap}",
+            f"`{name}` also offers {missing_optional}, which it does not require, and no client "
+            f"type declares them; the closest is {where}",
             target=format_target(ctx, root),
-            fix=(
-                f"Add the {sorted(fields - types[closest][1]) if closest else sorted(fields)} "
-                f"to `{closest}` in {types[closest][0] if closest else 'a client type'}, "
-                "or list the schema in NOT_MIRRORED with a reason that names a fact about "
-                "the code. Spec 053 §FR-1."
-            ),
+            fix="⚠️ **This is not drift** — a client that does not exercise an optional path is "
+            "a legitimate shape. ⭐ Declare them if a page should read them; ⭐ if not, this "
+            "note is the whole cost of the server offering something nobody uses yet.",
         )
 
     # ⭐⭐ **A waiver that covers nothing is worse than no waiver.** ⭐ S-16 learned this
@@ -511,8 +533,8 @@ def run(ctx: ScanContext) -> CheckResult:
         # loop, ⭐ so all eleven waivers were judged against whichever schema happened
         # to be iterated last ⭐ — which is how "a waiver that hides a green result"
         # would have passed forever while never being checked against its own schema.
-        fields = schemas[name]
-        if any(fields <= got for _, got in types.values()):
+        declared = schemas[name].properties
+        if any(declared <= got for _, got in types.values()):
             result.error(
                 CODE,
                 f"the NOT_MIRRORED entry for `{name}` waives something no client type is "
