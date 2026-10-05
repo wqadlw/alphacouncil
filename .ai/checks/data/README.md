@@ -93,7 +93,7 @@
 | 检查清单 | ✅ 24 条都在，⚠️ **但其中只有 2 条能照现有描述直接写** |
 | ⚠️ **声明的真实状态** | **11 条点名的列在 schema 里根本不存在 · 2 条点名的表不存在（`holdings`）· 4 条的列在另一张表上 · 5 条没点名任何列** |
 | 脚本实现 | ✅ **三条**（D-01 / D-07 / D-22）· `python -m checks --data --strict` · `dev.py check` 的第十二道门禁 |
-| fixture 测试 | ✅ `tests/unit/test_data_rules.py`（38 条）· ⚠️ **变异 6/6 红** |
+| fixture 测试 | ✅ **41 条**（`test_data_rules.py` 35 + `test_append_only_tables_exist.py` 6，`pytest --collect-only -q` 数出）· ⚠️ **变异 6/6 红** |
 | 读写 | ✅ 只读（`file:...?mode=ro`）·⚠️ **门禁会打开你的数据库**，只读是连接串而不是承诺 |
 | 修复 | ❌ **一条都没有**（规则 4/5）· `Issue.fix` 只给一句“该怎么做” |
 | 空库 | ✅ 通过（规则 1）·但它只对**新建的空库**有意义 · **门禁跑的是配置里那个** |

@@ -61,11 +61,20 @@ def configured_path() -> Path | None:
     already has three entries about ⭐ — ⭐ and `api/errors.py:731` is not the place to look
     for the truth, ⭐ the settings object is.
     """
+    # ⭐⭐ **Through `get_settings()`, not a fresh `Settings()`.** ⭐ ⭐ Measured 2026-10-05:
+    # ⭐⭐ `get_settings()` is `lru_cache(maxsize=1)` ⭐ ⭐ so the *first* call in a process wins
+    # ⭐⭐ and a fresh `Settings()` reads the environment ⭐ ⭐ ⇒ **the two can name different
+    # ⭐⭐ files.** ⭐ `tests/conftest.py:65` clears the cache ⭐ ⭐ which is the only reason a
+    # ⭐⭐ test could move the variable ⭐ ⭐ ⭐ and a first draft of this function built its own
+    # ⭐⭐ `Settings()` ⭐⭐ so it read the *new* value while the application read the old one.
+    # ⭐⭐ ⭐ That is not a theoretical split: ⭐⭐ it put a criterion out of the reader's own
+    # ⭐⭐ database inside a unit-test assertion. ⭐⭐ `F-233`'s shape ⭐⭐ ⭐ with real rows on
+    # ⭐⭐ the other end.  ⇒ **One resolver, the application's.**
     try:
-        from alphacouncil.core.config import Settings
+        from alphacouncil.core.config import get_settings
     except ImportError:
         return None
-    path = Path(Settings().database_path)
+    path = Path(get_settings().database_path)
     return path if path.is_file() else None
 
 

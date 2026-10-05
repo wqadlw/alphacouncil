@@ -33,6 +33,8 @@
 | [0026](0026-record-of-elements-mounted-twice.md)
 | [0027](0027-field-level-drift-was-never-checked.md)
 | [0028](0028-one-verdict-for-two-different-facts.md) | 一条门禁在自己写的当天被自己的数据推翻（第二次） | P2 | ✅ 已修 · `S-18` 判决拆两桶 · 七条请求体变真类型 | spec 053 | | 三次「门禁全绿」都抓不住的字段漂移，和一次只有变异检查才能发现的解析器 bug | P1 | ✅ 已修 · `S-18` 已加 · 变异 M1..M6 已确认（⭐ **其中 M5 重排后 findings 完全不变**）| spec 053 | | 修好一个静默失败面的改动，换来了重复挂载 | P2 | ✅ 已修 · e2e 已加 · 变异 M1（宪法那条）/M2 已确认 |
+| [0029](0029-two-of-twenty-four-declared-checks-are-writable.md) | ⭐⭐ **实测 24 条「已定义」的数据检查：****11 条点名的列不存在、2 条点名的表不存在、能直接写的只有 2 条**；且三条里**两条的对象是这个数据库拿不到的状态** | P1 | ✅已修 · `check-data` 进 `CHECK` · 三条 + 变异 6/6 · 并把 `thesis_versions` 的**有意前向声明**判成漏洞而删掉了它 |
+| [0030](0030-one-fact-two-resolvers-one-cached.md) | ⭐⭐⭐ **同一个事实两条解析路径，而应用那条带缓存**：`Settings()` 每次新建、`get_settings()` 是 `lru_cache(maxsize=1)` → 改完环境变量后两者指向**不同文件** | P1 | ✅已修 · `checks/data.py` 走 `get_settings()` · 三处 `setenv` 补缓存 · 新增一条「两路径不得分叉」主人真实库的判据曾出现在测试断言里 |
 
 ### 第 14 轮（spec 048，2026-10-02）：**缺口不是「按钮」，是「读」**
 

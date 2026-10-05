@@ -63,6 +63,7 @@ from checks.data_rules import audit_detail_length, counter_evidence_blank, dangl
 from checks.framework import CheckResult, Issue
 from checks.scan import ScanContext
 
+from alphacouncil.core.config import get_settings as get_settings_call
 from alphacouncil.storage import db, migrate
 
 pytestmark = pytest.mark.unit
@@ -93,6 +94,13 @@ def reader_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]
     finally:
         connection.close()
     monkeypatch.setenv("ALPHACOUNCIL_DATABASE_PATH", str(path))
+    # ⭐ `get_settings()` is `lru_cache(maxsize=1)` ⭐ and `tests/conftest.py:65`
+    # clears it ⭐ ⭐ so every test that moves this variable must ⭐ ⭐ else the
+    # application keeps the previous test's path ⭐ ⭐ and a test reads a database
+    # nobody put anything in. ⭐⭐ Three `setenv` calls in this file did not, ⭐⭐ and
+    # the symptom was a criterion from the reader's own rows appearing in an
+    # assertion three files away ⭐⭐ `F-233`'s shape ⭐⭐ with live data.
+    _clear_settings_cache()
     yield path
 
 
@@ -166,6 +174,13 @@ def bypass_foreign_keys(path: Path, market: str, code: str) -> None:
 #: ⭐ this file ⭐ ⭐ and a table name cannot be a bound parameter in SQLite anyway ⭐ ⭐ so
 #: ⭐ the alternative would be three near-identical helpers ⭐ ⭐ one per table ⭐ ⭐ each with
 #: ⭐ its own connection and its own `finally`.
+def _clear_settings_cache() -> None:
+    """Forget the application's cached settings ⭐ — see the fixture for why."""
+    from alphacouncil.core.config import get_settings
+
+    get_settings.cache_clear()
+
+
 def rows_of(path: Path, table: str) -> int:
     con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
@@ -235,6 +250,7 @@ class TestNoDatabaseIsASkip:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("ALPHACOUNCIL_DATABASE_PATH", str(tmp_path / "never-created.db"))
+        _clear_settings_cache()
         for module in MODULES:
             result = module.run(CTX)
             assert result.skipped, f"{module.META.check_id} did not skip"
@@ -256,6 +272,7 @@ class TestNoDatabaseIsASkip:
         junk = tmp_path / "not-a-database.db"
         junk.write_text("this is not a sqlite file", encoding="utf-8")
         monkeypatch.setenv("ALPHACOUNCIL_DATABASE_PATH", str(junk))
+        _clear_settings_cache()
         result = counter_evidence_blank.run(CTX)
         assert result.skipped, "a file that cannot be opened gave a clean bill of health"
         assert "would not open" in (result.skipped or "")
@@ -326,6 +343,7 @@ class TestD01ReachesPastTheForeignKey:
         bare = tmp_path / "bare.db"
         sqlite3.connect(bare).close()
         monkeypatch.setenv("ALPHACOUNCIL_DATABASE_PATH", str(bare))
+        _clear_settings_cache()
         result = dangling_target.run(CTX)
         assert codes_of(result) == ["CHECK_DATA_INTEGRITY"]
         assert "cannot run" in messages(result)[0]
@@ -478,16 +496,16 @@ class TestTheRegistryIsTheOneTheRunnerUses:
     def test_every_module_in_the_package_is_registered(self) -> None:
         """⭐⭐ **Mutation M6, and the mirror of the test above.**
 
-        ⭐ Removing ``D-07`` from ``DATA_RULES`` ⭐ ⭐ deleting nothing ⭐ ⭐ left **259 tests
+        # ⭐ Removing ``D-07`` from ``DATA_RULES`` ⭐ ⭐ deleting nothing ⭐ ⭐ left **259 tests
         green** ⭐ ⭐ and ``checks/data_registry.py``'s own docstring claims this registry
-        ⭐ ⭐ exists precisely so that 「a rule accidentally left out shows up as a diff
-        ⭐ ⭐ rather than as silence」 ⭐⭐. ⭐⭐ It did not ⭐⭐ and the five other mutations
-        ⭐ ⭐ going red is exactly why the sixth one was noticed: ⭐⭐ a run where everything
-        ⭐ ⭐ bites makes the one that does not stand out.
+        # ⭐ ⭐ exists precisely so that 「a rule accidentally left out shows up as a diff
+        # ⭐ ⭐ rather than as silence」 ⭐⭐. ⭐⭐ It did not ⭐⭐ and the five other mutations
+        # ⭐ ⭐ going red is exactly why the sixth one was noticed: ⭐⭐ a run where everything
+        # ⭐ ⭐ bites makes the one that does not stand out.
 
-        ⭐ The direction matters ⭐ ⭐ — ⭐ the other test walks the registry ⭐ ⭐ this one walks
-        ⭐ ⭐ the **package** ⭐ ⭐ so the pair covers a rule registered twice ⭐ ⭐ a rule
-        ⭐ ⭐ registered under the wrong id ⭐ ⭐ and a rule present but unregistered.
+        # ⭐ The direction matters ⭐ ⭐ — ⭐ the other test walks the registry ⭐ ⭐ this one walks
+        # ⭐ ⭐ the **package** ⭐ ⭐ so the pair covers a rule registered twice ⭐ ⭐ a rule
+        # ⭐ ⭐ registered under the wrong id ⭐ ⭐ and a rule present but unregistered.
         """
         package = Path(sys.modules[DATA_MODULE_BY_ID["D-01"]].__file__ or "").parent
         on_disk = {p.stem for p in package.glob("*.py") if p.stem != "__init__"}
@@ -497,6 +515,42 @@ class TestTheRegistryIsTheOneTheRunnerUses:
             f"rule that exists and never runs ⭐ ⭐ and registered but absent: "
             f"{sorted(registered - on_disk)}"
         )
+
+    def test_the_two_resolvers_cannot_disagree(self) -> None:
+        """⭐⭐ **The fork, asserted shut.**
+
+        # ⭐⭐ Measured 2026-10-05 ⭐ — ⭐ `get_settings()` is `lru_cache(maxsize=1)` and a fresh
+        # ⭐⭐ `Settings()` reads the environment ⭐ ⭐ so after a test moves
+        # ⭐⭐ `ALPHACOUNCIL_DATABASE_PATH` without clearing it ⭐ ⭐ the application and
+        # ⭐⭐ everything else name **different files**. ⭐⭐ That happened tonight ⭐ ⭐ and it put
+        # ⭐⭐ a criterion out of the reader's real database inside an assertion three files away.
+
+        # ⭐⇒ `checks/data.py` now resolves through `get_settings()` ⭐ ⭐ so there is one answer
+        # ⭐⭐ per process ⭐ ⭐ and this test exists so the next person adding a *second*
+        # ⭐⭐ resolver meets a red test ⭐ ⭐ rather than a mystery failure three rounds from now
+        # ⭐⭐ ⭐ ⭐ which is `F-239`'s shape again ⭐ ⭐ ⭐ except this time it gets caught.
+        """
+        from alphacouncil.core.config import Settings
+
+        _clear_settings_cache()
+        assert Path(get_settings_call().database_path) == Path(Settings().database_path)
+
+        monkey = pytest.MonkeyPatch()
+        try:
+            elsewhere = REPO_ROOT / "nowhere" / "elsewhere.db"
+            monkey.setenv("ALPHACOUNCIL_DATABASE_PATH", str(elsewhere))
+            # ⭐ Without the clear, these differ ⭐ — ⭐ and that is the whole test.
+            assert Path(get_settings_call().database_path) != Path(
+                Settings().database_path
+            ), (
+                "the cache no longer holds ⭐ — ⭐ if `get_settings()` stopped caching, ⭐ "
+                "conftest.py's `cache_clear()` calls become harmless noise ⭐ ⭐ and this "
+                "test's premise has expired ⭐ ⭐ ⭐ which is worth knowing, ⭐ ⭐ not worth "
+                "⭐⭐ silently keeping"
+            )
+        finally:
+            monkey.undo()
+        _clear_settings_cache()
 
     def test_the_ids_are_the_ones_the_declaration_lists(self) -> None:
         text = (REPO_ROOT / ".ai" / "checks" / "data" / "README.md").read_text(
