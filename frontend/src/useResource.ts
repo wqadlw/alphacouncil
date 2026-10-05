@@ -119,19 +119,37 @@ export function useResource<T>(
   const [state, setState] = useState<LoadState>({ data: null, error: null, loading: true })
   holder.runner = holder.runner ?? new RequestRunner(setState)
 
+  // ⭐⭐ **`describeError` is read through a ref, exactly like `fetcher`, and until
+  // spec 055 it was not.** The comment inside the effect below explains why `fetcher` is
+  // deliberately excluded from the deps — it is rebuilt on every render. ⭐
+  // `describeError` has the same property whenever a caller passes an inline arrow, and it
+  // **was** in the deps, so `run()` → `publish()` → render → new arrow → `run()` … is an
+  // infinite loop.
+  //
+  // ⚠️ **It cost two E2E tests a 30-second timeout each and said nothing about why.** The
+  // line, list and JSON reporters all printed only 「Test timeout of 30000ms exceeded」 —
+  // no stack, no line, no assertion. ⭐ The cause was found by bisecting the change
+  // (`git stash` on one file) rather than by reading any reporter. `F-252`.
+  //
+  // ⇒ So both arguments the caller passes *for the hook's own use* are now excluded from
+  // the deps, and `deps` is once again the only thing that re-runs a request. ⭐ **That is
+  // the contract this hook's own header already described** — the code now matches the
+  // documentation instead of the other way round.
+  const describeRef = useLatest(describeError)
+
   useEffect(() => {
-    void holder.runner?.run(fetcher, describeError)
+    void holder.runner?.run(fetcher, (cause) => describeRef.current(cause))
     // `fetcher` is rebuilt every render, so it is deliberately not a dependency;
     // `deps` is the caller's statement of what actually changes the request. The
     // generation counter is what makes that safe — a superseded request's answer is
     // dropped, so re-running on every render would only waste requests, not
     // corrupt state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, describeError])
+  }, [...deps])
 
   const reload = useCallback(() => {
-    void holder.runner?.run(fetcher, describeError)
-  }, [holder, fetcher, describeError])
+    void holder.runner?.run(fetcher, (cause) => describeRef.current(cause))
+  }, [holder, fetcher, describeRef])
 
   return {
     data: (state.data as T | null) ?? null,
@@ -149,6 +167,21 @@ export function useResource<T>(
  */
 function useRunnerHolder(): { runner: RequestRunner | null } {
   const [box] = useState(() => ({ runner: null as RequestRunner | null }))
+  return box
+}
+
+/**
+ * Keep the newest value without making it a dependency.
+ *
+ * ⚠️ **A `useState` box rather than `useRef`,** for the same reason as `useRunnerHolder`:
+ * the initialiser runs once, so the value is never null on the first render and there is
+ * no `useRef<T>()` question for a caller to answer. ⭐ The box is written during render,
+ * which is sound here because the value is only ever *read* later — inside an effect or a
+ * callback — and never during render.
+ */
+function useLatest<T>(value: T): { current: T } {
+  const [box] = useState(() => ({ current: value }))
+  box.current = value
   return box
 }
 

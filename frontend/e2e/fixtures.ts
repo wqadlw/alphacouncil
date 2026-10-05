@@ -595,6 +595,52 @@ export const CARD_NOT_SCHEDULED: Body = {
 }
 
 /**
+ * ⭐ **One row of `card_reviews`, verbatim from the running server (spec 055).**
+ *
+ * Captured 2026-10-05 from `GET /api/v1/cards/{id}/reviews` after a `hard` recall and a
+ * postponement. ⭐ Every field is here rather than the three the assertion reads, because a
+ * fixture that carries only what it asserts is how `notesContract.test.ts` ended up
+ * claiming a contract it never checked.
+ *
+ * ⚠️ **`duration_ms: null` here, and the fixture cannot prove the other case.** The API
+ * answers **422** for a client-supplied `duration_ms`, ⭐ so no row with one can be created
+ * over HTTP at all — a fact `test_reviews_api.py` records and this fixture accepts as the
+ * boundary it is. ⇒ The interface declines to render the field, and nothing in the E2E
+ * layer can observe it either way; the red line is enforced by not rendering it, which is
+ * what the 「no duration on screen」 assertion below holds.
+ */
+export function aCardReview(overrides: Body = {}): Body {
+  return {
+    id: 'review_1700000000000',
+    card_id: 'card_1700000000000',
+    outcome: 'reviewed',
+    rating: 'hard',
+    reviewed_at: '2026-10-01T02:00:00+00:00',
+    duration_ms: null,
+    from_due_at: '2026-10-09T01:00:00+00:00',
+    to_due_at: '2026-10-16T01:00:00+00:00',
+    from_state: 'learning',
+    to_state: 'learning',
+    ...overrides,
+  }
+}
+
+/** The postponement row — ⭐ `rating` is `null` because nothing was recalled. */
+export function aCardDeferral(overrides: Body = {}): Body {
+  return aCardReview({
+    id: 'review_1700000000001',
+    outcome: 'deferred',
+    rating: null,
+    reviewed_at: '2026-10-02T02:00:00+00:00',
+    from_due_at: '2026-10-16T01:00:00+00:00',
+    to_due_at: '2026-10-23T01:00:00+00:00',
+    from_state: 'learning',
+    to_state: 'deferred',
+    ...overrides,
+  })
+}
+
+/**
  * ⭐ **The three answers `/instruments/resolve` can give (spec 047).**
  *
  * ⭐ **These bodies are copied from the running server, not invented** — probed on
