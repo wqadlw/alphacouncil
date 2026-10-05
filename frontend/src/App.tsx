@@ -9,6 +9,7 @@ import TodayPage from './TodayPage'
 import UniversePage from './UniversePage'
 import VaultPage from './VaultPage'
 import { AppShellFrame } from './app/AppShellFrame'
+import { DemoBanner } from './DemoBanner'
 import { todayLabel } from './format'
 import { POOL_HREF, titleFor, useRoute, type Route } from './routing'
 
@@ -141,7 +142,16 @@ export default function App() {
   // give it a `#/start` that nothing should be able to reach and a sidebar row
   // that does nothing.
   if (!launchDone) {
-    return <StartupPage onEnter={enter} />
+    return (
+      // ⭐ **The banner is above BOTH branches, not inside the frame** (spec 057).
+      // `StartupPage` renders *instead of* the shell — see the comment at this `if` — so a
+      // banner inside `AppShellFrame` would be **invisible on the very first screen
+      // someone sees**, ⭐ which is the one moment it most has to appear.
+      <>
+        <DemoBanner />
+        <StartupPage onEnter={enter} />
+      </>
+    )
   }
 
   const instrument =
@@ -167,8 +177,10 @@ export default function App() {
     route.name === 'today' ? `今天 · ${todayLabel(new Date())}` : name
 
   return (
-    <AppShellFrame
-      route={route.name}
+    <>
+      <DemoBanner />
+      <AppShellFrame
+        route={route.name}
       instrument={instrument}
       title={heading}
       commands={[
@@ -202,18 +214,19 @@ export default function App() {
       ]}
     >
       {route.name === 'instrument' ? (
-        // Keyed on the instrument so switching targets remounts the page: without
-        // it React would reuse the component, and the previous instrument's loaded
-        // record would stay on screen until the new fetch resolved.
-        <InstrumentPage
-          key={`${route.market}/${route.code}`}
-          market={route.market}
-          code={route.code}
-        />
-      ) : (
-        VIEWS[route.name]()
-      )}
-    </AppShellFrame>
+          // Keyed on the instrument so switching targets remounts the page: without
+          // it React would reuse the component, and the previous instrument's loaded
+          // record would stay on screen until the new fetch resolved.
+          <InstrumentPage
+            key={`${route.market}/${route.code}`}
+            market={route.market}
+            code={route.code}
+          />
+        ) : (
+          VIEWS[route.name]()
+        )}
+      </AppShellFrame>
+    </>
   )
 }
 

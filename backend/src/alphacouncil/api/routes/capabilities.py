@@ -13,7 +13,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from alphacouncil.api.deps import MarketData
+from alphacouncil.api.deps import MarketData, Settings_
 from alphacouncil.core.time import utc_millis
 from alphacouncil.providers.router import CapabilityCell
 
@@ -29,10 +29,30 @@ class CapabilitiesRead(BaseModel):
     capabilities: list[CapabilityCell] = Field(
         description="Every cell, sorted by dataset then venue. Never filtered."
     )
+    is_demo: bool = Field(
+        default=False,
+        description=(
+            "⭐ **The database in use is the seeded demo library** (spec 057). Measured "
+            "2026-10-05: the reader's own database holds **0 cards, 0 notes, 0 reviews and "
+            "0 lessons**, ⭐ so a demo that looks like real data is the thing most worth "
+            "preventing.\n\n"
+            "⚠️ **This is a prompt, not a guarantee.** The guarantee is in "
+            "`alphacouncil.demo.refuse_to_overwrite`, which raises rather than warns. "
+            "Two layers, because an environment variable can be forgotten and a filename "
+            "can be renamed.\n\n"
+            "⚠️ **The first version of this docstring claimed the shell already loaded this "
+            "endpoint, so the banner would cost no request.** ⭐ Measured: `grep "
+            "capabilities frontend/src` finds **nothing** — the capability matrix has no "
+            "consumer in the interface at all (which `status.md` records as an undecided "
+            "orphan). ⇒ **That claim was invented, and the interface now makes exactly one "
+            "extra request at boot for it.** Recorded because the same sentence would "
+            "otherwise have been repeated."
+        ),
+    )
 
 
 @router.get("", summary="Which datasets the data layer can serve, per venue")
-def capabilities(market_data: MarketData) -> CapabilitiesRead:
+def capabilities(market_data: MarketData, settings: Settings_) -> CapabilitiesRead:
     """Return the capability matrix in a stable order.
 
     Nothing here is filtered by state: `pending` cells travel with the rest,
@@ -43,4 +63,6 @@ def capabilities(market_data: MarketData) -> CapabilitiesRead:
         market_data.capability_matrix(),
         key=lambda cell: (cell.dataset.value, cell.market.value),
     )
-    return CapabilitiesRead(generated_at=utc_millis(), capabilities=cells)
+    return CapabilitiesRead(
+        generated_at=utc_millis(), capabilities=cells, is_demo=settings.is_demo
+    )

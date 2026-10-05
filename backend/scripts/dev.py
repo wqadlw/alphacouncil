@@ -25,6 +25,7 @@ Two constitution rules are enforced here rather than remembered:
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -382,6 +383,49 @@ def _clean() -> int:
     return 0
 
 
+def _demo(argv: list[str]) -> int:
+    """Seed a demo library and, unless told otherwise, run the app against it.
+
+    ⚠️ **Not a gate, and deliberately never in ``CHECK``** — this is the one command here
+    that **writes files**, and a gate that writes is a gate nobody can run twice. Same
+    reasoning as ``eval`` being a command rather than a gate (``main``'s comment).
+
+    ⭐ **The guarantee is in :func:`alphacouncil.demo.refuse_to_overwrite`, not here.**
+    This function is allowed to be convenient; the module it calls is not.
+    """
+    launch = "--no-launch" not in argv
+
+    from alphacouncil.demo import demo_database_path, seed
+
+    path = demo_database_path()
+    _say("seeding the demo library…\n")
+    try:
+        tally = seed(path)
+    except ValueError as exc:
+        # The refusal. It is not reachable from here — `demo_database_path()` cannot be the
+        # real path — ⭐ so reaching it means the two have converged, which is precisely the
+        # event that must stop everything.
+        _say(f"refused: {exc}")
+        return 1
+
+    _say(f"  {path}")
+    for line in tally.as_lines():
+        _say(line)
+    _say("")
+
+    if not launch:
+        _say("--no-launch given, so the app was not started.")
+        return 0
+
+    os.environ["ALPHACOUNCIL_DATABASE_PATH"] = str(path)
+    os.environ["ALPHACOUNCIL_DEMO"] = "1"
+    _say("starting the app against the demo library (Ctrl-C to stop)…")
+    _say(f"  then open http://{os.environ.get('ALPHACOUNCIL_API_HOST', '127.0.0.1')}:8000/\n")
+    from alphacouncil.__main__ import main as app_main
+
+    return app_main()
+
+
 def _print_help() -> None:
     """List the available commands."""
     _say("usage: python scripts/dev.py <command>\n")
@@ -389,7 +433,12 @@ def _print_help() -> None:
     _say("  check           every gate CI runs; skipped gates fail the run")
     _say("  check-lite      only the gates that exist today")
     _say("  clean           remove caches and build artefacts")
-    _say("  eval            product red lines: how many are actually guarded\n")
+    _say("  eval            product red lines: how many are actually guarded")
+    _say(
+        "  demo            seed a demo library and run the app against it\n"
+        "                  ⭐ it never touches the reader's real database (spec 057)\n"
+        "                  demo --no-launch   seed only, do not start the app\n"
+    )
     _say("gates:")
     for name, gate in GATES.items():
         flag = "" if gate.implemented else "   [NOT IMPLEMENTED]"
@@ -410,6 +459,8 @@ def main(argv: list[str]) -> int:
     command = argv[0]
     if command == "clean":
         return _clean()
+    if command == "demo":
+        return _demo(argv[1:])
     if command == "eval":
         # Delegated, and deliberately **not** a gate in CHECK. `eval` is red
         # today and red is its honest state: 5 of 15 red lines have a verifier

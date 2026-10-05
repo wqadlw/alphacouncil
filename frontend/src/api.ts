@@ -459,6 +459,29 @@ export interface DecisionReview {
 }
 
 /**
+ * The capability matrix, and ⭐ **whether this is the demo library** (spec 057).
+ *
+ * ⚠️ **`is_demo` is read at boot, once, for `DemoBanner`.** The server field's description
+ * used to claim this endpoint was already loaded by the shell, so the banner would be
+ * free. ⭐ Measured: **no frontend file calls `/capabilities` at all** ⭐ — the matrix has
+ * no consumer in the interface (`status.md` records it as an undecided orphan) ⇒ **one
+ * extra request at boot**, which is what the server docstring now says.
+ *
+ * Only `is_demo` is typed here. ⭐ **The cells are not**: this file deliberately does not
+ * restate a `Dataset` x `Market` matrix nobody renders, because a type for a field nothing
+ * reads is a second copy that will drift (`F-248`: a table's existence is not evidence
+ * that anything uses it).
+ */
+export interface CapabilitiesRead {
+  /** ⭐ True when the database in use is `dev.py demo`'s seeded library. */
+  is_demo: boolean
+}
+
+export function getCapabilities(): Promise<CapabilitiesRead> {
+  return request<CapabilitiesRead>('/api/v1/capabilities')
+}
+
+/**
  * Every time a decision was reviewed, oldest first — `spec 056`.
  *
  * ⭐ **`DecisionReview[]`, deliberately not a second type.** The first version of this
@@ -600,8 +623,7 @@ function describeValidation(detail: unknown): string | null {
  * and the note page's whole argument is that notes and cards differ in their
  * *rules*, not in how failures are reported.
  */
-export async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {  const response = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },
     ...init,
   })

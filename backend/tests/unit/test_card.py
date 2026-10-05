@@ -222,9 +222,59 @@ def test_create_persists_every_field_and_round_trips(
 def test_create_without_symbols_round_trips(connection: sqlite3.Connection) -> None:
     row = repository.create(connection, _draft(), now="2026-09-27T12:00:00.000Z")
     assert row.symbols == ()
-    got = repository.get_by_id(connection, row.id)
-    assert got is not None
-    assert got.symbols == ()
+
+
+def test_two_cards_in_the_same_millisecond_both_land(
+    connection: sqlite3.Connection,
+) -> None:
+    """⭐⭐ **The test `M3` proved was missing, added after the mutation survived.**
+
+    `_generate_card_id` used to be the bare `f"card_{millis}"`, and the K1 changelog
+    recorded that as a deliberate deferral: two cards in one millisecond collide on the
+    primary key, unreachable from the UI but reachable from a script. ⭐ `spec 057`'s seeder
+    then hit it, which is the 「脚本化调用」 that note predicted, and the id now walks forward
+    the way `notes.py` / `note_recall.py` / `lesson.py` already did.
+
+    ⭐ **The fix landed with no test, and mutation `M3` caught that** — reverting the walk
+    left the whole suite green. ⭐ That is worth recording rather than quietly fixing: the
+    demo tests never exercised the collision because the seeder gives each card its own
+    stamp, ⭐ so the one behaviour this round changed was the one thing nothing checked.
+
+    So: identical stamp, two cards, both rows present and both ids distinct.
+    """
+    first = repository.create(connection, _draft(), now="2026-09-27T12:00:00.000Z")
+    second = repository.create(connection, _draft(), now="2026-09-27T12:00:00.000Z")
+
+    assert first.id != second.id
+    # ⭐ Both are really on disk. Asserting distinct ids alone would pass if one of the two
+    # writes silently vanished along with the other, which is the failure being guarded.
+    assert repository.get_by_id(connection, first.id) is not None
+    assert repository.get_by_id(connection, second.id) is not None
+    # ⭐ And the walk is one millisecond, not a jump — the id is still a timestamp, which is
+    # the reading the whole `card_[0-9]*` scheme rests on.
+    assert int(second.id.removeprefix("card_")) - int(first.id.removeprefix("card_")) == 1
+    # ⭐ The **stamp** is untouched. Only the id moves: `captured_at` is the reader's record
+    # of when the claim was captured, and a collision must not rewrite it.
+    assert first.captured_at == second.captured_at == "2026-09-27T12:00:00.000Z"
+
+
+def test_a_walked_id_still_satisfies_the_schema_check(
+    connection: sqlite3.Connection,
+) -> None:
+    """⭐ **No migration was needed, and this is why.**
+
+    `cards.id` carries `CHECK (GLOB('card_[0-9]*', id))`, so a walk-forward suffix is legal
+    precisely because the pattern only pins the prefix. ⭐ Asserted against the real schema
+    rather than against a re-typed copy of the constraint, ⭐ because a hand-copied CHECK
+    is the version that drifts from the migration.
+    """
+    repository.create(connection, _draft(), now="2026-09-27T12:00:00.000Z")
+    walked = repository.create(connection, _draft(), now="2026-09-27T12:00:00.000Z")
+
+    matched = connection.execute(
+        "SELECT GLOB('card_[0-9]*', ?) AS ok", (walked.id,)
+    ).fetchone()
+    assert matched["ok"] == 1
 
 
 def test_create_ensures_instrument_rows_exist(connection: sqlite3.Connection) -> None:

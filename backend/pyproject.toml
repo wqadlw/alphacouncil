@@ -222,6 +222,38 @@ ignore = [
 # sibling `note_recall.py` is exempted for the identical reason; `RUF001` is
 # on because the reader-facing refusals are Chinese.
 "src/alphacouncil/storage/repositories/note_recall.py" = ["RUF001", "RUF002"]
+
+# `cards.py` (spec 057) holds **`RUF001` alone**, for exactly the reason
+# `notes.py` above does rather than the reason `note_recall.py` does. ⭐ The one
+# Chinese string it added is the refusal `_generate_card_id` raises when
+# 1000 ids are taken in one millisecond — ⭐ a message the reader sees, so
+# `RUF001` is on for it. ⭐ `RUF002` is **not** granted: the docstring it grew
+# quotes the K1 changelog, and that quote was paraphrased into English
+# instead, because it is a *reference* rather than a constraint being cited. ⭐
+# So this entry is narrower than its neighbours' on purpose — the English
+# paraphrase is the cheaper option here, and the exemption list should not be
+# where a module goes to stop being read.
+"src/alphacouncil/storage/repositories/cards.py" = ["RUF001"]
+
+# The demo seeder (spec 057) for a **stronger** version of the reason the files
+# above give, because this one is *nearly all* copy: `_NOTES`, `_CARDS` and
+# `_DECISIONS` are the sentences a reader sees when they run `dev.py demo`, and
+# `refuse_to_overwrite`'s refusal is quoted in `dev.py` back to them. ⭐ The
+# difference from `criterion_sentence.py` — the nearest precedent — is that
+# this module's strings are **not constraints being cited**: they are invented
+# demo copy. ⭐ So nothing here is load-bearing at the wording level, and the
+# exemption buys only "the linter cannot tell invented Chinese from a homoglyph",
+# which is exactly what `RUF001`/`RUF002` cannot do in any file. ⭐ `RUF002` is
+# included because the docstrings cite the K1 changelog and spec §六 in Chinese.
+#
+# Narrow on purpose, same as the others: `RUF001`/`RUF002` stay on everywhere
+# else in `src/`, so a lookalike homoglyph in a real identifier is still caught.
+# ⭐ Worth noting the cost this list has already begun to pay — `cards.py` had to
+# have a docstring **paraphrased into English** to avoid becoming a seventh entry.
+# ⭐ A list whose length is the price of writing a Chinese sentence will eventually
+# be edited to say "none of these are special", which is why each entry above
+# states what would *not* qualify.
+"src/alphacouncil/demo.py" = ["RUF001", "RUF002"]
 "src/alphacouncil/__main__.py" = ["T201"]  # CLI entry point may print
 # Developer tooling: printing is the interface, and the subprocess argv is
 # built from constants in this repo, never from user input.

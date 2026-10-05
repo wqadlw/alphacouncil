@@ -93,6 +93,28 @@ class Settings(BaseSettings):
     # so removing it breaks no caller.
     database_path: Path = Field(default_factory=default_database_path)
 
+    # ---- demo library ------------------------------------------------------
+    #: ⭐ **True when this process is pointed at `dev.py demo`'s seeded library** (spec 057).
+    #:
+    #: The banner it turns on is not decoration. Measured 2026-10-05: the reader's own
+    #: database holds **0 cards, 0 notes, 0 reviews and 0 lessons**, so the three queues
+    #: that make this product different from a P&L log open empty every day — ⭐ and a
+    #: demo that looks exactly like real data is worse than no demo, because it can be
+    #: mistaken for the reader's own record.
+    #:
+    #: ⚠️ **This flag is a prompt, not a guarantee** — an environment variable can be
+    #: forgotten. The guarantee lives in :mod:`alphacouncil.demo`, which **refuses to write
+    #: to :func:`default_database_path`**. Two layers because one is not enough, and this
+    #: is the one that is easy to forget (spec 057 §2.1).
+    is_demo: bool = Field(
+        default=False,
+        validation_alias="ALPHACOUNCIL_DEMO",
+        description=(
+            "The database in use is the seeded demo library. Renders a persistent banner "
+            "on every page so demo data can never be read as the reader's own records."
+        ),
+    )
+
     # ---- observability -----------------------------------------------------
     # Runtime traces land beside the database, never inside the repository:
     # the `.ai/traces/` convention describes the *format* (and archives

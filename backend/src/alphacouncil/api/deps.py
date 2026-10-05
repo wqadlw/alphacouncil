@@ -80,3 +80,10 @@ DatabaseConnection = Annotated[sqlite3.Connection, Depends(database_connection)]
 
 #: Annotate a route parameter with this to receive the market-data router.
 MarketData = Annotated[MarketDataRouter, Depends(market_data)]
+
+#: ⭐ Annotate a route parameter with this to receive the settings **this app was built
+#: with** — from ``app.state``, not from a second ``get_settings()`` call.
+#: ⭐ That distinction is ``F-246``: one fact with two resolvers is a fact that can differ
+#: from itself, and the reader would be told which library they are looking at by a lookup
+#: that is not the one serving the data. Added for spec 057 (``is_demo``).
+Settings_ = Annotated[Settings, Depends(app_settings)]

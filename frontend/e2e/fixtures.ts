@@ -178,13 +178,51 @@ type Body = Record<string, unknown>
 const HANDLERS = new WeakMap<Page, Record<string, Body | number>>()
 const ROUTED = new WeakSet<Page>()
 
+/**
+ * ⭐ **`/api/v1/capabilities`, answered by default for every spec (spec 057).**
+ *
+ * `DemoBanner` fetches this once at boot to learn whether the database in use is
+ * `dev.py demo`'s seeded library. ⭐ It is here rather than left to each spec because the
+ * alternative defeats this file's own stated rule — 「Any unmatched `/api/v1` path fails
+ * loudly … a new endpoint must be wired *on purpose*, never silently answered by a
+ * catch-all」.
+ *
+ * ⭐ **And note that a missing fixture would have been invisible anyway.**
+ * `DemoBanner` deliberately swallows a failed request (rendering nothing, because
+ * 「I could not check whether this is the demo」 is not a sentence a reader should read),
+ * ⭐ so the 404 would have been caught by nothing: twenty specs would have made an
+ * unfulfilled request and every one of them would still have passed. ⭐ A guard whose
+ * failure mode is silent needs its fixture supplied centrally, not left to twenty authors.
+ *
+ * `is_demo: false` ⭐ — the specs are the reader's own library, and the banner must be
+ * absent from all of them. `demo-library.spec.ts` overrides this one field.
+ */
+export function capabilities(overrides: Body = {}): Body {
+  return {
+    generated_at: STAMP,
+    // ⭐ The matrix itself is **not** spelled out. Nothing in the interface renders it —
+    // measured: `grep capabilities frontend/src` finds only `DemoBanner`'s one field —
+    // ⭐ and a fixture describing twenty-odd cells nobody reads would be a second thing to
+    // keep in step with the server (`F-248`: a table's existence is not evidence that
+    // anything uses it).
+    capabilities: [],
+    is_demo: false,
+    ...overrides,
+  }
+}
+
 export async function routeApi(
   page: Page,
   handlers: Record<string, Body | number>,
 ): Promise<void> {
   await acknowledgeLaunch(page)
 
-  const merged = HANDLERS.get(page) ?? {}
+  // ⭐ Seeded once per page rather than merged over: assigning into `existing ?? {...}`
+  // would let the default overwrite a spec's own `capabilities` entry on its second call,
+  // which is the same class of bug as the original 「replaced the map」 version above.
+  const merged: Record<string, Body | number> = HANDLERS.get(page) ?? {
+    '/api/v1/capabilities': capabilities(),
+  }
   Object.assign(merged, handlers)
   HANDLERS.set(page, merged)
 

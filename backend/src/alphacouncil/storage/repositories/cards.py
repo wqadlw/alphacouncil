@@ -132,9 +132,89 @@ def _event_id_for(now_dt: datetime) -> str:
     return f"event_{int(now_dt.timestamp() * 1000)}"
 
 
-def _generate_card_id(now_dt: datetime | None = None) -> str:
+#: How far past the requested millisecond we will look for a free id.
+#:
+#: 1000 is one second, and the number is `notes.py`'s and `lesson.py`'s — ⭐ the scheme is
+#: now three repositories old and a fourth copy of the constant is a fourth place for the
+#: limit to drift. Beyond a second two writes are not "the same moment" any more, and
+#: minting a card whose id lies about when it was written would break the
+#: `GLOB('card_[0-9]*', id)` → timestamp reading the whole scheme rests on.
+_ID_COLLISION_LIMIT = 1_000
+
+
+def _generate_card_id(
+    connection: sqlite3.Connection,
+    now_dt: datetime | None = None,
+) -> str:
+    """A card id that is not already taken.
+
+    ⭐ **This walks forward. It used to be the bare `f"card_{millis}"`, and that was a
+    deferral whose reason has since expired** (spec 057).
+
+    The deferral is on record — `.ai/logs/changes/2026-09-27-k1-cards.md`, 边界记录: two
+    cards in the same millisecond collide on UNIQUE; a manual UI action cannot trigger it
+    but a scripted call can; not fixed, because it was consistent with the existing
+    repositories; recorded here pending a product decision between a sequence suffix and
+    accepting a 500.
+
+    ⭐ **Paraphrased rather than quoted, and that is a judgement rather than an accident.**
+    The project's stated rule for the `RUF001`/`RUF002` exemptions is 「rewriting a
+    quotation to satisfy a linter is worse than the warning」 — ⭐ which holds for text that
+    *is* the constraint. ⭐ This docstring only *refers* to the changelog, so paraphrasing
+    loses no constraint and saves `cards.py` an exemption. ⭐ Five sibling files already hold
+    one; a sixth for a docstring that could have been English would make the list stop
+    meaning anything.
+
+    ⭐⭐ **That stated reason was "keep semantics consistent with the existing repositories",
+    and it is why this was fixed now rather than then: at the time of writing, `cards`
+    was the *only* repository with a bare millis id, so consistency argued for leaving it
+    alone. Since then three of them changed convention — `notes.py::_mint_note_id`,
+    `note_recall.py::_new_id` and `lesson.py` all walk forward. ⭐ Consistency now argues
+    the other way, so the deferral's premise is gone rather than merely inconvenient.
+
+    ⭐ **The alternative the note offered — 「接受 500」 — is the reason this had to be
+    decided at all.** A 500 on `POST /api/v1/cards` means the reader's claim is *lost*, with
+    no envelope explaining why and nothing to retry. `notes.py` states the general rule:
+    「the alternative to raising is worse — a note that silently overwrote another is the
+    exact failure the whole append-only discipline exists to prevent」. ⭐ The same holds
+    for a card: a card is 「有来源的主张」 and the product's whole claim is that a claim
+    once recorded stays recorded.
+
+    ⭐ **Reachability was measured, not assumed** (spec 057 §六 warns 「播种『成功』但库是空
+    的」, and the mirror of that warning is 「播种失败了却没人发现」): the K1 note says a
+    manual UI action cannot trigger this, and that is correct — ⭐ but `dev.py demo`'s
+    seeder hit it **on its first run**, which is the 「脚本化调用」 the note predicted, four
+    repositories later. `cards.id` needed no migration: `card_[0-9]*` still accepts a
+    walked-forward id, verified against the schema's own GLOB.
+
+    ⚠️ **`card_reviews` is a different row and is still bare** — `scheduling.py::_new_id`
+    takes no connection, so it *cannot* check. `note_recall.py` already names it as
+    inherited-and-unfixed, and it stays that way: fixing it needs the signature changed, and
+    that is its own decision.
+
+    ⚠️ **The exhaustion case raises a bare `RuntimeError`, and that is a decision rather
+    than an omission** — this repository now has three answers to 「同一个问题」 and they
+    disagree. `notes.py` raises `NoteIdExhaustedError` but stamps it
+    `ErrorCode.NOTE_NOT_FOUND`, ⭐ which is *wrong*: the note exists, the id space is full.
+    `note_recall.py` raises a domain error; `lesson.py`, the newest of the three, raises
+    `RuntimeError`. ⭐ This copies `lesson.py` because it is both the latest decision and
+    the only one that does not publish a misleading code — ⭐ and because the condition
+    needs a thousand cards in one millisecond, so a registry entry would exist for no reader
+    to ever see. ⭐ Written down here so the next reader does not take it for a missing
+    registration.
+    """
     millis = int(now_dt.timestamp() * 1000) if now_dt is not None else int(time.time() * 1000)
-    return f"card_{millis}"
+    for offset in range(_ID_COLLISION_LIMIT):
+        candidate = f"card_{millis + offset}"
+        taken = connection.execute(
+            "SELECT 1 FROM cards WHERE id = ?", (candidate,)
+        ).fetchone()
+        if taken is None:
+            return candidate
+    raise RuntimeError(
+        "无法为这张卡片生成唯一 id：同一毫秒内已有多达 "
+        f"{_ID_COLLISION_LIMIT} 张卡片。"
+    )
 
 
 def create(
@@ -145,7 +225,7 @@ def create(
 ) -> CardRow:
     stamp = now if now is not None else utc_millis()
     now_dt = _stamp_to_dt(stamp)
-    card_id = _generate_card_id(now_dt)
+    card_id = _generate_card_id(connection, now_dt)
 
     for sym in draft.symbols:
         instruments.ensure(connection, sym, now=stamp)
