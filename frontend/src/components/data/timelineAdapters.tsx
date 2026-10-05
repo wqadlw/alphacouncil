@@ -179,7 +179,7 @@ export function CardTimeline({ events }: { events: readonly CardEvent[] }) {
 export const NOTE_RATING_LABEL = labelsOf(NOTE_RATINGS)
 
 /** ⭐ `deferred` and `reset` are **not** grades — a rating is `null` for both. */
-const OUTCOME_LABEL: Record<NoteReview['outcome'], string> = {
+export const NOTE_OUTCOME_LABEL: Record<NoteReview['outcome'], string> = {
   reviewed: '复习过',
   // ⭐ 「不是我答错，是我想再等等」 ⭐ — ⭐ spec 028's `defer` is 「**我的想法变了，
   // 以后再说**」 ⭐ and a history row that called it 「延期」 would sound like a
@@ -207,20 +207,29 @@ const OUTCOME_LABEL: Record<NoteReview['outcome'], string> = {
  * instead of reading, ⭐ and spec 028's copy work is entirely about moving them away
  * from that. ⭐ A number the reader cannot act on is noise with a decimal point.
  */
-function noteReviewEvents(reviews: readonly NoteReview[]): TimelineEvent[] {
+/**
+ * ⭐ **Exported so a test can assert on what a row actually says** rather than on the
+ * labels next to it. `spec 055`'s first guard for red line 11 asserted the *labels* and
+ * was green while a mutation printed `duration_ms` into the **detail** line ⭐— because
+ * `detail` is a template literal built here, not a value in either table. ⭐ So the guard
+ * checked the wrong object, which is `ratings.test.ts`'s own warning reproduced:
+ * **a value assertion cannot see a string assembled one line away from it.** ⇒ Exporting
+ * the builder makes the rendered row itself the thing under test.
+ */
+export function noteReviewEvents(reviews: readonly NoteReview[]): TimelineEvent[] {
   return reviews.map((review) => ({
     id: review.id,
     what:
       review.outcome === 'reviewed' && review.rating !== null
-        ? `${OUTCOME_LABEL[review.outcome]} · ${NOTE_RATING_LABEL[review.rating]}`
-        : OUTCOME_LABEL[review.outcome],
+        ? `${NOTE_OUTCOME_LABEL[review.outcome]} · ${NOTE_RATING_LABEL[review.rating]}`
+        : NOTE_OUTCOME_LABEL[review.outcome],
     at: review.reviewed_at,
     detail: `下一次 ${review.to_due_at.slice(0, 10)}`,
     // ⭐ **A `reset` is marked, and it is the only one.** ⭐ Rule 7: colour carries
     // meaning. ⭐ 「这条被我改过」 ⭐ is the one event here whose *consequence* is
     // different from the others ⭐ — ⭐ it wiped the schedule ⭐ — ⭐ and that is worth
     // the one rule this list has.
-    tone: review.outcome === 'reset' ? 'marked' : 'neutral',
+    tone: NOTE_MARKED_OUTCOMES.has(review.outcome) ? 'marked' : 'neutral',
   }))
 }
 
@@ -266,7 +275,7 @@ export const CARD_RATING_LABEL = labelsOf(CARD_RATINGS)
  * ⚠️ So this table is **not** a subset of `OUTCOME_LABEL` and must never be made one — it is
  * not that `reset` was left out on purpose, it is that there is no such event to leave out.
  */
-const CARD_OUTCOME_LABEL: Record<CardReview['outcome'], string> = {
+export const CARD_OUTCOME_LABEL: Record<CardReview['outcome'], string> = {
   reviewed: '复习过',
   // ⭐ The note's own wording, deliberately. One action, two queues — and 「延期」 is a
   // scheduler's word, while this is the reader's. spec 055 `plan.md` §三 measured that
@@ -274,6 +283,33 @@ const CARD_OUTCOME_LABEL: Record<CardReview['outcome'], string> = {
   // arriving through a different field.
   deferred: '我说以后再看',
 }
+
+/**
+ * ⭐⭐⭐ **规则 7 as data: which outcomes earn colour, per adapter.**
+ *
+ * 规则 7 says colour carries **meaning**. ⭐ For a long time 「meaning」 lived only in a
+ * comment and a ternary inside a `.map()`, ⭐ which means a test could only reach it by
+ * scraping source — and `regressions/0005` / `F-213` are both about a measurement that
+ * cannot tell 「no finding」 from 「my scanner is broken」. ⭐ spec 055's mutation check made
+ * the cost concrete: giving the card's `deferred` row a colour turned **no test red** —
+ * not the unit tests, not the E2E — ⭐ because nothing asserted the decision at all.
+ *
+ * ⇒ So it is now **an exported set that the code reads**, and:
+ *   - the note history marks exactly `reset` ⭐— the one row whose consequence differs,
+ *     because a rewrite **wiped the schedule** (spec 028);
+ *   - ⭐ **the card history marks nothing**, and the emptiness is the argument: a card has
+ *     no `reset` (migration 0005 constrains `outcome` to two values), and a postponement
+ *     leaves the reader with a card on a schedule exactly as a recall does. ⭐ Colouring
+ *     one would invent a distinction **the product does not make**.
+ *
+ * ⚠️ **An empty set is a decision, so it is written as an empty set** rather than omitted —
+ * a missing export reads as 「nobody got round to it」, which is `F-149` again (four
+ * adapters, one of them for nothing).
+ */
+export const NOTE_MARKED_OUTCOMES: ReadonlySet<NoteReview['outcome']> = new Set(['reset'])
+
+/** ⭐ **Empty, and that emptiness is the whole argument.** See above. */
+export const CARD_MARKED_OUTCOMES: ReadonlySet<CardReview['outcome']> = new Set()
 
 /**
  * A card's review history, as `RecordTimeline` events.
@@ -296,7 +332,8 @@ const CARD_OUTCOME_LABEL: Record<CardReview['outcome'], string> = {
  * would invent a distinction the product does not make. ⇒ Same treatment as
  * `CardTimeline`'s `verified`.
  */
-function cardReviewEvents(reviews: readonly CardReview[]): TimelineEvent[] {
+/** ⭐ Exported for the same reason as `noteReviewEvents` — see that docstring. */
+export function cardReviewEvents(reviews: readonly CardReview[]): TimelineEvent[] {
   return reviews.map((review) => ({
     id: review.id,
     what:
@@ -305,7 +342,10 @@ function cardReviewEvents(reviews: readonly CardReview[]): TimelineEvent[] {
         : CARD_OUTCOME_LABEL[review.outcome],
     at: review.reviewed_at,
     detail: `下一次 ${review.to_due_at.slice(0, 10)}`,
-    tone: 'neutral' as const,
+    // ⭐ **Reads `CARD_MARKED_OUTCOMES`, which is empty** ⭐— so the mark is not
+    // 「switched off」, it is **「there is nothing to mark」**, and the two are different
+    // claims. A `tone: 'neutral'` literal would say the first and read as the second.
+    tone: CARD_MARKED_OUTCOMES.has(review.outcome) ? ('marked' as const) : ('neutral' as const),
   }))
 }
 
