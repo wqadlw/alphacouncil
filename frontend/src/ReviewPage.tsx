@@ -57,6 +57,7 @@ import {
 } from './api'
 import { TODAY_HREF } from './routing'
 import { Button, EmptyState, ErrorNote, Skeleton } from './components/ui'
+import { CARD_RATINGS } from './components/knowledge/ratings'
 import { useResource } from './useResource'
 
 /**
@@ -245,20 +246,28 @@ export default function ReviewPage() {
         `variant="default"` for all five, deliberately — not one primary and four
         ghosts. The product has no opinion about which answer is correct, so it
         has no opinion about which button is the good one.
+
+        ⭐⭐ **The four grade labels come from `CARD_RATINGS` (spec 055).** They were five
+        `<Button>` literals right here — the **fourth** copy of these words, and the one
+        `ratings.test.ts` never pointed at: spec 049 converged three and left this one.
+        ⭐ Not one word changes. 忘了 / 有点难 / 记得 / 太简单 are what the reader has always
+        pressed, and a card's review history (spec 055) can only answer 「我当时按的是哪个」
+        if both surfaces say the same word.
+        ⚠️ **`现在不是时候` is not in that table and cannot be in it**: it is
+        `outcome: 'deferred'`, not a rating, so it has no grade to key a `data-testid` on —
+        which is why the five buttons do not collapse into one `.map()` (`plan.md` §三).
       */}
       <div className="mt-7 flex flex-wrap gap-2" data-testid="review-actions">
-        <Button disabled={submitting} onClick={rating('again')} data-testid="rate-again">
-          忘了
-        </Button>
-        <Button disabled={submitting} onClick={rating('hard')} data-testid="rate-hard">
-          有点难
-        </Button>
-        <Button disabled={submitting} onClick={rating('good')} data-testid="rate-good">
-          记得
-        </Button>
-        <Button disabled={submitting} onClick={rating('easy')} data-testid="rate-easy">
-          太简单
-        </Button>
+        {CARD_RATINGS.map((choice) => (
+          <Button
+            key={choice.value}
+            disabled={submitting}
+            onClick={rating(choice.value)}
+            data-testid={`rate-${choice.value}`}
+          >
+            {choice.label}
+          </Button>
+        ))}
         <Button disabled={submitting} onClick={() => void answer({ outcome: 'deferred' })} data-testid="rate-defer">
           现在不是时候
         </Button>
