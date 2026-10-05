@@ -1237,20 +1237,42 @@ describe('V-14 — an append-only log has one rendering', () => {
     // shipped. The number guards against a registry grown on faith, and it only works
     // if it is raised when a caller appears, not when it is convenient.
     //
+    // ⭐ **Four since spec 055**, when the card's review history arrived — ⭐ and it is the
+    // third instance of the same event this file keeps recording: a fact with no page
+    // (`listCardReviews` had zero callers while `scheduling.list_reviews()` had no route),
+    // then a page for it.
+    //
     // ⭐ **The path filter takes both separators.** `FILES` holds raw platform paths and
     // only `RELATIVE()` normalises them, so the first version filtered on
     // `'/components/data/'` and found **zero** files — ⭐ and then asserted `toBe(2)`
     // against nothing and reported 「found 0」, ⭐ which reads as "somebody deleted both
     // adapters" and was actually "the filter never matched a file". A filter that can
     // match nothing is a test that reports a false cause.
-        const adapters = occurrences(
-      /export function (CardTimeline|WatchlistTimeline|NoteReviewTimeline)\(/,
+        // ⭐⭐ **The pattern used to enumerate the three names, and that made the count a
+    // decoration.** `/export function (CardTimeline|WatchlistTimeline|NoteReviewTimeline)\(/`
+    // is an allow-list wearing a count's clothes: spec 055 added `CardReviewTimeline` and
+    // this assertion **stayed green at 45/45** while the number it claims to guard had
+    // gone from three to four. ⭐ The same blind spot V-14 exists to close — 「a home was
+    // added and nobody noticed」 — reproduced inside the test that watches for it.
+    //
+    // ⇒ **So the pattern is now 「any exported `*Timeline` in this directory」** and the
+    // number is still pinned. A fifth adapter now fails here instead of passing quietly,
+    // and the failure message names it. ⭐ The pin is the part that still needs a human:
+    // adding an adapter is a decision, so the count is raised deliberately, not by the
+    // test discovering it.
+    // ⭐ **`RecordTimeline` itself is excluded**, and it is excluded by name in a lookahead
+    // rather than by not counting it afterwards. ⭐ The component lives in this same
+    // directory and is not an adapter, so the count must skip it — ⭐ but the skip has to
+    // be visible in the pattern, because a filter applied to the result would be one more
+    // step where a number can disagree with the question.
+    const adapters = occurrences(
+      /export function (?!RecordTimeline\()\w*Timeline\(/,
       FILES.filter((file) => /components[\\/]data[\\/]/.test(file)),
     )
     expect(
       adapters.length,
-      `expected 3 RecordTimeline adapters, found ${adapters.length}:\n${describeHits(adapters)}`,
-    ).toBe(3)
+      `expected 4 RecordTimeline adapters, found ${adapters.length}:\n${describeHits(adapters)}`,
+    ).toBe(4)
   })
 
   it('uses `.mark` only where no utility sets a border colour', () => {

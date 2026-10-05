@@ -1,5 +1,5 @@
 /**
- * The three adapters that feed `RecordTimeline`.
+ * The four adapters that feed `RecordTimeline`.
  *
  * ⭐ Each adapter answers the same two questions — what happened, and what did the
  * reader write — and nothing else. The component owns the row; this file owns the
@@ -31,11 +31,22 @@
  * third adapter would have been a component with no page — ⭐ `F-149`, the same
  * mistake as the 13-entry icon registry. ⭐ The rule is not 「never add a third
  * adapter」 ⭐ it is 「add the third adapter when something can show it」.
+ *
+ * ⭐⭐⭐ **The fourth adapter arrived for the same reason and by the same rule (spec 055),
+ * two months later, and the parallel is exact.** Measured on 2026-10-05: the card queue's
+ * grades were a **fourth** copy of the FSRS wording (`ratings.ts` had two tables and said
+ * 「one home」), and `listCardReviews` had **zero callers** while `scheduling.list_reviews()`
+ * sat behind **no route at all**. ⭐ So the card review history was the third instance of
+ * the *same* two defects: a concept with more than one home, and a fact with no page.
+ *
+ * ⇒ **Both were fixed in the order the measurement forced.** The vocabulary first
+ * (`CARD_RATINGS`), because an endpoint lands first and an adapter is written next, and
+ * the adapter is exactly where a fifth copy of four words would have appeared.
  */
 
-import type { CardEvent, WatchlistEvent } from '../../api'
+import type { CardEvent, CardReview, WatchlistEvent } from '../../api'
 import type { NoteReview } from '../../notes'
-import { labelsOf, NOTE_RATINGS } from '../knowledge/ratings'
+import { CARD_RATINGS, labelsOf, NOTE_RATINGS } from '../knowledge/ratings'
 import { RecordTimeline, type TimelineEvent } from './RecordTimeline'
 
 /** ⭐ `add` / `remove` are `null` there and carry no event id — see `eventKey`. */
@@ -224,6 +235,90 @@ export function NoteReviewTimeline({ reviews }: { reviews: readonly NoteReview[]
       // ⭐ `ol`, unlike the card's `ul`. ⭐ A review history's **order is the whole
       // point** — ⭐ 「我复习过 5 次」 ⭐ is a claim about a sequence, ⭐ and the new
       // due date is a claim about where the sequence is going.
+      as="ol"
+      className="mt-1"
+    />
+  )
+}
+
+/**
+ * ⭐⭐ **The card's grades, borrowed from the card queue's own buttons.**
+ *
+ * ⚠️ **A fourth adapter, and this file's header once argued there should not be one.**
+ * That argument was about the *review screen* and it was right there; it was wrong about
+ * the review *history*, and spec 055 is the correction. ⭐ `listCardReviews` had **zero
+ * callers** while `scheduling.list_reviews()` sat behind no route at all — so for a card
+ * the history did not exist, and the adapter would have been a component with no page
+ * (`F-149`, the same mistake as the 13-entry icon registry).
+ *
+ * ⭐⇒ **The rule is not 「three adapters」, it is 「an adapter when something can show it」.**
+ */
+export const CARD_RATING_LABEL = labelsOf(CARD_RATINGS)
+
+/**
+ * ⭐ **Two rows, and the missing third is structural rather than forgotten.**
+ *
+ * `OUTCOME_LABEL` above has three entries and this has two, because migration 0005 says
+ * `CHECK (outcome IN ('reviewed', 'deferred'))` ⭐ — and spec 028 / spec 030 both derive
+ * from the same fact: **a card is immutable, so its schedule is never wiped and there is
+ * nothing to record.** ⭐ A note can be rewritten; a card cannot.
+ *
+ * ⚠️ So this table is **not** a subset of `OUTCOME_LABEL` and must never be made one — it is
+ * not that `reset` was left out on purpose, it is that there is no such event to leave out.
+ */
+const CARD_OUTCOME_LABEL: Record<CardReview['outcome'], string> = {
+  reviewed: '复习过',
+  // ⭐ The note's own wording, deliberately. One action, two queues — and 「延期」 is a
+  // scheduler's word, while this is the reader's. spec 055 `plan.md` §三 measured that
+  // `现在不是时候` is `outcome: 'deferred'` rather than a rating, so it is the same action
+  // arriving through a different field.
+  deferred: '我说以后再看',
+}
+
+/**
+ * A card's review history, as `RecordTimeline` events.
+ *
+ * ⭐ **The grade goes in the `what` line and the new due date in the detail** — the same
+ * split as the note history above, and for the same reason: 「记了 4 次，下一次 2026-10-03」
+ * is what someone checking a schedule actually wants, and either half alone leaves them
+ * guessing.
+ *
+ * ⭐ **`duration_ms` is deliberately not shown, and this file already argues why at length
+ * for notes** (see `noteReviewEvents`). Red line 11: 「你复习了 3 秒」 invites the reader to
+ * optimise their own recall instead of reading it. ⭐ Copied as an argument rather than
+ * reinvented, because a fourth restatement would be a fourth chance to soften it.
+ *
+ * ⭐⚠️ **`tone` marks nothing, and that is a decision rather than an omission.**
+ * The note history marks exactly one row — `reset` — and 规则 7 says colour carries
+ * *meaning*, so the one row whose consequence differs earns the one rule this list has.
+ * ⭐ A card has no `reset`, and `deferred` does not qualify on its own: pushing a card a
+ * week and recalling it both leave the reader with a card on a schedule, and colouring one
+ * would invent a distinction the product does not make. ⇒ Same treatment as
+ * `CardTimeline`'s `verified`.
+ */
+function cardReviewEvents(reviews: readonly CardReview[]): TimelineEvent[] {
+  return reviews.map((review) => ({
+    id: review.id,
+    what:
+      review.outcome === 'reviewed' && review.rating !== null
+        ? `${CARD_OUTCOME_LABEL[review.outcome]} · ${CARD_RATING_LABEL[review.rating]}`
+        : CARD_OUTCOME_LABEL[review.outcome],
+    at: review.reviewed_at,
+    detail: `下一次 ${review.to_due_at.slice(0, 10)}`,
+    tone: 'neutral' as const,
+  }))
+}
+
+export function CardReviewTimeline({ reviews }: { reviews: readonly CardReview[] }) {
+  return (
+    <RecordTimeline
+      events={cardReviewEvents(reviews)}
+      // ⭐ Rule 8 again, and the sentence names the *cause* rather than the absence: a
+      // card's history starts when the reader enrols it, so 「还没回来过」 would blame the
+      // wrong party — nothing has come back because nothing was ever sent.
+      emptyText="它没有回来过。要它回来，得先请它回来。"
+      // ⭐ `ol`, with the note history and against `CardTimeline`'s `ul`. Same reason: the
+      // order **is** the claim — 「我复习过 4 次」 is a statement about a sequence.
       as="ol"
       className="mt-1"
     />
