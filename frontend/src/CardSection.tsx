@@ -467,7 +467,7 @@ function CardReviewHistory({ cardId }: { cardId: string }) {
   // an inline arrow re-runs the effect on **every render** — and each run publishes state,
   // which renders again. ⭐ I hit that: A4 and A5 in `card-enrolment.spec.ts` timed out at
   // 30s with my change and passed without it, ⭐ and the JSON reporter said only
-  // 「Test timeout of 30000ms exceeded」 with no stack and no line. `F-252`.
+  // 「Test timeout of 30000ms exceeded」 with no stack and no line. `F-250`.
   //
   // ⇒ `useCallback` with `[]`, exactly as every other call site does
   // (`ReviewPage.tsx:73`, `VaultPage`). ⭐ The hook now guards against it internally too,

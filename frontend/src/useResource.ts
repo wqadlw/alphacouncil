@@ -129,7 +129,7 @@ export function useResource<T>(
   // ⚠️ **It cost two E2E tests a 30-second timeout each and said nothing about why.** The
   // line, list and JSON reporters all printed only 「Test timeout of 30000ms exceeded」 —
   // no stack, no line, no assertion. ⭐ The cause was found by bisecting the change
-  // (`git stash` on one file) rather than by reading any reporter. `F-252`.
+  // (`git stash` on one file) rather than by reading any reporter. `F-250`.
   //
   // ⇒ So both arguments the caller passes *for the hook's own use* are now excluded from
   // the deps, and `deps` is once again the only thing that re-runs a request. ⭐ **That is

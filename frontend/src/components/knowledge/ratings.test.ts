@@ -201,7 +201,7 @@ describe('the card queue takes its labels from here too', () => {
     // M3b changed the card's `good` to 「还是我的想法」 — the note's own word — and it
     // **stayed green**, because the assertion above only covered `again`. ⭐ That is
     // precisely the drift this file exists to end: one queue silently starting to read
-    // like another. Recorded as `F-250`.
+    // like another. Recorded as `F-248`.
     //
     // ⚠️ **Compared as sets, not pairwise by index.** The property that matters is
     // 「no card word is a note word」, because that is what 「a card reads like a card」
