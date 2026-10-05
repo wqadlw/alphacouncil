@@ -441,6 +441,55 @@ export interface DecisionReview {
    */
   guidance: string
   reviewed_at: string
+  /**
+   * ⭐ **The reader's own words, or `null`.** Added 2026-10-05 (spec 056) ⭐ — the column
+   * existed and the API was **not sending it**, so a sentence someone had written about
+   * their own reasoning could not come back. That is the same shape as the missing history
+   * endpoint one level in: a stored fact with no path to the reader.
+   *
+   * ⚠️ `null` and `""` are different answers — 「他当时写了什么」 and 「他当时什么都没写」
+   * — and the response is able to tell them apart. ⭐ Do not collapse them.
+   *
+   * ⭐ **`outcome` above is nullable and that is red line 5 made visible**: measured,
+   * `reviews.record()` gates only the outcome, so a process score may be written repeatedly
+   * while the outcome stays blank. A history showing only completed rows would teach the
+   * reader that the two halves are one thing.
+   */
+  note: string | null
+}
+
+/**
+ * Every time a decision was reviewed, oldest first — `spec 056`.
+ *
+ * ⭐ **`DecisionReview[]`, deliberately not a second type.** The first version of this
+ * declared its own interface, and **two ways of writing that were both wrong**:
+ *
+ * 1. `extends Omit<DecisionReview, never>` ⭐ — and `S-18 no-response-drift` walks only
+ *    **literal** members, so the type was invisible to it. Measured: a bogus field added to
+ *    it left the rule clean. (`F-257`)
+ * 2. ⭐ **Writing the eight fields out** fixed the blindness and **broke something worse**:
+ *    `S-18` matches a schema to a client type by **field set**, so a type holding all of
+ *    `DecisionReviewRead`'s fields makes the correspondence **ambiguous** — ⭐ and the
+ *    rule's response to ambiguity is silence, so it stopped reporting on the **single
+ *    review** endpoint. Measured: deleting a *required* field from that type stayed green.
+ *
+ * ⇒ **One client type for one concept.** And the collapse fixed a real gap rather than
+ * only tidying: `reviews.note` is a column the API was **dropping**, so a sentence the
+ * reader wrote about their own reasoning could not come back even for the latest review.
+ *
+ * ⭐ **This is not what the retrospective page calls.** Measured 2026-10-05: in the
+ * dangerous quadrant that page asserts **the whole page contains no digit**
+ * (`e2e/retrospective.spec.ts:120` — 「deliberately stricter than the red line」), and a
+ * review history is made of digits. ⇒ The instrument page reads this, beside the
+ * decisions — the same page the card review history went on, for the same reason.
+ *
+ * ⚠️ **404 for a missing decision, `[]` for an unreviewed one.** Two different facts, and
+ * this matches the card side rather than the note side.
+ */
+export function listDecisionReviewHistory(decisionId: string): Promise<DecisionReview[]> {
+  return request<DecisionReview[]>(
+    `/api/v1/decision-reviews/${encodeURIComponent(decisionId)}/reviews`,
+  )
 }
 
 /**

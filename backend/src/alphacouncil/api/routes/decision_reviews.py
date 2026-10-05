@@ -157,6 +157,26 @@ class DecisionReviewRead(BaseModel):
     number to show, because no profit number was ever stored. Adding one would
     turn "we don't display it" into a promise about this endpoint, and a promise
     about one endpoint is not a red line.
+
+    ⭐⭐ **This is also the row type of the review *history***, and that was not the first
+    design (spec 056). A second model with its own nine fields, and then a subclass, were
+    both wrong — and the measurements are worth keeping because each attempt failed in a
+    different way:
+
+    * ⭐ **A second set of fields makes `S-18 no-response-drift` go quiet.** The rule matches
+      a schema to a client type by *field set*, so a history type holding all of this one's
+      fields makes the correspondence **ambiguous**, and the rule's response to ambiguity is
+      silence ⭐ — for the **single-review** endpoint too. Measured: deleting a *required*
+      field from the history type stayed green.
+    * ⭐ **A subclass that adds nothing is not the same type**, and `mypy` said so:
+      ``List[DecisionReviewRead]`` is not ``List[DecisionReviewHistoryRead]``. The compiler
+      caught a class that claimed a distinction it did not make.
+
+    ⇒ **One model, one concept, two endpoints.** And the collapse fixed a real gap rather
+    than only tidying: ``reviews.note`` is a column, ``ReviewRow`` carries it, and
+    ``to_review_read`` was not mapping it — so a sentence the reader had written about their
+    own reasoning could not come back **even for the latest review**. That is the
+    missing-history shape one level in.
     """
 
     decision_id: str
@@ -172,6 +192,21 @@ class DecisionReviewRead(BaseModel):
         )
     )
     reviewed_at: str
+    note: str | None = Field(
+        default=None,
+        description=(
+            "The reader's own words. ⭐ **Added 2026-10-05 (spec 056) and it was being "
+            "dropped before that** ⭐ — `reviews.note` is a column, `ReviewRow` carries it, "
+            "`repository.reviews_for` returns it, ⭐ and `to_review_read` silently did not "
+            "map it, so a sentence the reader had written about their own reasoning could "
+            "not come back. That is the same shape as the missing history endpoint one "
+            "level in: **a stored fact with no path to the reader**. ⇒ Hence one "
+            "`DecisionReviewRead` for one concept, and the history endpoint returns the "
+            "same type ⭐ — two nested client types would have made `S-18` call the "
+            "correspondence ambiguous, ⭐ and an ambiguous correspondence silences the rule "
+            "for the single-review endpoint too."
+        ),
+    )
 
 
 def to_state_read(
@@ -197,6 +232,7 @@ def to_review_read(row: ReviewRow) -> DecisionReviewRead:
         quadrant=judgement.quadrant,
         guidance=judgement.guidance(),
         reviewed_at=row.reviewed_at.isoformat(),
+        note=row.note,
     )
 
 
@@ -288,78 +324,12 @@ def due(
     ]
 
 
-class DecisionReviewHistoryRead(BaseModel):
-    """One row of ``reviews`` — every time this decision was looked at again.
-
-    ⭐ **A superset of :class:`DecisionReviewRead`, plus ``note``.** The judgement fields
-    are identical on purpose: ⭐ a reader who has seen one retrospective should read the
-    history without a translation table, and ⭐ **the quadrant and its one permitted
-    sentence come from the domain** (``row.judgement()``), so the client never re-derives
-    a four-quadrant judgement it could get wrong. That is the same mechanism
-    ``to_review_read`` uses, and it is the reason spec 049's enum-drift work is not needed
-    here.
-
-    ⭐⚠️ **``outcome`` may legitimately be ``None``, and that row is the point.**
-    Measured 2026-10-05: ``reviews.record()`` gates only the outcome
-    (``reviews.py:340`` — ``if review.outcome is not None and state.due_at > moment``), so a
-    process score may be written any number of times while the outcome stays blank. ⭐ That
-    is **red line 5 made visible** — process and result are separate facts, so a row with
-    one and not the other is a normal row, not a broken one. ⇒ It is rendered, with the
-    domain's ``unknown`` judgement. ⭐ **Dropping it would invert the red line.**
-
-    ⭐ **No figure field exists here, for the reason ``DecisionReviewRead`` gives**: the
-    dangerous quadrant has no profit number to show **because none was ever stored**, so a
-    history cannot leak one. Red line 10 is satisfied by the absence of data, not by a
-    promise in a docstring.
-    """
-
-    decision_id: str
-    review_id: str
-    process_score: int
-    outcome: Outcome | None
-    process: ProcessBand
-    quadrant: Quadrant
-    guidance: str = Field(
-        description=(
-            "The only sentence this quadrant is permitted to print, served by the domain. "
-            "⭐ Reused verbatim from the current retrospective verdict ⭐ — there is no "
-            "history-specific wording, because a second sentence for one quadrant is the "
-            "「same concept, two homes」 defect (`regressions/0021`)."
-        )
-    )
-    reviewed_at: str
-    note: str | None = Field(
-        default=None,
-        description=(
-            "The reader's own words, if they wrote any. `null` when they did not, ⭐ and "
-            "the interface must render an absence rather than an empty string ⭐ — a blank "
-            "line reads as 「they wrote nothing」 either way, so the difference is invisible "
-            "to nobody."
-        ),
-    )
-
-
-def _history_read(row: ReviewRow) -> DecisionReviewHistoryRead:
-    judgement = row.judgement()
-    return DecisionReviewHistoryRead(
-        decision_id=row.decision_id,
-        review_id=row.id,
-        process_score=row.process_score,
-        outcome=row.outcome,
-        process=judgement.process,
-        quadrant=judgement.quadrant,
-        guidance=judgement.guidance(),
-        reviewed_at=row.reviewed_at.isoformat(),
-        note=row.note,
-    )
-
-
 @router.get(
     "/{decision_id}/reviews",
     summary="Every time this decision was reviewed, oldest first",
     responses={404: {"description": "No decision with that id"}},
 )
-def history(decision_id: str, connection: DatabaseConnection) -> list[DecisionReviewHistoryRead]:
+def history(decision_id: str, connection: DatabaseConnection) -> list[DecisionReviewRead]:
     """The whole history — **including the rows that only scored the process.**
 
     ⭐⭐ **Measured 2026-10-05, and it is what makes this endpoint worth having.**
@@ -391,7 +361,7 @@ def history(decision_id: str, connection: DatabaseConnection) -> list[DecisionRe
     """
     if decision_repository.get_by_id(connection, decision_id) is None:
         raise DecisionNotFoundError(f"decision {decision_id!r} not found")
-    return [_history_read(row) for row in repository.reviews_for(connection, decision_id)]
+    return [to_review_read(row) for row in repository.reviews_for(connection, decision_id)]
 
 
 @router.get(
