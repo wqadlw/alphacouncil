@@ -459,22 +459,49 @@ export interface DecisionReview {
 }
 
 /**
+ * ⭐ One (dataset, venue) cell of the capability matrix.
+ *
+ * ⭐ **`sources` is typed but deliberately not rendered** (spec 059 §2.2). ⭐ A
+ * 「数据源 42 秒后恢复」 display is one step from 「过会儿再试」, ⭐ and that is a nudge —
+ * 红线 8. ⭐ The type exists because the server sends it and pretending otherwise would be
+ * a second, silent divergence (`F-248`); ⭐ the decision not to show it lives in
+ * `CapabilityNotice.tsx`.
+ */
+export interface CapabilitySource {
+  name: string
+  healthy: boolean
+  cooldown_remaining_s: number | null
+}
+
+export interface CapabilityCell {
+  dataset: string
+  market: string
+  /** `usable` | `candidates` | `pending`. ⭐ Only `usable` means 「I can serve this」. */
+  state: 'usable' | 'candidates' | 'pending'
+  sources: CapabilitySource[]
+  /** Why not, for the two states that are not. Null when `usable`. */
+  reason: string | null
+}
+
+/**
  * The capability matrix, and ⭐ **whether this is the demo library** (spec 057).
  *
  * ⚠️ **`is_demo` is read at boot, once, for `DemoBanner`.** The server field's description
  * used to claim this endpoint was already loaded by the shell, so the banner would be
- * free. ⭐ Measured: **no frontend file calls `/capabilities` at all** ⭐ — the matrix has
- * no consumer in the interface (`status.md` records it as an undecided orphan) ⇒ **one
+ * free. ⭐ Measured: **no frontend file called `/capabilities` at all** — the matrix has
+ * no consumer in the interface ⭐ (`status.md` records it as an undecided orphan) ⇒ **one
  * extra request at boot**, which is what the server docstring now says.
  *
- * Only `is_demo` is typed here. ⭐ **The cells are not**: this file deliberately does not
- * restate a `Dataset` x `Market` matrix nobody renders, because a type for a field nothing
- * reads is a second copy that will drift (`F-248`: a table's existence is not evidence
- * that anything uses it).
+ * ⭐ **Two consumers now, and they are independent** (spec 059): `DemoBanner` reads
+ * `is_demo`; `CapabilityNotice` reads `capabilities`. ⭐ Neither reads the other's field,
+ * ⭐ so one request serves both and neither is a consumer of the other.
  */
 export interface CapabilitiesRead {
+  generated_at: string
   /** ⭐ True when the database in use is `dev.py demo`'s seeded library. */
   is_demo: boolean
+  /** ⭐ Every cell, unfiltered — 15 rows of dataset x market. */
+  capabilities: CapabilityCell[]
 }
 
 export function getCapabilities(): Promise<CapabilitiesRead> {

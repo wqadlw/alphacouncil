@@ -151,19 +151,29 @@ NOT_MIRRORED: dict[str, str] = {
         "mirrored as the inline object literal inside `AttentionItem.item` in api.ts, "
         "which is why AttentionItem declares criterion and decision_id at top level"
     ),
-    # ---- no client consumer at all ----
-    "CapabilityCell": (
-        "`GET /capabilities` has no UI: grep for `capabilities` under frontend/src returns "
-        "zero hits, so there is no type to declare it in"
-    ),
-    "CapabilitySource": (
-        "the payload of CapabilityCell, on the same endpoint with no client consumer; "
-        "S-16's NOT_MIRRORED already carries the same reason for CapabilityState"
-    ),
-    "CapabilitiesRead": (
-        "`GET /capabilities` has no UI: grep for `capabilities` under frontend/src returns "
-        "zero hits. Recorded as open debt, so a waiver states the debt instead of hiding it"
-    ),
+    # ⭐⭐⭐ **`CapabilityCell`, `CapabilitySource` and `CapabilitiesRead` used to be waived
+    # here, and the waiver has been removed** (spec 059).
+    #
+    # ⭐ The reason they were waived was true when it was written: 「`GET /capabilities` has
+    # ⭐ no UI: grep for `capabilities` under frontend/src returns zero hits」. ⭐⭐ **That
+    # ⭐ stopped being true the moment spec 059 gave the matrix a consumer** — ⭐
+    # ⭐ `CapabilityNotice.tsx` reads `state`, ⭐ `market` and `dataset`, ⭐ and `api.ts` now
+    # ⭐ declares all three shapes with every field the server sends.
+    #
+    # ⭐⭐⭐ **And `S-18` is the check that noticed, which is the best argument for having
+    # ⭐⭐ written it:** 「the NOT_MIRRORED entry for `CapabilitiesRead` waives something no
+    # ⭐⭐ client type is missing, ⭐⭐ **so it is hiding a green result**」. ⭐⭐
+    # ⭐⭐ In other words: ⭐⭐ **the waiver was suppressing a check that now passes.** ⭐⭐
+    # ⭐ Leaving it in place would have meant the correspondence between these three schemas
+    # ⭐ and their client types went **unverified while looking exempted** ⭐ — ⭐ and an
+    # ⭐ exemption nobody re-reads is worse than no exemption, ⭐ because it stops being a
+    # ⭐ statement about the code and becomes a comment about history.
+    #
+    # ⭐⭐ **S-16's `NOT_MIRRORED` for `CapabilityState` is a different case and stays:**
+    # ⭐ `CapabilityState` is a **union of string literals** (`'usable' | 'candidates' |
+    # ⭐ 'pending'`), ⭐ not an object, ⭐ so S-18's field-set matching cannot see a
+    # ⭐ correspondence for it at all. ⭐ That is a real gap in the check's reach, ⭐ not a
+    # ⭐ waiver of a green one.
 }
 
 #: `interface X {` or `type X = {`, with or without `export`, generics tolerated.

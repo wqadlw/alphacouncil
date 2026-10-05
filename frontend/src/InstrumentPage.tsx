@@ -21,6 +21,7 @@ import {
   formatVolume,
 } from './format'
 import CardSection from './CardSection'
+import { CapabilityNotice } from './CapabilityNotice'
 import { WatchlistTimeline } from './components/data/timelineAdapters'
 import { KlineChart } from './components/market/KlineChart'
 import DecisionSection from './DecisionSection'
@@ -247,6 +248,14 @@ export default function InstrumentPage({ market, code }: Props) {
               </button>
             )}
           </div>
+
+          {/* ⭐⭐ Spec 059: the boundary this instrument's market has, in the reader's
+              words. ⭐ **Placed above the first section, not below the last** — ⭐ because a
+              limit announced after the reader has already read three screens of content is
+              a footnote, ⭐ and the thing being announced is 「what you are not looking at」.
+              ⭐ Renders nothing when nothing is missing (see `CapabilityNotice.tsx`), ⭐ so
+              on sh/sz it costs one line of whitespace. */}
+          <CapabilityNotice market={market} />
 
           <Section
             title={followed ? '我为什么关注它' : '我当初为什么关注它'}

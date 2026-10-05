@@ -179,36 +179,102 @@ const HANDLERS = new WeakMap<Page, Record<string, Body | number>>()
 const ROUTED = new WeakSet<Page>()
 
 /**
- * ⭐ **`/api/v1/capabilities`, answered by default for every spec (spec 057).**
+ * ⭐ `/api/v1/capabilities`, answered by default for every spec (spec 057, extended 059).
  *
  * `DemoBanner` fetches this once at boot to learn whether the database in use is
- * `dev.py demo`'s seeded library. ⭐ It is here rather than left to each spec because the
- * alternative defeats this file's own stated rule — 「Any unmatched `/api/v1` path fails
- * loudly … a new endpoint must be wired *on purpose*, never silently answered by a
- * catch-all」.
+ * `dev.py demo`'s seeded library, and ⭐⭐ since spec 059 `CapabilityNotice` reads the
+ * **matrix** out of the same response. ⭐ So this fixture grew a second consumer, ⭐ and the
+ * note it used to carry — that the matrix 「has no consumer in the interface」 — is now
+ * **history rather than a live statement**. ⭐ Kept, because it is the reason the server
+ * field's description had to be corrected.
  *
- * ⭐ **And note that a missing fixture would have been invisible anyway.**
- * `DemoBanner` deliberately swallows a failed request (rendering nothing, because
- * 「I could not check whether this is the demo」 is not a sentence a reader should read),
- * ⭐ so the 404 would have been caught by nothing: twenty specs would have made an
- * unfulfilled request and every one of them would still have passed. ⭐ A guard whose
- * failure mode is silent needs its fixture supplied centrally, not left to twenty authors.
+ * ⭐ **Central rather than per-spec because both consumers swallow a failed request**
+ * (`DemoBanner` renders nothing; `CapabilityNotice` renders nothing), ⭐ **so an
+ * unfulfilled fixture would be invisible** — ⭐ twenty specs would make an unfulfilled
+ * request and every one would still pass. ⭐ A guard whose failure mode is silent needs its
+ * fixture supplied centrally.
  *
- * `is_demo: false` ⭐ — the specs are the reader's own library, and the banner must be
- * absent from all of them. `demo-library.spec.ts` overrides this one field.
+ * `is_demo: false` — the specs are the reader's own library, ⭐ so the banner is absent
+ * from all of them.
+ *
+ * ⭐⭐ **The matrix is transcribed from the running server, _including_ the `sources` the
+ * reader must never see.** ⭐ `CapabilityNotice` renders none of it, ⭐ and
+ * `capability-notice.spec.ts` asserts the absence of `eastmoney` / `baostock` by name ⭐
+ * — because a test that only asserts the notice is _present_ passes just as well on a page
+ * stuffed with provider health and cooldown counters, ⭐ and that is one nudge away from
+ * 「过会儿再试」 (红线 8).
  */
-export function capabilities(overrides: Body = {}): Body {
+export function capabilities(overrides: Body = {}, market = 'sh'): Body {
   return {
     generated_at: STAMP,
-    // ⭐ The matrix itself is **not** spelled out. Nothing in the interface renders it —
-    // measured: `grep capabilities frontend/src` finds only `DemoBanner`'s one field —
-    // ⭐ and a fixture describing twenty-odd cells nobody reads would be a second thing to
-    // keep in step with the server (`F-248`: a table's existence is not evidence that
-    // anything uses it).
-    capabilities: [],
     is_demo: false,
+    capabilities: capabilityMatrix(market),
     ...overrides,
   }
+}
+
+/**
+ * ⭐ The cells the server really returns for one venue, ⭐ as measured on 2026-10-05.
+ *
+ * ⭐ **`bj` is `pending` for everything, and that row is the load-bearing one.** ⭐ It is
+ * the only market where `CapabilityNotice` has anything to say, ⭐ and ⭐⭐ **every default
+ * fixture in this repo is `sh`** ⭐ — so without a purpose-built `.BJ` case this component
+ * would render nothing across the whole suite ⭐⭐ while looking tested.
+ */
+export function capabilityMatrix(market = 'sh'): Body[] {
+  const providers: Record<string, string[]> = {
+    daily: ['eastmoney', 'tencent'],
+    adj_factor: ['eastmoney'],
+    financial: ['baostock'],
+    realtime: [],
+    instruments: [],
+  }
+  const usable = market !== 'bj'
+  return ['daily', 'realtime', 'adj_factor', 'financial', 'instruments'].map((dataset) => ({
+    dataset,
+    market,
+    state: usable ? 'usable' : 'pending',
+    sources: usable
+      ? providers[dataset].map((name) => ({ name, healthy: true, cooldown_remaining_s: null }))
+      : [],
+    reason: usable ? null : 'no provider declares this dataset for this venue yet',
+  }))
+}
+
+/**
+ * ⭐⭐ **The `candidates` matrix, and it is the case that matters most.**
+ *
+ * ⭐ Read `providers/router.py::capability_matrix` before changing anything here:
+ *
+ * | state | `sources` | `reason` |
+ * |---|---|---|
+ * | `pending` | ⭐ **empty** — no provider declares it for that venue | 「no provider declares… yet」 |
+ * | `candidates` | ⭐⭐ **populated, every one `healthy: false` with a `cooldown_remaining_s`** | 「declaring sources are all in cooldown」 |
+ * | `usable` | populated | null |
+ *
+ * ⭐⭐ **So the `bj` fixture cannot test the red line, ⭐ and the mutation check proved it**:
+ * ⭐ the 「render the provider names」 mutation **survived**, ⭐⭐ because a `pending` cell has
+ * no sources to render — ⭐ my negative assertion was passing for the wrong reason. ⭐
+ *
+ * ⇒ `candidates` is the reachable case, ⭐ and it is **ordinary use**: ⭐ it appears whenever
+ * a provider is rate-limited, ⭐ which is the moment a reader is most likely to be looking.
+ * ⭐⭐ And `reason` there is literally a countdown to 「过会儿再试」 — ⭐⭐ which is the nudge
+ * 红线 8 forbids. ⭐ So this fixture is built so the guard has something to catch.
+ */
+export function cooldownMatrix(market = 'sh', dataset = 'daily'): Body[] {
+  return capabilityMatrix(market).map((cell) =>
+    cell.dataset === dataset
+      ? {
+          ...cell,
+          state: 'candidates',
+          // ⭐⭐ **Unhealthy, with a countdown.** ⭐ This is what the real server sends when
+          // a provider is in cooldown, ⭐ and it is the only shape in which a provider name
+          // ⭐ can reach the interface at all.
+          sources: [{ name: 'eastmoney', healthy: false, cooldown_remaining_s: 42 }],
+          reason: 'declaring sources are all in cooldown',
+        }
+      : cell,
+  )
 }
 
 /**
