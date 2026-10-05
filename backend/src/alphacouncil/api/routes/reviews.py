@@ -64,9 +64,10 @@ from alphacouncil.domain.scheduling import (
 from alphacouncil.storage.db import transaction
 from alphacouncil.storage.repositories import cards as card_repository
 from alphacouncil.storage.repositories import scheduling as repository
-from alphacouncil.storage.repositories.scheduling import ScheduleRow
+from alphacouncil.storage.repositories.scheduling import ReviewRow, ScheduleRow
 
 __all__ = [
+    "CardReviewRead",
     "ReviewReceipt",
     "ReviewRequest",
     "ScheduleRead",
@@ -92,6 +93,57 @@ class ScheduleRead(BaseModel):
     card_id: str
     state: ScheduleState
     due_at: str = Field(description="ISO datetime, UTC. A fact about time.")
+
+
+class CardReviewRead(BaseModel):
+    """One row of ``card_reviews`` — an interaction, never edited.
+
+    ⭐ **Field-for-field identical to ``NoteReviewRead``** (``routes/notes.py:257``);
+    only ``card_id`` differs from ``note_id``. ⭐ That symmetry is measured rather than
+    hoped for: both repositories return the same ``ReviewRow`` dataclass
+    (``scheduling.ReviewRow`` / ``note_recall.ReviewRow``), and the note's own response
+    model was already this shape. ⇒ A reader who has seen a note's history can read a
+    card's without a translation table.
+
+    ⭐⚠️ **`duration_ms` is here and it is not displayed.** The two are separate
+    decisions, and the second one is the red line:
+
+    - **absent from the response** would mean discarding a fact that is stored,
+      which is a different loss from hiding it on screen;
+    - **rendered in the interface** would be 「你复习了 3 秒」 ⭐ — an invitation to
+      optimise one's own recall instead of reading, which red line 11 rejects and which
+      ``timelineAdapters.tsx:190-198`` already argues at length for notes.
+
+    ⭐ And the same argument as ``ScheduleRead`` above: no ``retrievability``, no
+    ``stability``, no ``mastery``, no count of past failures. Red line 9 forbids a score;
+    red line 13 forbids the product commenting on the interaction.
+    """
+
+    card_id: str
+    id: str
+    outcome: ReviewOutcome
+    rating: ReviewRating | None
+    reviewed_at: str
+    duration_ms: int | None
+    from_due_at: str
+    to_due_at: str
+    from_state: ScheduleState
+    to_state: ScheduleState
+
+
+def _review_read(row: ReviewRow) -> CardReviewRead:
+    return CardReviewRead(
+        card_id=row.card_id,
+        id=row.id,
+        outcome=row.outcome,
+        rating=row.rating,
+        reviewed_at=row.reviewed_at.isoformat(),
+        duration_ms=row.duration_ms,
+        from_due_at=row.from_due_at.isoformat(),
+        to_due_at=row.to_due_at.isoformat(),
+        from_state=row.from_state,
+        to_state=row.to_state,
+    )
 
 
 class ReviewRequest(BaseModel):
@@ -224,6 +276,48 @@ def read_schedule(card_id: str, connection: DatabaseConnection) -> ScheduleRead:
     if card_repository.get_by_id(connection, card_id) is None:
         raise CardNotFoundError(f"card {card_id!r} not found")
     return to_schedule_read(repository.get_schedule(connection, card_id))
+
+
+@card_router.get(
+    "/{card_id}/reviews",
+    summary="Everything that happened to a card's schedule",
+    responses={404: {"description": "No card with that id"}},
+)
+def read_reviews(card_id: str, connection: DatabaseConnection) -> list[CardReviewRead]:
+    """The card's review history, oldest first.
+
+    ⭐ **This is the endpoint spec 028 asked for and spec 055 measured as missing.**
+    Measured 2026-10-05 against the published OpenAPI table (45 paths): ``/api/v1/cards/``
+    carried exactly four — the card itself, ``/converge``, ``/schedule``, ``/verify`` — and
+    no history, while ``GET /api/v1/notes/{note_id}/reviews`` existed. ⭐
+    ``scheduling.list_reviews()`` had been implemented, exported, given a docstring and
+    covered by tests the whole time; **what was missing was the boundary, not the data.**
+    ⇒ So the reader could answer 「我复习过 5 次」 about a note and **could not answer it
+    about a card** — and the card queue is K3's main surface.
+
+    ⚠️⚠️ **404 for a missing card, and this deliberately differs from the note's route.**
+    ``GET /notes/{id}/reviews`` (``routes/notes.py:540``) performs **no existence check**,
+    so a note that does not exist answers ``200 []``. ⭐ That is not copied here, because
+    「no such card」 and 「this card has not been reviewed yet」 are different facts and the
+    interface treats them differently: the first is something wrong that a surface must not
+    paper over, the second is an ordinary empty state.
+
+    ⭐⇒ And it is the **card's** contract, not the note's: ``GET /cards/{id}/schedule``
+    above already answers **409** for 「not on the queue」 rather than 404, and its docstring
+    argues the same distinction. **One prefix, one contract** — the alternative is two
+    halves of one feature answering the same state differently.
+
+    ⚠️ **A card that was enrolled and never answered also answers ``200 []``**, and that is
+    measured rather than assumed (spec 055 §1.5): enrolment inserts a ``card_schedule`` row
+    and nothing else, so 「已加入复习」 does **not** imply a history exists. The interface
+    therefore renders nothing for an empty list instead of an empty timeline.
+
+    ⭐ **No count is returned.** Red line 11: the number of past reviews is a number the
+    reader could try to climb, and ``GET /review/due`` already refuses to return one.
+    """
+    if card_repository.get_by_id(connection, card_id) is None:
+        raise CardNotFoundError(f"card {card_id!r} not found")
+    return [_review_read(row) for row in repository.list_reviews(connection, card_id)]
 
 
 @queue_router.get("/due", summary="Claims due at a stated instant")

@@ -290,6 +290,59 @@ export interface ReviewReceipt {
   state: ScheduleState
 }
 
+/**
+ * One row of `card_reviews` — an interaction, never edited.
+ *
+ * ⭐ **Field-for-field identical to `NoteReview` (`notes.ts:257`) except for `card_id`.**
+ * Both server models were written to the same shape and `scheduling.ReviewRow` /
+ * `note_recall.ReviewRow` are the same dataclass — ⭐ so a reader who has seen a note's
+ * history reads a card's without a translation table. `S-18` (`no_response_drift`) is
+ * what holds the two sides together: it caught this type being absent the moment the
+ * endpoint landed, which is why it exists.
+ *
+ * ⚠️ **`outcome` has two values here and three for a note.** A note is editable, so a
+ * rewrite restarts its schedule and is recorded as `reset` (spec 028); ⭐ a card is
+ * immutable, so migration 0005 constrains `outcome IN ('reviewed','deferred')` and there
+ * is no third state to name. ⭐ **The narrower union is the structural fact, not an
+ * omission** — and it is why the card history has no row equivalent to 「这条被我改过，排程从头开始」.
+ *
+ * ⚠️ **`duration_ms` is here and is not rendered.** Red line 11 rejects *showing*
+ * 「你复习了 3 秒」 — an invitation to optimise one's own recall instead of reading
+ * (`timelineAdapters.tsx` argues it at length for notes). It does not reject *storing*
+ * it, and no client may submit one (`422`). Keeping the field means removing it later is
+ * a decision rather than an accident.
+ */
+export interface CardReview {
+  id: string
+  card_id: string
+  outcome: ReviewOutcome
+  rating: ReviewRating | null
+  reviewed_at: string
+  duration_ms: number | null
+  from_due_at: string
+  to_due_at: string
+  from_state: ScheduleState
+  to_state: ScheduleState
+}
+
+/**
+ * The whole history, oldest first.
+ *
+ * ⭐ **This is what answers 「我复习过好几次，为什么今天又来?」** for a card. The sentence is
+ * `listNoteReviews`'s, copied deliberately rather than reworded: the question is the same
+ * one, and it was spec 028's reason for making a note's rewrite a `reset` row.
+ * ⭐ A card has no `reset`, so its history cannot answer a rewrite — but it can answer the
+ * rest, which before spec 055 it could not answer at all.
+ *
+ * ⚠️ **Rejects rather than resolving empty for a missing card.** The server answers 404
+ * (`CARD_NOT_FOUND`) on purpose, unlike the note route which returns `[]`
+ * (`backend/tests/unit/test_reviews_api.py` holds both behaviours, so the divergence
+ * cannot be tidied away silently).
+ */
+export function listCardReviews(cardId: string): Promise<CardReview[]> {
+  return request<CardReview[]>(`/api/v1/cards/${cardId}/reviews`)
+}
+
 export function scheduleCard(cardId: string): Promise<Schedule> {
   return request<Schedule>(`/api/v1/cards/${cardId}/schedule`, { method: 'POST' })
 }

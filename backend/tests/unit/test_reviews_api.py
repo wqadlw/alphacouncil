@@ -290,7 +290,193 @@ class TestRecordingAReview:
                 f"{method.upper()} answered {response.status_code}; card_reviews is "
                 "append-only, so there must be no verb that can rewrite a past recall"
             )
+        # ⭐ Restored 2026-10-05. Inserting the new class split this method in two and
+        # orphaned its last line, which is why `client.delete` ended up executing inside a
+        # test that takes no `client`. Recorded as `F-251`: **an insertion whose `oldString`
+        # ends mid-method will not fail loudly** — the file still parses, and the damage
+        # shows up as a confusing error in an unrelated test.
         assert client.delete(f"/api/v1/review/{card_id}").status_code == 405
+
+
+class TestReadingAReviewHistory:
+    """`GET /cards/{id}/reviews` — spec 055.
+
+    ⭐⭐ **The endpoint spec 028 asked for, and spec 055 measured as missing.** Measured on
+    2026-10-05 against the **published** OpenAPI table (45 paths): `/api/v1/cards/` carried
+    exactly four — the card, `/converge`, `/schedule`, `/verify` — and no history, while
+    `GET /api/v1/notes/{note_id}/reviews` existed. ⭐ `scheduling.list_reviews()` had been
+    implemented, exported, documented and tested the whole time.
+
+    ⇒ **what was missing was the boundary, not the data.** So the reader could answer
+    「我复习过 5 次」 about a note and **could not answer it about a card**.
+
+    ⚠️ Two of the tests below exist to hold a **deliberate divergence** from the note route,
+    because "I copied the neighbouring implementation" is the likeliest way this regresses.
+    """
+
+    def test_a_card_with_no_history_is_an_empty_list(self, client: TestClient) -> None:
+        card_id = _card(client)
+        response = client.get(f"/api/v1/cards/{card_id}/reviews")
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_an_enrolled_card_that_was_never_answered_is_still_empty(
+        self, client: TestClient
+    ) -> None:
+        """⭐ **Measured, not assumed** (spec 055 §1.5).
+
+        Enrolment inserts a `card_schedule` row and nothing else, so 「已加入复习」 does not
+        imply a history. The interface therefore renders nothing for an empty list rather
+        than an empty timeline — and it can only do that if this stays true.
+        """
+        card_id = _enrolled(client)
+        assert client.get(f"/api/v1/cards/{card_id}/reviews").json() == []
+
+    def test_every_interaction_is_listed_oldest_first(self, client: TestClient) -> None:
+        """⭐ Order is the whole point: 「我复习过 5 次」 is a claim about a sequence."""
+        card_id = _enrolled(client)
+        client.post(f"/api/v1/review/{card_id}", json={"outcome": "reviewed", "rating": "hard"})
+        client.post(f"/api/v1/review/{card_id}", json={"outcome": "deferred", "days": 7})
+
+        rows = client.get(f"/api/v1/cards/{card_id}/reviews").json()
+        assert [row["outcome"] for row in rows] == ["reviewed", "deferred"]
+        assert rows[0]["rating"] == "hard"
+        assert rows[1]["rating"] is None, "a postponement recalls nothing, so it has no grade"
+        assert [row["reviewed_at"] for row in rows] == sorted(row["reviewed_at"] for row in rows)
+
+    def test_a_missing_card_is_404_and_not_an_empty_list(self, client: TestClient) -> None:
+        """⚠️⚠️ **The divergence, pinned.**
+
+        `GET /notes/{id}/reviews` does **no existence check** (`routes/notes.py:540`), so a
+        note that does not exist answers `200 []`. Copying that here would make
+        「no such card」 and 「this card has not been reviewed yet」 the same answer, and the
+        interface treats them differently — one is something wrong, the other is an ordinary
+        empty state.
+
+        ⇒ The card's contract, not the note's. `GET /cards/{id}/schedule` above already
+        answers **409** for the neighbouring state and argues the same distinction.
+        """
+        response = client.get("/api/v1/cards/card_9999999999999/reviews")
+        assert response.status_code == 404, (
+            f"answered {response.status_code} with {response.text!r}; a missing card must not "
+            "be indistinguishable from a card that simply has no reviews yet"
+        )
+        assert response.json()["code"] == "CARD_NOT_FOUND"
+
+    def test_the_note_route_really_does_answer_200_for_a_missing_note(
+        self, client: TestClient
+    ) -> None:
+        """⭐ **The control for the test above, and it is why that test is trustworthy.**
+
+        A claim that two endpoints behave differently is worth nothing unless both
+        behaviours have been observed. If this test ever goes red because the note route
+        was fixed, ⭐ **the note route's docstring and this spec's both have to be updated**
+        — the divergence is a decision, and decisions go stale loudly.
+        """
+        response = client.get("/api/v1/notes/note_9999999999999/reviews")
+        assert response.status_code == 200, (
+            "the note route no longer answers 200 [] for a missing note; spec 055 §2.2 and "
+            "`routes/reviews.py` both record that it does, and one of them is now wrong"
+        )
+        assert response.json() == []
+
+    def test_the_response_is_published(self, client: TestClient) -> None:
+        """⭐ **Reads the schema, not the source — the direct counter-test for §1.2.**
+
+        The measurement that opened this spec walked `app.routes` and reported **zero**
+        review routes on an application with eleven, because `app.routes` holds twelve
+        `_IncludedRouter` wrappers whose `.path` is the empty string and `getattr(r, "path",
+        "")` turns every one into a skip (spec 050's root cause, `F-213`).
+
+        ⇒ A test that asserts on source text would repeat the mistake; only the published
+        schema cannot have it.
+        """
+        from alphacouncil.api.app import create_app
+
+        paths = create_app(Settings()).openapi()["paths"]
+        assert "/api/v1/cards/{card_id}/reviews" in paths
+        assert list(paths["/api/v1/cards/{card_id}/reviews"]) == ["get"]
+
+    def test_there_is_no_way_to_rewrite_history(self, client: TestClient) -> None:
+        """append-only, same as every other review surface in the product."""
+        card_id = _enrolled(client)
+        client.post(f"/api/v1/review/{card_id}", json={"outcome": "reviewed", "rating": "good"})
+        for method in ("post", "put", "patch"):
+            response = getattr(client, method)(
+                f"/api/v1/cards/{card_id}/reviews", json={"rating": "easy"}
+            )
+            assert response.status_code == 405, (
+                f"{method.upper()} answered {response.status_code}; card_reviews is append-only"
+            )
+        # ⭐ `delete` takes no `json` kwarg on this httpx build — the same reason the
+        # neighbouring test calls it bare. Kept identical rather than "improved", because
+        # a rewrite of a working line is a chance to lose it.
+        assert client.delete(f"/api/v1/cards/{card_id}/reviews").status_code == 405
+
+
+class TestTheHistoryCarriesNoScore:
+    """Red lines 9 and 13, as properties of the contract rather than of the styling."""
+
+    def test_the_row_names_no_grade(self) -> None:
+        from alphacouncil.api.routes.reviews import CardReviewRead
+
+        fields = set(CardReviewRead.model_fields)
+        assert fields == {
+            "card_id",
+            "id",
+            "outcome",
+            "rating",
+            "reviewed_at",
+            "duration_ms",
+            "from_due_at",
+            "to_due_at",
+            "from_state",
+            "to_state",
+        }
+        forbidden = {"retrievability", "stability", "mastery", "score", "accuracy", "streak"}
+        assert not fields & forbidden
+
+    def test_the_row_carries_no_count_of_past_failures(self, client: TestClient) -> None:
+        """⭐ Red line 11: the number of past reviews is a number the reader could climb.
+
+        `GET /review/due` already returns a bare list with a test asserting no count
+        (`routes/notes.py:286-288` argues it for notes). A history is the same question.
+        """
+        card_id = _enrolled(client)
+        client.post(f"/api/v1/review/{card_id}", json={"outcome": "reviewed", "rating": "again"})
+        row = client.get(f"/api/v1/cards/{card_id}/reviews").json()[0]
+        assert not any(
+            token in key.lower() for key in row for token in ("count", "total", "times", "streak")
+        ), f"a count about the reader appeared in the row: {sorted(row)}"
+
+    def test_duration_is_a_stored_fact_that_this_layer_does_not_render(self) -> None:
+        """⭐⚠️ **The first version of this test tried to assert the value end to end and
+        could not, and the reason is the design rather than a missing fixture.**
+
+        `POST /review/{id}` answers **422** for a client-supplied `duration_ms` (see
+        `test_a_client_supplied_duration_is_rejected` above) — ⭐ so **no row with a
+        duration can be created over HTTP at all.** Reaching one would mean reaching past
+        the boundary this test is about.
+
+        ⇒ So the honest division of labour is:
+          - **the value flows** — proven where it is produced, at the repository
+            (`test_scheduling.py::…::test_duration_is_recorded_but_is_not_comparable`,
+            which asserts `list_reviews` returns it);
+          - **the field exists on the contract** — asserted here;
+          - **nobody may submit one** — asserted above.
+
+        ⚠️ I wrote this test three ways before accepting the third. The first two reached
+        into `app.state.services`, which does not exist. ⭐ **A test that cannot be written
+        the honest way is usually telling you the boundary is in the wrong place** — and
+        here the boundary is right, the assertion was not.
+        """
+        from alphacouncil.api.routes.reviews import CardReviewRead
+
+        assert "duration_ms" in CardReviewRead.model_fields
+        annotation = CardReviewRead.model_fields["duration_ms"].annotation
+        # `int | None`: a postponement recalls nothing and therefore has no duration
+        # (`card_reviews_deferred_has_no_duration_check` in migration 0005).
+        assert annotation == int | None
 
 
 class TestTheLogSurvives:
