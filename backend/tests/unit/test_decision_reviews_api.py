@@ -445,6 +445,211 @@ class TestTheTwoQueuesCannotBeConfused:
         assert "card_id" not in decision_rows[0]
 
 
+class TestTheReviewHistory:
+    """`GET /decision-reviews/{id}/reviews` — spec 056.
+
+    ⭐⭐ **The second half of B3.** Measured 2026-10-05: `reviews.reviews_for()` existed,
+    was exported, had tests, and **no route called it**; `GET /{decision_id}` returns
+    `latest` only. ⇒ **a decision can be reviewed repeatedly, so the second and later
+    reviews left no trace on screen at all.**
+
+    ⭐ **The test that matters most is `test_a_process_score_only_row_is_in_the_history`**,
+    because it is the one that would let someone delete the rows red line 5 is about.
+    """
+
+    def test_a_decision_nobody_reviewed_is_an_empty_list(self, client: TestClient) -> None:
+        decision_id = _decision(client)
+        response = client.get(f"/api/v1/decision-reviews/{decision_id}/reviews")
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_a_missing_decision_is_404_and_not_an_empty_list(self, client: TestClient) -> None:
+        """⚠️ 404 for 「no such decision」 and 200 ``[]`` for 「nobody reviewed it」 are
+        different facts. This mirrors the card side on purpose; the note side answers
+        ``200 []`` for both and a test there holds that inconsistency deliberately, so the
+        two endpoints cannot be quietly made to agree."""
+        response = client.get("/api/v1/decision-reviews/2020-01-01T00:00:00.000Z/reviews")
+        assert response.status_code == 404
+        assert response.json()["code"] == "DECISION_NOT_FOUND"
+
+    def test_every_review_is_listed_oldest_first(self, client: TestClient) -> None:
+        """⭐ Order is the claim: 「这条判断我前后评了三次」 is a statement about a sequence.
+
+        ⚠️ **``PAST_DUE_AT``, not ``DUE_AT``** — the outcome is gated on the decision being
+        due, and ``DUE_AT`` is 2026-12-28. ⭐ The first version of this test used it and
+        got **409 REVIEW_NOT_DUE** on the third POST, which is the gate working.
+        """
+        decision_id = _decision(client, review_due_at=PAST_DUE_AT)
+        for score in (2, 4):
+            assert (
+                client.post(
+                    "/api/v1/decision-reviews",
+                    json={"decision_id": decision_id, "process_score": score},
+                ).status_code
+                == 201
+            )
+        assert (
+            client.post(
+                "/api/v1/decision-reviews",
+                json={
+                    "decision_id": decision_id,
+                    "process_score": 5,
+                    "outcome": "good",
+                    "note": "批价确实稳住了",
+                },
+            ).status_code
+            == 201
+        )
+
+        rows = client.get(f"/api/v1/decision-reviews/{decision_id}/reviews").json()
+        assert len(rows) == 3
+        assert [row["process_score"] for row in rows] == [2, 4, 5]
+        assert [row["reviewed_at"] for row in rows] == sorted(
+            row["reviewed_at"] for row in rows
+        )
+
+    def test_a_process_score_only_row_is_in_the_history(self, client: TestClient) -> None:
+        """⭐⭐ **Red line 5, as a property of the response.**
+
+        Measured: `reviews.record()` gates only the outcome (`reviews.py:340`), so a
+        process score may be written repeatedly while the outcome stays blank. ⭐ **A row
+        with a score and no outcome is a normal row, not a broken one** — it is the two
+        halves of red line 5 being separate facts.
+
+        ⇒ So it is in the response, with the domain's `unknown` judgement.
+        ⭐ **Dropping it would invert the red line** — a history that only shows the rows
+        which happened to be completed is a history that teaches the reader the two halves
+        are one.
+        """
+        decision_id = _decision(client, review_due_at=DUE_AT)
+        client.post(
+            "/api/v1/decision-reviews",
+            json={"decision_id": decision_id, "process_score": 2},
+        )
+
+        rows = client.get(f"/api/v1/decision-reviews/{decision_id}/reviews").json()
+        assert len(rows) == 1
+        assert rows[0]["outcome"] is None, "the outcome is blank and must be sent as blank"
+        assert rows[0]["quadrant"] == "unknown", "and the domain, not the route, says so"
+        assert rows[0]["process_score"] == 2
+        # ⭐ And it carries the domain's one permitted sentence for `unknown`.
+        assert rows[0]["guidance"], "a quadrant always has its sentence (spec 021)"
+
+    def test_the_note_is_carried_and_stays_none_when_absent(self, client: TestClient) -> None:
+        """The reader's own words, and an **absence** rather than an empty string.
+
+        ⭐ `null` and `""` both render as nothing, so this is not a rendering preference —
+        it is that 「他当时写了什么」 and 「他当时什么都没写」 are different answers, and the
+        response should be able to tell them apart.
+        """
+        decision_id = _decision(client, review_due_at=DUE_AT)
+        client.post(
+            "/api/v1/decision-reviews",
+            json={"decision_id": decision_id, "process_score": 2},
+        )
+        client.post(
+            "/api/v1/decision-reviews",
+            json={"decision_id": decision_id, "process_score": 5, "note": " 当时没留话  "},
+        )
+        rows = client.get(f"/api/v1/decision-reviews/{decision_id}/reviews").json()
+        assert rows[0]["note"] is None
+        # ⭐ And it is trimmed: the domain strips, so two readers cannot differ by spaces.
+        assert rows[1]["note"] == "当时没留话"
+
+    def test_the_judgement_is_computed_here_and_not_by_the_client(self, client: TestClient) -> None:
+        """⭐ The quadrant, its process band and its one sentence all come from the domain.
+
+        A client that re-derived a four-quadrant judgement would be a second implementation
+        of `domain/review.py::judge` ⭐ — and spec 049 exists because that class of drift is
+        invisible until it is wrong. ⇒ Assert the server sent all three.
+
+        ⚠️ ``PAST_DUE_AT``: an outcome cannot be recorded before the decision is due, and a
+        bad process plus a good outcome is the only way to reach ``dangerous``.
+        """
+        decision_id = _decision(client, review_due_at=PAST_DUE_AT)
+        client.post(
+            "/api/v1/decision-reviews",
+            json={
+                "decision_id": decision_id,
+                "process_score": 1,
+                "outcome": "good",
+                "note": "过程差但赚到了",
+            },
+        )
+        row = client.get(f"/api/v1/decision-reviews/{decision_id}/reviews").json()[0]
+        # ⭐ 坏过程 + 好结果 = the dangerous quadrant, and it is reported plainly.
+        assert row["quadrant"] == "dangerous"
+        assert row["process"] == "bad"
+        assert row["guidance"]
+
+    def test_no_row_carries_a_figure(self, client: TestClient) -> None:
+        """Red line 10 in its strongest available form: **nothing was ever stored**, so a
+        history of any length cannot leak a profit number. Same argument as
+        ``TestTheResponseCarriesNoFigure`` above, applied to a second endpoint."""
+        decision_id = _decision(client, review_due_at=PAST_DUE_AT)
+        client.post(
+            "/api/v1/decision-reviews",
+            json={"decision_id": decision_id, "process_score": 1, "outcome": "good"},
+        )
+        row = client.get(f"/api/v1/decision-reviews/{decision_id}/reviews").json()[0]
+        banned = {"profit", "pnl", "return", "gain", "yield", "figure", "price", "change"}
+        assert not {k for k in row if k.lower() in banned}
+        # ⭐ The judgement sentences are checked for digits too — the retrospective page's
+        # own assertion (「no digits at all」) is domain-wide, so a digit leaking into the
+        # sentence would break that page and this one.
+        assert not any(ch.isdigit() for ch in row["guidance"])
+
+    def test_there_is_no_way_to_rewrite_history(self, client: TestClient) -> None:
+        decision_id = _decision(client, review_due_at=DUE_AT)
+        client.post(
+            "/api/v1/decision-reviews",
+            json={"decision_id": decision_id, "process_score": 2},
+        )
+        for method in ("post", "put", "patch"):
+            response = getattr(client, method)(
+                f"/api/v1/decision-reviews/{decision_id}/reviews",
+                json={"process_score": 5},
+            )
+            assert response.status_code == 405, (
+                f"{method.upper()} answered {response.status_code}; reviews is append-only"
+            )
+        assert (
+            client.delete(f"/api/v1/decision-reviews/{decision_id}/reviews").status_code == 405
+        )
+
+    def test_the_route_is_published(self) -> None:
+        """⭐ Reads the **published schema**, not the source — the counter-test for `F-247`,
+        where walking ``app.routes`` reported zero review routes on an application with
+        eleven, because twelve ``_IncludedRouter`` wrappers carry an empty ``path``."""
+        paths = create_app(Settings()).openapi()["paths"]
+        target = "/api/v1/decision-reviews/{decision_id}/reviews"
+        assert target in paths
+        assert list(paths[target]) == ["get"]
+
+    def test_the_id_route_still_works_and_is_not_shadowed(self, client: TestClient) -> None:
+        """⭐⭐ **The path-ordering trap, held open.**
+
+        ``/recent``, ``/due`` and ``/schema/quadrants`` all sit **above** ``/{decision_id}``
+        in this file, because FastAPI matches in declaration order and a single-segment id
+        route declared first would answer 「没有这条判断：recent」. ⭐ The new route is
+        two-segment and so is unaffected — ⭐ **and this test is what makes that a
+        measurement rather than an assumption.**
+
+        It also catches the inverse mistake: putting ``/{decision_id}/reviews`` *above*
+        ``/recent`` would not break anything today, but the day a two-segment sibling
+        appears it would.
+
+        ⚠️ And the id route answers **404** for a decision with no review slot
+        (``REVIEW_STATE_MISSING``) ⭐ — measured, because the first version of this test
+        omitted ``review_due_at`` and asserted 200 against a decision that had no slot.
+        """
+        assert client.get("/api/v1/decision-reviews/recent").status_code == 200
+        assert client.get("/api/v1/decision-reviews/due").status_code == 200
+        assert client.get("/api/v1/decision-reviews/schema/quadrants").status_code == 200
+        decision_id = _decision(client, review_due_at=DUE_AT)
+        assert client.get(f"/api/v1/decision-reviews/{decision_id}").status_code == 200
+
+
 class TestTheReviewedListOnTheWire:
     """
     ⭐ Every test here exists because a mutation survived **twice**.

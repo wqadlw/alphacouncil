@@ -288,6 +288,112 @@ def due(
     ]
 
 
+class DecisionReviewHistoryRead(BaseModel):
+    """One row of ``reviews`` — every time this decision was looked at again.
+
+    ⭐ **A superset of :class:`DecisionReviewRead`, plus ``note``.** The judgement fields
+    are identical on purpose: ⭐ a reader who has seen one retrospective should read the
+    history without a translation table, and ⭐ **the quadrant and its one permitted
+    sentence come from the domain** (``row.judgement()``), so the client never re-derives
+    a four-quadrant judgement it could get wrong. That is the same mechanism
+    ``to_review_read`` uses, and it is the reason spec 049's enum-drift work is not needed
+    here.
+
+    ⭐⚠️ **``outcome`` may legitimately be ``None``, and that row is the point.**
+    Measured 2026-10-05: ``reviews.record()`` gates only the outcome
+    (``reviews.py:340`` — ``if review.outcome is not None and state.due_at > moment``), so a
+    process score may be written any number of times while the outcome stays blank. ⭐ That
+    is **red line 5 made visible** — process and result are separate facts, so a row with
+    one and not the other is a normal row, not a broken one. ⇒ It is rendered, with the
+    domain's ``unknown`` judgement. ⭐ **Dropping it would invert the red line.**
+
+    ⭐ **No figure field exists here, for the reason ``DecisionReviewRead`` gives**: the
+    dangerous quadrant has no profit number to show **because none was ever stored**, so a
+    history cannot leak one. Red line 10 is satisfied by the absence of data, not by a
+    promise in a docstring.
+    """
+
+    decision_id: str
+    review_id: str
+    process_score: int
+    outcome: Outcome | None
+    process: ProcessBand
+    quadrant: Quadrant
+    guidance: str = Field(
+        description=(
+            "The only sentence this quadrant is permitted to print, served by the domain. "
+            "⭐ Reused verbatim from the current retrospective verdict ⭐ — there is no "
+            "history-specific wording, because a second sentence for one quadrant is the "
+            "「same concept, two homes」 defect (`regressions/0021`)."
+        )
+    )
+    reviewed_at: str
+    note: str | None = Field(
+        default=None,
+        description=(
+            "The reader's own words, if they wrote any. `null` when they did not, ⭐ and "
+            "the interface must render an absence rather than an empty string ⭐ — a blank "
+            "line reads as 「they wrote nothing」 either way, so the difference is invisible "
+            "to nobody."
+        ),
+    )
+
+
+def _history_read(row: ReviewRow) -> DecisionReviewHistoryRead:
+    judgement = row.judgement()
+    return DecisionReviewHistoryRead(
+        decision_id=row.decision_id,
+        review_id=row.id,
+        process_score=row.process_score,
+        outcome=row.outcome,
+        process=judgement.process,
+        quadrant=judgement.quadrant,
+        guidance=judgement.guidance(),
+        reviewed_at=row.reviewed_at.isoformat(),
+        note=row.note,
+    )
+
+
+@router.get(
+    "/{decision_id}/reviews",
+    summary="Every time this decision was reviewed, oldest first",
+    responses={404: {"description": "No decision with that id"}},
+)
+def history(decision_id: str, connection: DatabaseConnection) -> list[DecisionReviewHistoryRead]:
+    """The whole history — **including the rows that only scored the process.**
+
+    ⭐⭐ **Measured 2026-10-05, and it is what makes this endpoint worth having.**
+    ``repository.reviews_for()`` existed, was exported, had tests, and **no route called
+    it**; ``GET /{decision_id}`` returns ``latest`` only. ⭐ Since a decision can be
+    reviewed repeatedly, the second and later reviews left **no trace on screen at all** —
+    the reader changed their mind on the retrospective page and the earlier judgement
+    vanished.
+
+    ⚠️ **Two-segment path, so it cannot be swallowed by ``/{decision_id}``** — FastAPI
+    matches in declaration order, and that is why ``/recent``, ``/due`` and
+    ``/schema/quadrants`` all sit *above* the id route. This one is unaffected either way,
+    and it is deliberately **not** given a prefix of its own: the noun is already right,
+    which is the same reasoning ``routes/reviews.py:14-20`` records for the card queue.
+
+    ⚠️⚠️ **404 for a missing decision, and 200 ``[]`` for a decision nobody has reviewed.**
+    Those are different facts and the interface treats them differently. ⭐ This matches the
+    card side (``test_reviews_api.py::TestReadingAReviewHistory``) rather than the note side,
+    which answers ``200 []`` for both — and that inconsistency is held by a test on purpose,
+    so it cannot be quietly tidied away.
+
+    ⭐ **This endpoint is deliberately NOT what shows it.** The retrospective page asserts,
+    in the dangerous quadrant, that **the whole page contains no digit**
+    (``e2e/retrospective.spec.ts:120`` — 「deliberately stricter than the red line」), and a
+    review history is made of digits: a process score, a date. ⇒ The history is read on the
+    **instrument page**, beside the decisions, which is where the card review history went
+    for the same reason (spec 055). ⭐ **The reason is in this docstring rather than in a
+    comment on the other page, because the next person to add this will be looking here.**
+    """
+    if decision_repository.get_by_id(connection, decision_id) is None:
+        raise DecisionNotFoundError(f"decision {decision_id!r} not found")
+    return [_history_read(row) for row in repository.reviews_for(connection, decision_id)]
+
+
 @router.get(
     "/{decision_id}",
     summary="One decision, its review state, and its latest review",
