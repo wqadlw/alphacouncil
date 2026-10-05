@@ -1085,6 +1085,47 @@ export function getQuote(market: string, code: string): Promise<QuoteResult> {
 }
 
 /**
+ * ⭐⭐ **What this build can compute, for one market** (spec 058).
+ *
+ * ⭐ **This exists because the product was lying by example.** Measured before the route
+ * did: `DecisionForm`'s kill-criterion input had `placeholder="gross_margin"`, ⭐ and that
+ * token is in **neither** `metrics.CATALOGUE` (24) nor `metrics.FINANCIAL_CATALOGUE` (8).
+ * ⭐ The domain validates shape only (`[a-z][a-z0-9_]*`), so `POST /api/v1/decisions`
+ * answered **201** and stored it verbatim; ⭐ `/today` showed nothing until the criterion
+ * came due, and by then the sentence blamed the data. ⭐ Gross margin *is* computable —
+ * the token is `gp_margin`, label 「销售毛利率」. ⭐ `metrics.read_metric` has answered this
+ * with `UNKNOWN_METRIC` the whole time; ⭐ nobody asked until months later.
+ *
+ * ⭐ **`market` is required, and `catalogue.metrics` is already filtered by it.** Measured:
+ * `financial` is `pending` for `bj`, ⭐ so a Beijing instrument can compute **none** of the
+ * 32 and gets an empty list with all 32 in `unavailable`. ⭐ That is a real answer, not an
+ * error — ⭐ and it is the sentence a `.BJ` reader most needs.
+ */
+export interface MetricCatalogue {
+  generated_at: string
+  market: string
+  metrics: MetricCell[]
+  /**
+   * ⭐ Tokens this market cannot compute. **Sent, not hidden** — the domain accepts an
+   * uncomputable metric on purpose, so omitting these would make the interface argue with
+   * a decision the reader is allowed to make.
+   */
+  unavailable: string[]
+}
+
+/** One computable metric. ⭐ `label` is what the reader sees; `token` is what they write. */
+export interface MetricCell {
+  token: string
+  label: string
+  /** ⭐ `daily` comes from 行情 bars, `financial` from reported figures. */
+  dataset: string
+}
+
+export function getMetrics(market: string): Promise<MetricCatalogue> {
+  return request<MetricCatalogue>(`/api/v1/metrics?market=${encodeURIComponent(market)}`)
+}
+
+/**
  * Record a decision. There is no update and no delete, on purpose.
  *
  * The three required fields are required because of what the row is *for*:

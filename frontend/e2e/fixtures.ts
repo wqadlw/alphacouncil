@@ -211,6 +211,45 @@ export function capabilities(overrides: Body = {}): Body {
   }
 }
 
+/**
+ * ⭐ **`/api/v1/metrics`, answered by default for every spec (spec 058).**
+ *
+ * `DecisionForm` asks this once so it can offer the vocabulary and say so when the reader
+ * leaves it. ⭐ Same reason as `/api/v1/capabilities` above: ⭐ `DecisionForm` deliberately
+ * swallows a failed request (rendering nothing, because 「我无法列出我能算的指标」 is not a
+ * sentence a reader should read), ⭐ **so an unfulfilled fixture would be invisible** — every
+ * spec would still pass while the picker silently never appeared.
+ *
+ * ⭐ **And this is the fixture that would have caught the original bug.** It is
+ * transcribed from the running server, ⭐ and ⭐ **`gross_margin` is deliberately absent from
+ * it** while `gp_margin`「销售毛利率」is present — ⭐ because that *was* the defect: the
+ * interface's placeholder named a token no catalogue holds, ⭐ and the product has gross
+ * margin under a different name. ⭐ If someone re-adds `gross_margin` here without a
+ * catalogue entry behind it, ⭐ this fixture starts asserting a lie.
+ *
+ * ⭐ **Only a handful of tokens are listed, and that is on purpose.** The real answer is 32;
+ * ⭐ a fixture carrying 32 rows nobody reads is a second thing to keep in step with the
+ * server (`F-248`), ⭐ and every spec that cares about a specific token can override this
+ * with `metrics()`.
+ */
+export function metrics(
+  overrides: Body = {},
+  tokens: [string, string, string][] = [
+    ['close', '收盘价', 'daily'],
+    ['ma20', 'MA20', 'daily'],
+    ['gp_margin', '销售毛利率', 'financial'],
+    ['roe_avg', 'ROE 平均', 'financial'],
+  ],
+): Body {
+  return {
+    generated_at: STAMP,
+    market: 'sh',
+    metrics: tokens.map(([token, label, dataset]) => ({ token, label, dataset })),
+    unavailable: [],
+    ...overrides,
+  }
+}
+
 export async function routeApi(
   page: Page,
   handlers: Record<string, Body | number>,
@@ -218,10 +257,15 @@ export async function routeApi(
   await acknowledgeLaunch(page)
 
   // ⭐ Seeded once per page rather than merged over: assigning into `existing ?? {...}`
-  // would let the default overwrite a spec's own `capabilities` entry on its second call,
-  // which is the same class of bug as the original 「replaced the map」 version above.
+  // would let the defaults overwrite a spec's own entries on its second call, ⭐ which is
+  // the same class of bug as the original 「replaced the map」 version above.
   const merged: Record<string, Body | number> = HANDLERS.get(page) ?? {
     '/api/v1/capabilities': capabilities(),
+    // ⭐ Keyed with the query, because the real endpoint **requires** `market` and
+    // `routeApi` matches on the path alone. ⭐ `routeApi` keys are `METHOD path` or `path`,
+    // ⭐ and query strings are explicitly ignored — ⭐ so this entry answers every
+    // `?market=` at once, which is what a spec that does not care wants.
+    '/api/v1/metrics': metrics(),
   }
   Object.assign(merged, handlers)
   HANDLERS.set(page, merged)

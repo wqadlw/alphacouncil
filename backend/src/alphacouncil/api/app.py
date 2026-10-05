@@ -24,6 +24,7 @@ from alphacouncil.api.routes import (
     decisions,
     instruments,
     lessons,
+    metrics,
     notes,
     reviews,
     today,
@@ -186,6 +187,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 # a Monday rather than about today ⭐ **and a reader is told which Monday.**
     app.include_router(universe.router)
     app.include_router(capabilities.router)
+    # Spec 058: the vocabulary a kill criterion may be written in. ⭐ Registered next to
+    # `capabilities` because both answer the same reader's question — 「what can this
+    # product actually see」 — ⭐ and `capabilities` describes *datasets* while this
+    # describes *metrics computed from them*.
+    app.include_router(metrics.router)
     app.include_router(cards.router)
     # Spec 026. The knowledge vault: notes sit **beside** cards, not inside them.
     # Registered after the card router so a reader scanning this list meets the

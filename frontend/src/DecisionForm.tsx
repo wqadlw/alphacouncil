@@ -1,7 +1,16 @@
-import { useState } from 'react'
-import { ApiError, recordDecision, type ComparisonOperator, type Decision, type DecisionAction } from './api'
+import { useEffect, useState } from 'react'
+import {
+  ApiError,
+  getMetrics,
+  recordDecision,
+  type ComparisonOperator,
+  type Decision,
+  type DecisionAction,
+  type MetricCatalogue,
+} from './api'
 import { ACTION_LABEL, OPERATOR_LABEL } from './format'
 import { Button, Input, Textarea } from './components/ui'
+import { METRIC_DATALIST_ID, uncomputable } from './metricVocabulary'
 
 /**
  * Recording a decision — the gate, and the only screen in the product that
@@ -20,11 +29,37 @@ import { Button, Input, Textarea } from './components/ui'
  * product's third highlight. Four fields per condition is more work than one
  * sentence. That cost is the feature.
  *
- * The frontend checks **completeness**, never **validity**. Whether
- * `gross_margin` is a well-formed metric token is the domain's question, and a
- * second copy of that rule here would be a second chance to disagree with it —
- * so an ill-shaped token goes to the server and comes back with the domain's own
+ * The frontend checks **completeness**, never **shape**. Whether `revenue_yoy`
+ * is a well-formed metric token is the domain's question, and a second copy of
+ * that rule here would be a second chance to disagree with it — so an
+ * ill-shaped token goes to the server and comes back with the domain's own
  * sentence, which is displayed as-is.
+ *
+ * ⭐⭐ **Membership is a third thing, and this round is about it** (spec 058).
+ *
+ * ⭐ **Shape** is the domain's to refuse. ⭐ **Membership** is the domain's to *know* —
+ * `metrics.read_metric` has answered `UNKNOWN_METRIC` since before this file existed — ⭐
+ * and ⭐ **nobody was asking.** Measured, before the vocabulary endpoint existed:
+ *
+ * ```
+ *   this input's placeholder      gross_margin
+ *   gross_margin in either catalogue   no  ⭐ the real one is gp_margin「销售毛利率」
+ *   domain check                  [a-z][a-z0-9_]* — shape only
+ *   POST /api/v1/decisions        201, stored verbatim
+ *   anything said at write time   nothing
+ * ```
+ *
+ * ⇒ A reader who followed **the product's own example** got a kill criterion that could
+ * never be evaluated, and the only place that would have said so runs months later, when
+ * the criterion comes due — where the sentence blames the data, and the data is fine.
+ *
+ * ⭐ **So the field now offers the vocabulary and says so when you leave it.** ⭐⭐ And it
+ * is **not** a `<select>`, because `criterion_sentence` has a whole sentence state for
+ * 「不在我们能算的指标里」 — ⭐⭐ replacing free text with a select would make that state
+ * **unreachable from the interface**, which is deleting a capability rather than fixing a
+ * defect. ⭐ An uncomputable metric is a **fact about the reader** (they care about gross
+ * margin); that this build lacks it is a fact about the product. ⭐ Neither is a reason to
+ * refuse the write, so the write is not refused.
  */
 interface Props {
   market: string
@@ -63,6 +98,108 @@ function isComplete(row: CriterionRow): boolean {
   )
 }
 
+/**
+ * ⭐ The vocabulary for this market, or `null` while unknown.
+ *
+ * ⭐ **`null` means 「没问出来」 and renders nothing.** Not an error sentence: 「我无法列出
+ * 我能算的指标」 is not something a reader should have to read because a request failed, ⭐
+ * and the guarantee this screen offers is a prompt, not a refusal — ⭐ the write is
+ * allowed either way, so there is nothing to warn about. ⭐ Same rule as `DemoBanner`.
+ */
+function useMetricCatalogue(market: string): MetricCatalogue | null {
+  const [catalogue, setCatalogue] = useState<MetricCatalogue | null>(null)
+
+  useEffect(() => {
+    let live = true
+    getMetrics(market)
+      .then((answer) => {
+        if (live) setCatalogue(answer)
+      })
+      .catch(() => {
+        // See the docstring: silence is the honest rendering of 「did not find out」.
+      })
+    return () => {
+      live = false
+    }
+  }, [market])
+
+  return catalogue
+}
+
+/**
+ * ⭐⭐ The sentence. One fact, no reassurance, no promise.
+ *
+ * ⭐ **It says 「我算不了」 and not 「你写错了」** ⭐ — because the reader did not get it
+ * wrong; ⭐ this build simply does not have that metric, ⭐ and for gross margin it *does*
+ * have one, under a different token. ⭐ Blaming the reader for the product's gap is the
+ * tone red line 13 rules out.
+ *
+ * ⭐⭐ **And it promises nothing.** The first draft of this said 「它会一直在这儿等，等到
+ * 我能算为止」 ⭐ — ⭐ **which is false**: ⭐ a token in neither catalogue is not something
+ * this build is scheduled to acquire, ⭐ so 「等到我能算为止」 names an event with no date.
+ * ⭐ That is reassurance (红线 13) *and* a promise the product cannot keep, ⭐ and it is the
+ * same species as the bug this screen was fixed for: ⭐ **saying something kind instead of
+ * something true.** ⇒ It states what *does* happen — the criterion is recorded, and the
+ * existing `criterion_sentence` will name the reason when it comes due.
+ *
+ * ⭐ **It does not block the write.** Not a validation error, not a warning banner — ⭐ one
+ * line under the field, and the button stays enabled.
+ */
+function UncomputableNotice({ token }: { token: string }) {
+  return (
+    <p
+      className="mt-1 type-meta text-ink-soft"
+      data-testid="metric-uncomputable"
+      // ⭐ `role="status"` not `role="alert"`: this appears as the reader types and settles,
+      // ⭐ and an alert announces itself on every keystroke that keeps it on screen.
+      role="status"
+    >
+      <code className="type-prose">{token}</code> 我算不了。
+      <span className="text-ink-faint">
+        {' '}
+        判据照样记下来；到期时它会照实说「不在我们能算的指标里」。
+      </span>
+    </p>
+  )
+}
+
+/**
+ * ⭐ What this market *can* compute — the one disclosure, shared by every row.
+ *
+ * ⭐ **Not inline per row.** A 32-item list under each of up to N criteria turns a form into
+ * a wall, ⭐ and the reader only needs it once. ⭐ **Sorted by token server-side** ⭐ so no
+ * ordering here can imply that one metric is more worth watching than another — ⭐ red line
+ * 8, and the same reason `DecisionForm` gives its five actions identical weight.
+ */
+function ComputableList({ catalogue }: { catalogue: MetricCatalogue }) {
+  if (catalogue.metrics.length === 0) {
+    // ⭐ A `.BJ` instrument lands here, and it is the sentence that reader most needs:
+    // ⭐ **nothing at all can be watched**, which is a fact about the data layer and not
+    // ⭐ about anything they wrote. ⭐ Measured: `financial` and `daily` are both `pending`
+    // ⭐ for `bj` — no provider declares them for that venue.
+    return (
+      <p className="mt-1 type-meta text-ink-soft" data-testid="metrics-empty">
+        这个市场我还没有数据源，所以一个指标都算不了。
+      </p>
+    )
+  }
+  return (
+    <details className="mt-1.5">
+      <summary className="type-meta caps text-ink-faint">
+        我能算的（{catalogue.metrics.length}）
+      </summary>
+      <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+        {catalogue.metrics.map((metric) => (
+          <li key={metric.token} className="type-meta text-ink-soft">
+            <span className="text-ink-faint">{metric.label}</span>{' '}
+            <code className="type-prose">{metric.token}</code>
+          </li>
+        ))}
+      </ul>
+    </details>
+  )
+}
+
 export default function DecisionForm({ market, code, onRecorded }: Props) {
   const [action, setAction] = useState<DecisionAction>('buy')
   const [rationale, setRationale] = useState('')
@@ -70,6 +207,9 @@ export default function DecisionForm({ market, code, onRecorded }: Props) {
   const [rows, setRows] = useState<CriterionRow[]>(() => [blankRow()])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<{ message: string; fix: string | null } | null>(null)
+
+  const catalogue = useMetricCatalogue(market)
+  const computable = new Set(catalogue?.metrics.map((metric) => metric.token) ?? [])
 
   const rationaleMissing = rationale.trim() === ''
   const counterMissing = counterEvidence.trim() === ''
@@ -218,14 +358,39 @@ export default function DecisionForm({ market, code, onRecorded }: Props) {
               removable={rows.length > 1}
               onChange={(patch) => updateRow(row.id, patch)}
               onRemove={() => removeRow(row.id)}
+              computable={computable}
+              vocabularyKnown={catalogue !== null}
             />
           ))}
         </ol>
+
+        {/* ⭐ One `<datalist>` for every criterion row. ⭐ `list` is a *reference*, so N rows
+            share one list — ⭐ and a native `<datalist>` keeps free text writable, which a
+            `<select>` would not (spec 058 §2.1). */}
+        {catalogue !== null && (
+          <datalist id={METRIC_DATALIST_ID}>
+            {catalogue.metrics.map((metric) => (
+              <option key={metric.token} value={metric.token}>
+                {metric.label}
+              </option>
+            ))}
+          </datalist>
+        )}
 
         <p className="mt-1 type-prose text-ink-faint">
           写成四段而不是一句话，是为了让数据将来能<strong className="text-ink">自己来</strong>
           告诉你条件触发了。一句话没人能计算，也就永远不会来找你。
         </p>
+
+        {/* ⭐ **One** disclosure for the whole form, not one per criterion — 32 labels inline
+            under every row would turn a form into a wall. ⭐ And it appears only once the
+            reader has actually written something this build cannot compute, ⭐ because a
+            list nobody asked for is noise, ⭐ and this screen's whole problem was giving
+            information in the wrong place at the wrong time. */}
+        {catalogue !== null &&
+          rows.some((row) => uncomputable(row.metric, computable, true)) && (
+            <ComputableList catalogue={catalogue} />
+          )}
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -269,13 +434,20 @@ function CriterionEditor({
   removable,
   onChange,
   onRemove,
+  computable,
+  vocabularyKnown,
 }: {
   row: CriterionRow
   index: number
   removable: boolean
   onChange: (patch: Partial<CriterionRow>) => void
   onRemove: () => void
+  /** Tokens this market can compute. ⭐ Empty while the catalogue is unknown. */
+  computable: Set<string>
+  /** ⭐ `false` while the catalogue has not arrived — ⭐ and then nothing is accused. */
+  vocabularyKnown: boolean
 }) {
+  const showNotice = uncomputable(row.metric, computable, vocabularyKnown)
   return (
     <li className="mt-1.5 border-l-2 border-l-rule py-1.5">
       <div className="flex flex-wrap items-end gap-x-2 gap-y-1.5">
@@ -286,7 +458,17 @@ function CriterionEditor({
           <Input
             value={row.metric}
             onChange={(event) => onChange({ metric: event.target.value })}
-            placeholder="gross_margin"
+            // ⭐⭐ **`gp_margin`, not `gross_margin`.** ⭐ The first placeholder was
+            // `gross_margin`, ⭐ which is in **neither** catalogue — ⭐ so the product's own
+            // example produced a kill criterion this build can never evaluate, stored
+            // verbatim by a domain that checks shape only, ⭐ with nothing said at write
+            // time and a sentence months later that blames the data (spec 058).
+            // ⭐ **Gross margin *is* computable. Its token is `gp_margin`.**
+            placeholder="gp_margin"
+            // ⭐ **A `<datalist>`, not a `<select>`.** Free text stays writable on purpose —
+            // ⭐ `criterion_sentence` has a sentence state for a metric this build lacks,
+            // ⭐ and a select would make it unreachable from the interface (spec 058 §2.1).
+            list={METRIC_DATALIST_ID}
             className="num w-[132px]"
             spellCheck={false}
           />
@@ -341,6 +523,8 @@ function CriterionEditor({
           </Button>
         )}
       </div>
+
+      {showNotice && <UncomputableNotice token={row.metric.trim()} />}
 
       {isComplete(row) && (
         <p className="mt-0.5 type-prose text-ink-soft">

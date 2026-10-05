@@ -59,9 +59,21 @@ class KillCriterionRead(BaseModel):
         min_length=1,
         max_length=64,
         description=(
-            "A metric token, e.g. gross_margin / revenue_yoy / price. The "
-            "catalogue belongs to the financial-data layer (D4) and is not "
-            "fixed yet, so this is validated for shape, not membership."
+            "⭐ **A token from `GET /api/v1/metrics?market=…`** — e.g. `close` / `ma20` / "
+            "`gp_margin`. ⭐⭐ **The three examples this field used to give "
+            "(`gross_margin`, `revenue_yoy`, `price`) were in neither catalogue** "
+            "(`metrics.CATALOGUE` + `FINANCIAL_CATALOGUE`, 32 tokens), ⭐ so every caller "
+            "who copied one got a kill criterion this build can never evaluate, stored "
+            "verbatim and silent about it. ⭐ Gross margin is real and *is* computable — ⭐ "
+            "the token is **`gp_margin`**, label 「销售毛利率」. ⇒ **Read the list; do not "
+            "guess a name.**\n\n"
+            "Still validated for **shape** only, not membership, ⭐ and that is deliberate: "
+            "`criterion_sentence` has a sentence state for 「不在我们能算的指标里」, ⭐ so "
+            "refusing here would make it unreachable from the interface — ⭐⭐ deleting a "
+            "capability rather than fixing a defect (spec 058 §2.1). ⭐ `read_metric` "
+            "already answers the membership question with "
+            "`MetricStatus.UNKNOWN_METRIC`; ⭐ what was missing was that nobody asked "
+            "**until the criterion came due**."
         ),
     )
     operator: ComparisonOperator
@@ -113,7 +125,22 @@ class DecisionCreateRequest(BaseModel):
     )
     kill_criteria: list[KillCriterionRead] = Field(
         min_length=1,
-        description="What would prove this wrong. At least one, and it must be evaluable.",
+        # ⭐⭐ **This description used to say 「and it must be evaluable」, ⭐ which is a
+        # promise the API did not keep**: ⭐ `POST /api/v1/decisions` with
+        # `metric: "gross_margin"` answered **201** and stored it, ⭐ because the only check
+        # is `_METRIC_PATTERN` — shape, not membership. ⭐ It sat one field below the
+        # `metric` description that offered `gross_margin` as an example, ⭐ so **the same
+        # lie appeared twice in one request body** and the first fix missed it. ⭐ Now it says
+        # what actually happens, which is the only kind of thing this field may assert.
+        description=(
+            "What would prove this wrong. At least one. ⭐ **A criterion whose `metric` "
+            "this build cannot compute is accepted** — ⭐ it is recorded, and when it comes "
+            "due the page says 「不在我们能算的指标里」 rather than staying quiet. ⭐ That is "
+            "deliberate: ⭐ `criterion_sentence` has a sentence state for exactly that case, "
+            "⭐⭐ and refusing here would make it unreachable — ⭐⭐ deleting a capability "
+            "instead of fixing a defect (spec 058 §2.1). ⭐ To find out what *is* "
+            "computable, and for which venue: `GET /api/v1/metrics?market=…`."
+        ),
     )
     thesis_id: str | None = Field(
         default=None,

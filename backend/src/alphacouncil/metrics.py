@@ -62,11 +62,18 @@ from alphacouncil.indicators import (
 )
 from alphacouncil.models.market import Quote
 
+# ⭐ From `providers.base`, **where `Dataset` is defined**, not from `providers.router` which
+# re-exports it (`F-246`: import from the definition site, so there is one place to look).
+# ⭐ Verified non-circular: nothing under `providers/` imports `metrics`.
+from alphacouncil.providers.base import Dataset
+
 __all__ = [
     "CATALOGUE",
     "FINANCIAL_CATALOGUE",
+    "CatalogueEntry",
     "MetricReading",
     "MetricStatus",
+    "catalogue_entries",
     "catalogue_labels",
     "read_metric",
 ]
@@ -296,13 +303,59 @@ FINANCIAL_CATALOGUE: dict[str, _FinancialEntry] = {
 def catalogue_labels() -> dict[str, str]:
     """``name -> label`` for the frontend's picker. ⭐ A copy, not a live view.
 
-    ⚠️ **It has no callers**, so a metric entering either catalogue does not reach a
-    picker. That is recorded rather than fixed here — whether a picker exists is a decision
-    about the reader, not about this function.
+    ⭐ **It has a caller now** — `GET /api/v1/metrics` (spec 058), which is what makes this
+    function reachable at all. ⭐ Its docstring used to say 「It has no callers, so a metric
+    entering either catalogue does not reach a picker. That is recorded rather than fixed
+    here — whether a picker exists is a decision about the reader」; ⭐⭐ **that decision has
+    been made**, and the fix was one line away the whole time, which is the shape of most
+    deferrals that look large on paper.
+
+    ⭐ Delegated to :func:`catalogue_entries` rather than re-reading the two dicts, ⭐
+    because two places that destructure a catalogue's value shape will disagree about it
+    (`F-246`: one fact, two resolvers).
     """
-    prices = {name: label for name, (label, _, _) in CATALOGUE.items()}
-    reported = {name: label for name, (label, _) in FINANCIAL_CATALOGUE.items()}
-    return {**prices, **reported}
+    return {entry.token: entry.label for entry in catalogue_entries()}
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogueEntry:
+    """One computable thing, and **which dataset has to work for it to be computable**.
+
+    ⭐ **`dataset` is the field that makes this worth having.** The two catalogues differ
+    only in where their numbers come from, and :func:`read_metric` treats a token in either
+    one as equally readable. ⭐ That is correct *for reading* and wrong *for promising*: ⭐
+    measured 2026-10-05, the capability matrix has `financial` as ``pending`` for ``bj``,
+    so on a Beijing instrument the eight reported figures **cannot be produced at all** ⭐
+    while `read_metric` would still accept the token.
+
+    ⇒ Without this field the picker would offer a `.BJ` reader eight metrics that can never
+    resolve — ⭐ **the same lie this spec exists to remove, pointed the other way.**
+    """
+
+    token: str
+    label: str
+    #: Which provider dataset must be usable for this token to mean anything here.
+    dataset: Dataset
+
+
+def catalogue_entries() -> tuple[CatalogueEntry, ...]:
+    """Every token this build can compute, with the dataset each one depends on.
+
+    ⭐ **Sorted by token, and the order means nothing.** Red line 8 forbids turning this into
+    a recommendation list, ⭐ and a sorted list is the cheapest way to guarantee that nobody
+    later decides MA20 goes first because it is 「more useful」 — ⭐ which would be the
+    product having an opinion, the same thing `DecisionForm` avoids by giving its five
+    actions identical weight.
+    """
+    entries = [
+        CatalogueEntry(token=token, label=label, dataset=Dataset.DAILY)
+        for token, (label, _, _) in CATALOGUE.items()
+    ]
+    entries += [
+        CatalogueEntry(token=token, label=label, dataset=Dataset.FINANCIAL)
+        for token, (label, _) in FINANCIAL_CATALOGUE.items()
+    ]
+    return tuple(sorted(entries, key=lambda entry: entry.token))
 
 
 def _read_reported(
