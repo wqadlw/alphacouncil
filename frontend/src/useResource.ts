@@ -52,7 +52,7 @@
  * invalidation, that is when the bus gets built, with a caller in hand.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 /** What a caller can be told about a request, as it happens. */
 export interface LoadState {
@@ -64,14 +64,39 @@ export interface LoadState {
 export type DescribeError = (cause: unknown) => string
 
 /**
- * Owns the in-flight generation counter.
+ * Owns the in-flight generation counter, and the identity of what is being fetched.
  *
  * Every `run` claims the next generation; a response whose generation is no
  * longer current is dropped **silently** rather than reported, because it is not
  * an error — it is the answer to a question the caller has already moved on from.
+ *
+ * The `resource` argument is the other half, and it is the half that was missing.
+ * The generation counter knows *which request* is current. It does not know
+ * *what is being requested*, so before this argument existed the runner kept one
+ * `#last` across every request and republished it at the start of each one. That
+ * is right when the same resource failed and wrong when the caller has moved to a
+ * different one, and the two were indistinguishable: both published
+ * `{data: previous, loading: true}`.
+ *
+ * Measured consequence, 2026-10-06: `PoolPage` links to an instrument with a plain
+ * `<a href="#/i/sh/000001">`, which changes the hash without reloading. The
+ * instrument page then rendered the *previous* instrument's name, follow reason,
+ * decisions, cards and history under the new instrument's URL. For a product
+ * whose only claim is that the reader's record is trustworthy, showing one
+ * company's decisions under another's heading is the worst bug this codebase can
+ * ship.
+ *
+ * So two runs with the same `resource` may share content, and two runs with
+ * different `resource` values may not. `reload()` passes the same key and keeps
+ * the benefit; a changed dependency does not.
  */
 export class RequestRunner {
   #generation = 0
+
+  /** Which resource `#last` belongs to. Null until the first run. */
+  #resource: string | null = null
+
+  #last: LoadState | null = null
 
   readonly #publish: (state: LoadState) => void
 
@@ -79,12 +104,21 @@ export class RequestRunner {
     this.#publish = publish
   }
 
-  async run<T>(fetcher: () => Promise<T>, describe: DescribeError): Promise<void> {
+  async run<T>(
+    fetcher: () => Promise<T>,
+    describe: DescribeError,
+    resource: string,
+  ): Promise<void> {
     const mine = ++this.#generation
-    // `data` is deliberately *not* cleared: a page showing an error above the
-    // content it already has is more useful than one that blanks, and the red
-    // lines treat "we could not reach the source" as its own state rather than as
-    // "there is no data" (constitution 4.6, four states).
+    if (resource !== this.#resource) {
+      this.#resource = resource
+      this.#last = null
+    }
+    // `data` is deliberately *not* cleared within one resource: a page showing an
+    // error above the content it already has is more useful than one that blanks,
+    // and the red lines treat "we could not reach the source" as its own state
+    // rather than as "there is no data" (constitution 4.6, four states). Across
+    // resources it *is* cleared, one line above.
     this.#publish({ data: this.#last?.data ?? null, error: null, loading: true })
     try {
       const value = await fetcher()
@@ -97,8 +131,23 @@ export class RequestRunner {
       this.#publish(this.#last)
     }
   }
+}
 
-  #last: LoadState | null = null
+/**
+ * Name a resource by its dependencies.
+ *
+ * ⚠️ **The contract is that `deps` must be JSON-serialisable**, and that is
+ * checkable rather than a matter of trust: `useResource.test.ts` pins what a
+ * value with no stable serialisation does to the key. Every call site in this
+ * repo passes primitives (`[market, code]`, `[cardId]`, `[tag, query]`) or an
+ * empty array, measured 2026-10-06, so nothing here depends on that by luck.
+ *
+ * Why not `String(deps)`: every object would serialise to `[object Object]`, and
+ * two different resources would look like one — which is the exact bug above,
+ * reached by a different route.
+ */
+export function resourceKey(deps: readonly unknown[]): string {
+  return JSON.stringify(deps)
 }
 
 export interface Resource<T> {
@@ -137,8 +186,13 @@ export function useResource<T>(
   // documentation instead of the other way round.
   const describeRef = useLatest(describeError)
 
+  // The resource's identity, derived from the same dependencies that re-run the
+  // request. The runner needs this to tell "the same thing failed again" (keep
+  // what is on screen) from "a different thing is loading" (show nothing yet).
+  const resource = useMemo(() => resourceKey(deps), deps)
+
   useEffect(() => {
-    void holder.runner?.run(fetcher, (cause) => describeRef.current(cause))
+    void holder.runner?.run(fetcher, (cause) => describeRef.current(cause), resource)
     // `fetcher` is rebuilt every render, so it is deliberately not a dependency;
     // `deps` is the caller's statement of what actually changes the request. The
     // generation counter is what makes that safe — a superseded request's answer is
@@ -148,8 +202,10 @@ export function useResource<T>(
   }, [...deps])
 
   const reload = useCallback(() => {
-    void holder.runner?.run(fetcher, (cause) => describeRef.current(cause))
-  }, [holder, fetcher, describeRef])
+    // The same `resource`, deliberately: a reload is the same question asked
+    // again, so a failure here should leave the content already on screen alone.
+    void holder.runner?.run(fetcher, (cause) => describeRef.current(cause), resource)
+  }, [holder, fetcher, describeRef, resource])
 
   return {
     data: (state.data as T | null) ?? null,

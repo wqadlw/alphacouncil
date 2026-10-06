@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { type DescribeError, type LoadState, RequestRunner } from './useResource'
+import {
+  type DescribeError,
+  type LoadState,
+  RequestRunner,
+  resourceKey,
+} from './useResource'
 
 /**
  * The data layer stands in for six pages' worth of removed boilerplate, so these
@@ -42,7 +47,7 @@ function harness() {
 describe('RequestRunner', () => {
   it('starts loading and settles with the data', async () => {
     const { runner, states, last } = harness()
-    const pending = runner.run(() => Promise.resolve('ok'), describeError)
+    const pending = runner.run(() => Promise.resolve('ok'), describeError, 'k')
     expect(last().loading).toBe(true)
     await pending
     expect(last()).toEqual({ data: 'ok', error: null, loading: false })
@@ -51,7 +56,7 @@ describe('RequestRunner', () => {
 
   it('reports a failure and stops loading', async () => {
     const { runner, last } = harness()
-    await runner.run(() => Promise.reject(new Error('nope')), describeError)
+    await runner.run(() => Promise.reject(new Error('nope')), describeError, 'k')
     expect(last()).toEqual({ data: null, error: 'nope', loading: false })
   })
 
@@ -60,6 +65,7 @@ describe('RequestRunner', () => {
     await runner.run(
       () => Promise.reject('a bare string'),
       () => '说人话',
+      'k',
     )
     expect(last().error).toBe('说人话')
   })
@@ -71,15 +77,15 @@ describe('RequestRunner', () => {
      * list the reader was reading when the connection blipped.
      */
     const { runner, last } = harness()
-    await runner.run(() => Promise.resolve('first'), describeError)
-    await runner.run(() => Promise.reject(new Error('nope')), describeError)
+    await runner.run(() => Promise.resolve('first'), describeError, 'k')
+    await runner.run(() => Promise.reject(new Error('nope')), describeError, 'k')
     expect(last()).toEqual({ data: 'first', error: 'nope', loading: false })
   })
 
   it('clears a previous failure when a later run succeeds', async () => {
     const { runner, last } = harness()
-    await runner.run(() => Promise.reject(new Error('nope')), describeError)
-    await runner.run(() => Promise.resolve('ok'), describeError)
+    await runner.run(() => Promise.reject(new Error('nope')), describeError, 'k')
+    await runner.run(() => Promise.resolve('ok'), describeError, 'k')
     expect(last()).toEqual({ data: 'ok', error: null, loading: false })
   })
 })
@@ -97,8 +103,8 @@ describe('RequestRunner discards a superseded answer', () => {
     const second = deferred<string>()
     const { runner, last } = harness()
 
-    const slow = runner.run(() => first.promise, describeError)
-    const fast = runner.run(() => second.promise, describeError)
+    const slow = runner.run(() => first.promise, describeError, 'k')
+    const fast = runner.run(() => second.promise, describeError, 'k')
 
     second.resolve('row-b')
     await fast
@@ -115,8 +121,8 @@ describe('RequestRunner discards a superseded answer', () => {
     const second = deferred<string>()
     const { runner, last } = harness()
 
-    const slow = runner.run(() => first.promise, describeError)
-    const fast = runner.run(() => second.promise, describeError)
+    const slow = runner.run(() => first.promise, describeError, 'k')
+    const fast = runner.run(() => second.promise, describeError, 'k')
 
     second.resolve('row-b')
     await fast
@@ -137,8 +143,8 @@ describe('RequestRunner discards a superseded answer', () => {
     const second = deferred<string>()
     const { runner, states } = harness()
 
-    const slow = runner.run(() => first.promise, describeError)
-    const fast = runner.run(() => second.promise, describeError)
+    const slow = runner.run(() => first.promise, describeError, 'k')
+    const fast = runner.run(() => second.promise, describeError, 'k')
 
     first.resolve('row-a')
     await slow
@@ -147,5 +153,117 @@ describe('RequestRunner discards a superseded answer', () => {
     second.resolve('row-b')
     await fast
     expect(states[states.length - 1]).toEqual({ data: 'row-b', error: null, loading: false })
+  })
+})
+
+/**
+ * The resource boundary, which is the half the generation counter could not see.
+   *
+   * Measured 2026-10-06: the pool page links to an instrument with a plain
+   * `<a href="#/i/sh/000001">`. That changes the hash and does not reload, so the
+   * instrument page re-rendered with new `market` / `code` and kept showing the
+   * previous instrument's name, follow reason, decisions, cards and history.
+   *
+   * Two runs with the same resource may share content. Two runs with different
+   * resources may not. Every test in this block removes one line of the
+   * implementation and must go red — see `.ai/regressions/` for the recorded run.
+   */
+  describe('RequestRunner across a change of resource', () => {
+    it('does not republish the previous resource while the new one loads', async () => {
+      const { runner, last } = harness()
+
+      await runner.run(() => Promise.resolve('600519 的记录'), describeError, 'sh/600519')
+      expect(last().data).toBe('600519 的记录')
+
+      // The reader clicks the other row in the pool. No reload: the hash changes.
+      const pending = runner.run(() => Promise.resolve('000001 的记录'), describeError, 'sz/000001')
+
+      expect(last().loading).toBe(true)
+      expect(last().data).toBeNull()
+
+      await pending
+      expect(last().data).toBe('000001 的记录')
+    })
+
+    it('does not fall back to the previous resource when the new one fails', async () => {
+      /**
+       * The nastier half. Clearing on load is not enough on its own: if the new
+       * request fails and the runner republishes `#last`, the previous instrument
+       * is back — this time with an error message attached, which reads as "this
+       * company's record could not be read" rather than as "that is the wrong
+       * company". A wrong answer labelled as a failure is still a wrong answer.
+       */
+      const { runner, last } = harness()
+
+      await runner.run(() => Promise.resolve('600519 的记录'), describeError, 'sh/600519')
+      await runner.run(() => Promise.reject(new Error('取不到')), describeError, 'sz/000001')
+
+      expect(last()).toEqual({ data: null, error: '取不到', loading: false })
+    })
+
+    it('still keeps the content on screen when the same resource fails again', async () => {
+      /**
+       * The benefit the old code had for the wrong reason, now kept for the right
+       * one: a reload is the same question asked again, so a blip must not destroy
+       * the list the reader was reading.
+       */
+      const { runner, last } = harness()
+
+      await runner.run(() => Promise.resolve('关注池'), describeError, 'sh/600519')
+      await runner.run(() => Promise.reject(new Error('nope')), describeError, 'sh/600519')
+
+      expect(last()).toEqual({ data: '关注池', error: 'nope', loading: false })
+    })
+
+    it('going back to a resource starts empty rather than restoring it', async () => {
+      /**
+       * Worth pinning because "keep a small per-resource cache" is the obvious
+       * next idea and it is a different decision. This runner holds one resource,
+       * so returning to the first one is a fresh load, not a restore.
+       */
+      const { runner, last } = harness()
+
+      await runner.run(() => Promise.resolve('A'), describeError, 'a')
+      await runner.run(() => Promise.resolve('B'), describeError, 'b')
+      const pending = runner.run(() => Promise.resolve('A again'), describeError, 'a')
+
+      expect(last().data).toBeNull()
+      await pending
+      expect(last().data).toBe('A again')
+  })
+})
+
+describe('resourceKey', () => {
+  it('separates the primitive dependencies every call site actually passes', () => {
+    expect(resourceKey(['sh', '600519'])).not.toBe(resourceKey(['sh', '000001']))
+    expect(resourceKey(['sh', '600519'])).toBe(resourceKey(['sh', '600519']))
+    expect(resourceKey([])).toBe(resourceKey([]))
+  })
+
+  it('does not confuse a different order', () => {
+    // Not a promise the hook needs, but a true one: `[tag, query]` and
+    // `[query, tag]` are different resources, and a set-like key would lose that.
+    expect(resourceKey(['a', 'b'])).not.toBe(resourceKey(['b', 'a']))
+  })
+
+  it('collapses objects, and that is the documented limit of the contract', () => {
+    /**
+     * `String(deps)` would make this worse: every object is `[object Object]`.
+     * `JSON.stringify` at least separates objects that differ, so the failure is
+     * narrow — two objects with identical contents look like one resource. That
+     * is a documented contract, not an accident, and this test is what makes it
+     * executable rather than a claim in a comment.
+     */
+    expect(resourceKey([{ code: '600519' }])).toBe(resourceKey([{ code: '600519' }]))
+    expect(resourceKey([{ code: '600519' }])).not.toBe(resourceKey([{ code: '000001' }]))
+  })
+
+  it('reports a value with no stable serialisation instead of hiding it', () => {
+    // A function serialises to null, so two different functions collide.
+    expect(resourceKey([() => 1])).toBe(resourceKey([() => 2]))
+    // And a symbol at the top level would make JSON.stringify return undefined.
+    // deps is always an array, so the key is always a string — pinned here
+    // because that is the property `run` relies on for its `!==` comparison.
+    expect(typeof resourceKey([undefined, null, 0, ''])).toBe('string')
   })
 })

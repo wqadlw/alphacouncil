@@ -305,6 +305,17 @@ export default function PoolPage() {
         <a
           href={instrumentHref(row.entry.market, row.entry.code)}
           className="num text-ink no-underline hover:text-navy hover:underline"
+ /**
+  * The testid exists so a test can *click* this link.
+  *
+  * Every navigation in the E2E suite was a `page.goto`, which is a hard
+  * load and therefore always starts from an empty app. Nothing in 175
+  * tests moved between two instruments the way a reader does, which is
+  * why a defect that showed one instrument's decisions under another's
+  * URL survived a fully green suite. This is what makes that navigation
+  * writable, and the regression test using it is why it cannot return.
+  */
+ data-testid={`pool-instrument-${row.entry.market}-${row.entry.code}`}
  >
           {displayCode(row.entry.market, row.entry.code)}
         </a>
