@@ -189,6 +189,24 @@ export interface Decision {
   counter_evidence: string
   kill_criteria: KillCriterion[]
   thesis_id: string | null
+  /**
+   * Whether the reader has marked this as a trial rather than a judgement.
+   * The decision stays in the log and stays readable either way; it is kept out
+   * of the today page's attention list and out of the retrospective quadrants,
+   * because those are conclusions. False when no mark has been recorded.
+   */
+  scratch: boolean
+}
+
+/**
+ * The whole request body of `POST /api/v1/decisions/{id}/scratch`.
+ *
+ * One field on purpose. A `reason`, a `tag` or a `confidence` would each be a
+ * way for the product to end up grading the reader's own records, which red line
+ * 11 refuses — so the server forbids extras and the client offers nothing more.
+ */
+export interface ScratchMarkBody {
+  marked: boolean
 }
 
 export interface DecisionInput {
@@ -1184,6 +1202,24 @@ export function recordDecision(input: DecisionInput): Promise<Decision> {
  */
 export function listRecentDecisions(limit = 50): Promise<Decision[]> {
   return request<Decision[]>(`/api/v1/decisions?limit=${limit}`)
+}
+
+/**
+ * Mark a decision as a trial, or take the mark back.
+ *
+ * Returns the decision rather than a bare 204, because the client needs the
+ * authoritative state and a second refetch to learn what it just wrote is a
+ * request the reader can win a race with. Un-marking appends a row rather than
+ * removing one; the caller cannot tell, and does not need to.
+ */
+export function markDecisionScratch(
+  decisionId: string,
+  marked: boolean,
+): Promise<Decision> {
+  return request<Decision>(`/api/v1/decisions/${decisionId}/scratch`, {
+    method: 'POST',
+    body: JSON.stringify({ marked } satisfies ScratchMarkBody),
+  })
 }
 
 /**

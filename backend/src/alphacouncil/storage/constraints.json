@@ -362,6 +362,14 @@
         "index_universe_sweeps_grid_before_fetched_check": "comparison",
         "index_universe_sweeps_fetched_at_check": "identity"
       }
+    },
+    "decision_scratch_events": {
+      "append_only": true,
+      "constraints": {
+        "decision_scratch_verb_check": "enum",
+        "decision_scratch_decision_shape_check": "required",
+        "decision_scratch_recorded_at_check": "identity"
+      }
     }
   }
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Decision } from './api'
+import { markDecisionScratch } from './api'
 import DecisionForm from './DecisionForm'
 import StopLossPrompt from './StopLossPrompt'
 import { ACTION_LABEL, formatMoment, formatPredicate } from './format'
@@ -89,13 +90,36 @@ export default function DecisionSection({ market, code, decisions, onRecorded }:
 }
 
 function DecisionRow({ decision }: { decision: Decision }) {
+  // Local state seeded from the server's answer. The endpoint returns the
+  // decision rather than a 204 precisely so this can be set from what was
+  // actually written instead of from what the button was asked to do.
+  const [scratch, setScratch] = useState(decision.scratch)
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  async function toggle() {
+    const next = !scratch
+    setBusy(true)
+    setFailed(false)
+    try {
+      const written = await markDecisionScratch(decision.id, next)
+      setScratch(written.scratch)
+    } catch {
+      // The mark did not take, so the row must not pretend it did. Leaving the
+      // label unchanged is the honest outcome: the reader can press again.
+      setFailed(true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <li className="border-b border-[color:var(--color-rule-soft)] border-l-2 border-l-navy py-1.5">
       <div className="flex flex-wrap items-baseline gap-x-3">
         <span className="type-prose text-ink">
           {ACTION_LABEL[decision.action] ?? decision.action}
         </span>
-        {/* ⭐ The moment, once.
+        {/* The moment, once.
             This row used to render `formatMoment(decision.id)` *and* the raw
             `decision.id` on the next span, so every decision showed the same
             instant twice — once readable, once as
@@ -103,6 +127,9 @@ function DecisionRow({ decision }: { decision: Decision }) {
             what makes `get_by_id` exact), not something a reader can act on, and
             at 24 characters it was the widest thing in the row. */}
         <span className="num type-meta text-ink-faint">{formatMoment(decision.id)}</span>
+        {scratch ? (
+          <span className="type-meta text-brass">试验记录</span>
+        ) : null}
       </div>
 
       <div className="mt-1 grid gap-1 sm:grid-cols-2">
@@ -128,6 +155,19 @@ function DecisionRow({ decision }: { decision: Decision }) {
             </li>
           ))}
         </ul>
+      </div>
+
+      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+        <Button size="sm" onClick={toggle} disabled={busy}>
+          {scratch ? '取消「试验记录」' : '这条是试验记录，不进复盘结论'}
+        </Button>
+        {failed ? (
+          <span className="type-meta text-brass">没有写进去，再按一次。</span>
+        ) : (
+          <span className="type-meta text-ink-faint">
+            记录本身一直留着，只是今日页和复盘的四象限不再拿它下结论。
+          </span>
+        )}
       </div>
     </li>
   )

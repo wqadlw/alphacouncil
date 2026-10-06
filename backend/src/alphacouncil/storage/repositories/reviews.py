@@ -44,6 +44,7 @@ from alphacouncil.domain.review import (
     judge,
 )
 from alphacouncil.storage.db import require_open_transaction
+from alphacouncil.storage.repositories import decisions as _scratch_source
 
 __all__ = [
     "ReviewRow",
@@ -247,7 +248,27 @@ def recent_reviews(
     ``limit`` is small on purpose (20): this is a place to go and read, not a history
     to scroll. A decision older than twenty reviews is not something you came back
     for, and a list that grows without bound is a list you stop reading.
+
+    Decisions the reader has marked as a scratch record are excluded (spec 060).
+    This list feeds the retrospective quadrants, and a quadrant is a conclusion
+    about their judgement; a trial is not a judgement. The quadrant this matters
+    most for is "looks wrong but paid out": a test record that happened to gain
+    would otherwise sit there looking like the product's clearest evidence that
+    its owner cannot be trusted.
+
+    ``reviews_for`` and ``count_reviews`` are deliberately not filtered. History
+    reached by explicit id stays readable; hiding the reviews of a decision the
+    reader marked would be deleting their record, which this mark must never do.
+
+    The exclusion is applied in Python rather than in SQL. Building the ``NOT IN``
+    list as SQL text is the first string-built statement in ``src/``, and the repo's
+    own S608 rule refuses it -- correctly, because there is no precedent here to
+    trust. Filtering after the ORDER BY is exact: the order is total (reviewed_at
+    DESC, decision_id ASC), so "first 20 after dropping some rows" is well defined.
+    The cost is that the query reads every reviewed decision instead of 21; at
+    personal scale that is the same trade ``decisions.list_all`` already makes.
     """
+    scratch = _scratch_source.scratch_ids(connection)
     # ⭐ The same five columns `due_reviews` selects, because the same
     # `_row_to_state` reads them. The first version selected two and raised
     # `IndexError: No item with that key` — an error naming the **consumer** of the
@@ -266,10 +287,9 @@ def recent_reviews(
         "ORDER BY (SELECT MAX(reviewed_at) FROM reviews r "
         "           WHERE r.decision_id = decision_review_state.decision_id) DESC, "
         "         decision_id ASC "
-        "LIMIT ?",
-        (limit,),
     ).fetchall()
-    return tuple(_row_to_state(row) for row in rows)
+    kept = [row for row in rows if row["decision_id"] not in scratch][:limit]
+    return tuple(_row_to_state(row) for row in kept)
 
 
 def due_reviews(

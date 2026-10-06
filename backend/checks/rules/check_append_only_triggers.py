@@ -146,6 +146,12 @@ APPEND_ONLY_TABLES = frozenset(
         # being the program's version of nagging. ⭐ `sent_at` has no TTL either, because
         # 「you cannot un-hear something」 is not a cache property.
         "notifications_sent",
+        # decision_scratch_events (spec 060): the same reason again, and the
+        # sharpest version of it. 「这条是试验记录」 is an act the reader performed,
+        # not a fact about the market, so overwriting the verb would rewrite what
+        # they did and deleting the row would erase that they ever did it. The
+        # state is the last row precisely so that no edit is needed to change it.
+        "decision_scratch_events",
         # lesson_promotions (spec 030): **not** a review, and a different reason.
         # The other nine tables are histories of things that *happened to* the
         # reader. This one is a promise they made: 「这条教训我已经签成卡片了」. A

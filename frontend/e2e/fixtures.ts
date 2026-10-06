@@ -659,6 +659,8 @@ export function instrumentDetail(): Body {
         counter_evidence: '白酒需求与宏观强相关，若高端消费收缩，定价权无法对冲量的下滑',
         kill_criteria: [{ metric: 'revenue_yoy', operator: '<', threshold: 0.55, as_of: '2026-12-31' }],
         thesis_id: null,
+        // Absent before spec 060; the mark is the reader's own act and starts unset.
+        scratch: false,
       },
     ],
     cards: [],

@@ -23,13 +23,24 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
+from enum import StrEnum
 
 from alphacouncil.core.time import utc_millis
 from alphacouncil.domain.decision import Decision, DecisionAction, KillCriterion
 from alphacouncil.models.market import Market, Symbol
 from alphacouncil.storage.repositories import instruments
 
-__all__ = ["DecisionRow", "append", "for_symbol", "get_by_id", "list_all", "recent"]
+__all__ = [
+    "DecisionRow",
+    "ScratchVerb",
+    "append",
+    "for_symbol",
+    "get_by_id",
+    "list_all",
+    "mark_scratch",
+    "recent",
+    "scratch_ids",
+]
 
 #: The column list is written out in each statement rather than built from a
 #: shared constant. Two reasons, and the second is the real one: a constructed
@@ -179,6 +190,118 @@ def list_all(connection: sqlite3.Connection) -> tuple[DecisionRow, ...]:
     honest choice rather than the naive one.
     """
     return tuple(_to_row(row) for row in connection.execute(_SELECT_ALL))
+
+
+# ---------------------------------------------------------------------------
+# 「这条是试验记录」—— spec 060 §一之补
+# ---------------------------------------------------------------------------
+#
+# ⭐⭐ **本段只有一处读法推导状态,⭐⭐ 那就是 :func:`scratch_ids`。** ⭐⭐
+#
+# ⭐⭐ **为什么只能有一处:** ⭐⭐ 读法一旦在两个地方重复,⭐⭐ 总会有一处重复错
+# ⭐⭐ —— ⭐⭐ 而这**已经发生过**:⭐⭐ `D-25` 的第一版把复合键
+# ⭐⭐ `(market, code)` 当成两个独立引用,⭐⭐ 因为「取最后一行」
+# ⭐⭐ 在那里也是现写的。⭐⭐ 同一个形状:⭐⭐ **读法一重复,
+# ⭐⭐ 就会走样一次。** ⭐⭐
+
+
+class ScratchVerb(StrEnum):
+    """The two things a reader can say about a decision, and nothing else.
+
+    ⭐ **An enum, not a free string, and not a boolean.** ⭐ S-02's threshold is two:
+    ⭐ one boolean is a genuine binary, ⭐ two booleans about the same object is a state
+    ⭐ machine wearing a disguise. ⭐⭐ ``marked`` / ``unmarked`` **is** that state
+    ⭐⭐ machine — ⭐⭐ and both members of it are the *absence* of a column, ⭐⭐ so a
+    ⭐⭐ boolean on the decision row would have been exactly the shape S-02 forbids.
+
+    ⭐⭐ **And not a third member.** ⭐⭐ A general tagger would invite 「好判断 /
+    ⭐⭐ 坏判断 / 被打脸」 ⭐⭐ — ⭐⭐ **that is self-scoring**, ⭐⭐ and red line
+    ⭐⭐ 11 and this product's own argument both refuse it. ⭐⭐ ⇒ **one
+    ⭐⭐ purpose-limited mark, ⭐⭐ not a category system.**
+    """
+
+    MARKED = "marked"
+    UNMARKED = "unmarked"
+
+    @property
+    def is_scratch(self) -> bool:
+        """Whether the latest verb puts this decision outside the retrospective.
+
+        ⭐⭐ The whole product surface of this table is this one predicate. ⭐⭐
+        ⭐⭐ **It lives on the verb, ⭐⭐ not on the row, ⭐⭐ — ⭐⭐
+        ⭐⭐ because 「最后一行是不是 marked」 ⭐⭐ is a question
+        ⭐⭐ about the log, ⭐⭐ and answering it in two places
+        ⭐⭐ is how the two places come to disagree.
+        """
+        return self is ScratchVerb.MARKED
+
+
+_INSERT_SCRATCH = (
+    "INSERT INTO decision_scratch_events (decision_id, verb, recorded_at) VALUES (?, ?, ?)"
+)
+#: ⭐⭐ 「最后一行」 = **最大 id**,⭐⭐ 而不是最大 `recorded_at`。⭐⭐
+#: ⭐⭐ `AUTOINCREMENT` 保证 id 单调,⭐⭐ 而 `recorded_at` 是调用方给的
+#: ⭐⭐ —— ⭐⭐ 同一毫秒里两次写入会给出相同的
+#: ⭐⭐ `recorded_at`,⭐⭐ **按时间排会分不出「谁在后」。** ⭐⭐
+#: ⭐⭐ **`decisions.id` 与 `card_reviews.id` 同毫秒碰撞的同一个形状**
+#: ⭐⭐(`F-233` 家族)。⭐⭐
+_SCRATCH_STATES = """
+SELECT decision_id, verb
+FROM decision_scratch_events AS newer
+WHERE newer.id = (
+  SELECT MAX(id) FROM decision_scratch_events AS older
+  WHERE older.decision_id = newer.decision_id
+)
+"""
+
+
+def mark_scratch(
+    connection: sqlite3.Connection, decision_id: str, *, marked: bool
+) -> ScratchVerb:
+    """Record one 「this is / is not a scratch decision」 and return the verb written.
+
+    ⭐⭐ **Appends a row. ⭐⭐ Never edits and never deletes** ⭐⭐ — ⭐⭐
+    ⭐⭐ the table has ``BEFORE UPDATE`` / ``BEFORE DELETE`` triggers ⭐⭐
+    ⭐⭐ and the repository is not the thing that enforces them ⭐⭐.
+    ⭐⭐
+
+    ⭐⭐ **And 「取消」 is a second row, ⭐⭐ not the removal of the first.**
+    ⭐⭐ Overwriting the verb would make the state unreadable ⭐⭐
+    ⭐⭐ and deleting the row would remove the record that he
+    ⭐⭐ once pressed it. ⭐⭐
+
+    ⭐⭐ **This is the reader's own act (红线 15).** ⭐⭐
+    ⭐⭐ The route checks the decision exists ⭐⭐
+    ⭐⭐ and nothing else decides *whether* ⭐⭐ — ⭐⭐
+    ⭐⭐ **nothing here decides *which* decisions deserve it.**
+    ⭐⭐
+    """
+    verb = ScratchVerb.MARKED if marked else ScratchVerb.UNMARKED
+    connection.execute(
+        _INSERT_SCRATCH, (decision_id, verb.value, utc_millis())
+    )
+    return verb
+
+
+def scratch_ids(connection: sqlite3.Connection) -> frozenset[str]:
+    """The ids of every decision currently marked as a scratch record.
+
+    ⭐⭐ **One read, one place. ⭐⭐ Every caller filters through this
+    ⭐⭐ function ⭐⭐ so that 「which decisions
+    ⭐⭐ are scratch」 ⭐⭐ has exactly one answer
+    ⭐⭐ in the codebase. ⭐⭐
+
+    ⭐⭐ **Returns a set rather than a
+    ⭐⭐ dict of verdicts.** ⭐⭐ Every caller
+    ⭐⭐ needs a membership test, ⭐⭐ and a dict
+    ⭐⭐ would hand each of them a reason to read the verb ⭐⭐
+    ⭐⭐ and write their own comparison. ⭐⭐
+    """
+    return frozenset(
+        str(row["decision_id"])
+        for row in connection.execute(_SCRATCH_STATES)
+        if ScratchVerb(row["verb"]).is_scratch
+    )
 
 
 def _to_row(row: sqlite3.Row) -> DecisionRow:

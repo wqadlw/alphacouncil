@@ -339,7 +339,20 @@ def today(connection: DatabaseConnection, market_data: MarketData) -> TodayRead:
         bars_by_symbol[symbol] = rows  # type: ignore[assignment]
         return rows
 
+    # ⭐⭐ Scratch decisions are read once here and skipped below (spec 060 §一之补).
+    # ⭐⭐ Measured 2026-10-06, this is the actual harm: `GET /today` returned four
+    # attention items, all four from test records, and none from the one real
+    # decision (its criteria are due 2026-12-31). One of them told the reader
+    # 「已越过」 about a criterion they had never meant.
+    # ⭐⭐ Read once because `list_all` is deliberately untruncated -- see the
+    # docstring on `repositories/decisions.list_all` for why.
+    scratch_ids = decision_repository.scratch_ids(connection)
+
     for row in decision_repository.list_all(connection):
+        # ⭐⭐ Skipped, not hidden: the decision stays in the log and stays readable
+        # on the instrument page, labelled. What is skipped is the conclusion.
+        if row.id in scratch_ids:
+            continue
         symbol = Symbol(market=row.market, code=row.code)
         bars: list[Quote] | None = None
         loaded = False

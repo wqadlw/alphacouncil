@@ -21,6 +21,7 @@ user, and the database is the floor under both.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date, datetime
 
 from fastapi import APIRouter, Query, status
@@ -31,6 +32,7 @@ from alphacouncil.domain.decision import (
     MAX_TEXT_CHARS,
     ComparisonOperator,
     DecisionAction,
+    DecisionNotFoundError,
     KillCriterion,
     record,
 )
@@ -179,9 +181,21 @@ class DecisionRead(BaseModel):
     counter_evidence: str
     kill_criteria: list[KillCriterionRead]
     thesis_id: str | None = None
+    scratch: bool = Field(
+        default=False,
+        description=(
+            "Whether the reader has marked this as a scratch record: a trial, not a "
+            "judgement. A scratch decision stays in the log and stays readable; it is "
+            "kept out of the today page's attention list and out of the retrospective "
+            "quadrants, because those are conclusions and a trial is not one. "
+            "False when no mark has been recorded."
+        ),
+    )
 
 
-def to_read(row: repository.DecisionRow) -> DecisionRead:
+def to_read(
+    row: repository.DecisionRow, *, scratch: bool = False
+) -> DecisionRead:
     """Render a stored row for the client.
 
     Public, and imported by :mod:`alphacouncil.api.routes.instruments`, because a
@@ -189,6 +203,13 @@ def to_read(row: repository.DecisionRow) -> DecisionRead:
     would be a second place for ``display`` to be built by hand, and the whole
     reason ``display`` exists is that the conventional ticker form should have
     exactly one implementation.
+
+    ⭐ ``scratch`` is a keyword with a default of ``False`` ⭐ rather than a field
+    the row can answer for itself ⭐ — ⭐⭐ **the mark lives in another table,⭐⭐
+    ⭐⭐ so a caller that forgets to pass it gets "not marked",⭐⭐ which is the
+    ⭐⭐ safe direction to be wrong in** ⭐⭐ — ⭐⭐ a decision silently dropped
+    ⭐⭐ from the reader's own log is a lie about their record,⭐⭐ while one
+    ⭐⭐ that appears in attention it was told is out of is a nuisance.
     """
     return DecisionRead(
         id=row.id,
@@ -211,7 +232,27 @@ def to_read(row: repository.DecisionRow) -> DecisionRead:
             for criterion in row.kill_criteria
         ],
         thesis_id=row.thesis_id,
+        scratch=scratch,
     )
+
+
+def to_read_many(
+    rows: Sequence[repository.DecisionRow], connection: DatabaseConnection
+) -> list[DecisionRead]:
+    """Render several decisions, ⭐ with the scratch mark resolved **once**.
+
+    ⭐⭐ **This exists so that the mark is looked up once for a whole page,⭐⭐
+    ⭐⭐ and ⭐⭐ not once per row.⭐⭐
+    ⭐⭐ **The alternative,⭐⭐ `scratch in
+    ⭐⭐ repository.scratch_ids(connection)`⭐⭐
+    ⭐⭐ inside the comprehension,⭐⭐
+    ⭐⭐ is a query per decision⭐⭐
+    ⭐⭐ **and at three years of decisions⭐⭐
+    ⭐⭐
+    ⭐⭐
+    """
+    scratch = repository.scratch_ids(connection)
+    return [to_read(row, scratch=row.id in scratch) for row in rows]
 
 
 @router.get("", summary="The most recent decisions across every instrument")
@@ -227,7 +268,78 @@ def list_recent(
     and the page that shows a company's history needs all of it, not the last
     fifty.
     """
-    return [to_read(row) for row in repository.recent(connection, limit=limit)]
+    return to_read_many(repository.recent(connection, limit=limit), connection)
+
+
+class ScratchMark(BaseModel):
+    """The reader's own act, as one boolean.
+
+    ⭐⭐ **A boolean in the request,⭐⭐ and that is a different shape from the one in
+    :class:`DecisionRead`.** ⭐⭐ A request says 「mark this / unmark this」,
+    ⭐⭐ and that *is* a binary: ⭐⭐ there is no third thing to ask for.
+    ⭐⭐ The stored shape is not a binary, ⭐⭐ because 「unmarked」 has to be
+    ⭐⭐ *a row that says so* ⭐⭐ rather than the absence of one.
+    ⭐⭐ S-02's two-booleans rule is not in tension with this:
+    ⭐⭐ it forbids two booleans *about the same object's state*,
+    ⭐⭐ and here there is one, ⭐⭐ with the
+    ⭐⭐ verb log on the far side of it. ⭐⭐
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    marked: bool = Field(
+        description=(
+            "True to mark this decision as a scratch record, false to take the mark "
+            "back. Either way a row is appended: the log is the record, and the state "
+            "is whatever the last row says."
+        )
+    )
+
+
+@router.post(
+    "/{decision_id}/scratch",
+    summary="Mark or unmark one decision as a scratch record",
+    responses={404: {"description": "No decision with that id"}},
+)
+def mark_scratch(
+    decision_id: str, payload: ScratchMark, connection: DatabaseConnection
+) -> DecisionRead:
+    """Record 「this is a trial, not a judgement」 — ⭐ or take that back.
+
+    ⚠️⚠️ **Nothing here decides *which* decisions deserve this.** ⚠️⚠️ The route checks
+    that the decision exists and otherwise appends whatever the reader asked for.
+    ⭐⭐ **The refusal to guess is the point,⭐⭐ and it is a red line (15):
+    ⭐⭐ the agent must not write the reader's decision records.⭐⭐
+    ⭐⭐ Judging a record by its wording ⭐⭐
+    ⭐⭐ (``rationale like '%评测用%'``) ⭐⭐
+    ⭐⭐ is the specific thing this product refuses ⭐⭐
+    ⭐⭐ **because a record is what you wrote,
+    ⭐⭐ not what a heuristic thinks you meant.** ⭐⭐
+    ⭐⭐ (spec 060 §一之补 §五) ⭐⭐
+
+    ⚠️ **Unmarking appends a second row; it does not remove the first.** ⭐⭐
+    ⭐⭐ Overwriting the verb would make the history unreadable,⭐⭐
+    ⭐⭐ and deleting it would erase the fact that it was ever marked.
+    ⭐⭐
+
+    ⚠️⚠️ **Marking is idempotent in its outcome and additive in its record.** ⚠️⚠️ Pressing
+    the button twice writes two rows and changes nothing about the state; ⭐⭐ that is
+    ⭐⭐ the cost of append-only,⭐⭐ and it is paid deliberately ⭐⭐
+    ⭐⭐ rather than a "same value, no write" shortcut,⭐⭐
+    ⭐⭐ because 「I pressed it and nothing happened」 ⭐⭐
+    ⭐⭐ is a worse answer than 「it was written again」. ⭐⭐
+
+    ⭐⭐ **Returns the decision, ⭐⭐ with the mark now resolved** ⭐⭐ rather than a bare
+    204,⭐⭐ because the client needs the authoritative state ⭐⭐ and a second
+    ⭐⭐ refetch to learn what it just wrote ⭐⭐
+    ⭐⭐ is a request the reader can win a race with. ⭐⭐
+    """
+    row = repository.get_by_id(connection, decision_id)
+    if row is None:
+        raise DecisionNotFoundError(f"decision {decision_id!r} not found")
+    with transaction(connection):
+        repository.mark_scratch(connection, decision_id, marked=payload.marked)
+    return to_read(row, scratch=payload.marked)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, summary="Record a decision")

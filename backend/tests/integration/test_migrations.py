@@ -986,8 +986,11 @@ class TestTheVersionNumberItself:
         # edited by hand ⭐ **and the only thing that makes it trustworthy is that editing
         # it is visible.** It went red the moment migration 0013 landed, which is the
         # assertion working: a number nobody had to touch would be a number nobody checked.
-        assert versions[-1] == 13, (
-            f"the newest migration is {versions[-1]}, not 13. "
+        # 13 -> 14 on 2026-10-06 (spec 060 · decision_scratch_events). Same rule as
+        # the bump below it: the number is hand-edited on purpose, and the fact
+        # that this assertion had to be touched is the evidence it is read.
+        assert versions[-1] == 14, (
+            f"the newest migration is {versions[-1]}, not 14. "
             "If that is intended: bump this number, and check that the release notes "
             "and .ai/status.md agree with it."
         )
