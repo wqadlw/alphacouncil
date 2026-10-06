@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import InstrumentPage from './InstrumentPage'
+import { ErrorBoundary } from './app/ErrorBoundary'
 import PoolPage from './PoolPage'
 import RetrospectivePage from './RetrospectivePage'
 import ReviewPage from './ReviewPage'
@@ -213,7 +214,26 @@ export default function App() {
         },
       ]}
     >
-      {route.name === 'instrument' ? (
+      {/*
+        The boundary wraps the **route content only**, never the shell.
+
+        That placement is the whole design: a page that throws costs the reader that
+        page, and keeps the navigation, the search box and the command palette — so
+        they can go somewhere else rather than stare at a white window. Wrapping
+        the shell instead would defeat the purpose, because the shell is the only
+        way out of a broken page.
+      */}
+      {/*
+        Keyed on the route so a failed page does not follow the reader onward.
+
+        A boundary that has caught an error holds that state until it unmounts,
+        so without the key one broken page would blank every page after it — which
+        is a strictly worse failure than the one it was built to contain, and one
+        that reads as "the application is broken now" rather than "this page was".
+        Measured: navigating away from the failure screen kept showing it.
+      */}
+      <ErrorBoundary key={route.name === 'instrument' ? `${route.market}/${route.code}` : route.name}>
+        {route.name === 'instrument' ? (
           // Keyed on the instrument so switching targets remounts the page: without
           // it React would reuse the component, and the previous instrument's loaded
           // record would stay on screen until the new fetch resolved.
@@ -225,6 +245,7 @@ export default function App() {
         ) : (
           VIEWS[route.name]()
         )}
+      </ErrorBoundary>
       </AppShellFrame>
     </>
   )

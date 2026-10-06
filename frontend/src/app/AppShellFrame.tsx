@@ -31,6 +31,7 @@ import { CommandPalette, useCommandPalette, type Command } from '../components/n
 // `CommandPalette` would make the shell's id a property of a page-level component,
 // which is the same two-homes shape one layer down.
 import { SHELL_ID } from '../useModalFocus'
+import { useRouteFocus } from './routeAnnouncement'
 import { Input, Rule } from '../components/ui'
 import { Icon } from '../components/ui/Icon'
 import { ROUTES, type RouteName } from '../routing'
@@ -113,6 +114,10 @@ export function AppShellFrame({
     ? ''
     : ROUTES.find((entry) => entry.name === route)?.href ?? ''
 
+  // Focus follows the page. Suspended while the palette is open, because
+  // `useModalFocus` owns focus for as long as it is up.
+  useRouteFocus(title, true, paletteOpen)
+
   return (
     // ⭐ **`id` as well as `data-testid`, and the two are not redundant.**
     // `CommandPalette` sets `inert` on this element while it is open, so that Tab
@@ -121,6 +126,26 @@ export function AppShellFrame({
     // hold — ⭐ `SHELL_ID` is exported from the palette and used here, so a rename
     // is a type error in this file rather than a runtime no-op.
     <div className="flex h-full flex-col" id={SHELL_ID} data-testid="app-shell">
+      {/*
+        The first focusable thing in the document, and invisible until it has focus.
+
+        Without it a keyboard user meets the brand link, then the search box, then
+        all eight sidebar rows, before reaching any content — on **every** page,
+        because the shell is what persists. That is the ordinary cost of a
+        persistent frame, and a skip link is the ordinary answer.
+
+        `sr-only` rather than `hidden`: `display: none` and `visibility: hidden`
+        both remove an element from the tab order, so the link could never be
+        reached. `focus:not-sr-only` is what makes it appear once it has it.
+
+        The target is `#main`, which is a `<main>` (one per document is the rule)
+        carrying `tabIndex={-1}` so it can be focused programmatically without
+        joining the tab order itself.
+      */}
+      <a href="#main" className="sr-only focus:not-sr-only" data-testid="skip-to-main">
+        跳到主内容
+      </a>
+
       {/* ── Top bar: identity, the search front door, the palette hint ─────── */}
       <header className="flex shrink-0 items-center gap-4 border-b border-rule bg-surface px-4 py-2">
         <a
@@ -209,6 +234,24 @@ export function AppShellFrame({
           })}
         </nav>
 
+        {/*
+          `<main>` wraps the two panes and **not** the sidebar.
+
+          The reasoning is that a landmark answers "where am I", and nesting the
+          navigation inside the main landmark answers that wrongly: the sidebar is
+          chrome which persists across every route, so a screen reader announcing
+          "main" would be claiming the navigation is the page's content.
+
+          `tabIndex={-1}` because this is the skip link's target and the route
+          change focus stop. Neither wants it in the tab order — a reader who tabs
+          past the content should land on the next control after it, not be sent
+          back to the top of a region they have already read.
+
+          `flex min-w-0 flex-1` reproduces what the two panes had between them, so
+          the layout is unchanged. `vault-search.spec.ts` measures real geometry,
+          which is what will catch it if that stops being true.
+        */}
+        <main id="main" tabIndex={-1} className="flex min-w-0 flex-1">
         {/* ── List pane ────────────────────────────────────────────────────── */}
         <section className="flex min-w-0 flex-1 flex-col" aria-label={title}>
           <div className="shrink-0 border-b border-rule bg-surface px-4 py-2.5">
@@ -240,6 +283,7 @@ export function AppShellFrame({
             <div className="pane-scroll min-h-0 flex-1">{detail}</div>
           </section>
         ) : null}
+        </main>
       </div>
 
       {/* ⭐ **Still rendered here, and the portal is what makes that correct.**
