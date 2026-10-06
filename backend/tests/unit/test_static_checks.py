@@ -36,6 +36,7 @@ from checks.rules import (
     check_append_only_triggers,
     check_doc_sync,
     check_error_codes,
+    foreign_keys_not_off,
     git_tracked,
     home_no_return_rate,
     immature_outcome_blank,
@@ -68,10 +69,14 @@ def make_ctx(
 ) -> ScanContext:
     """Build a throwaway repository from ``{relative path: contents}``.
 
-    The registry defaults to the real one, because the framework needs it to
-    translate a finding's ``CHECK_*`` code back into the ``S-xx`` id an
-    exemption is written with. A fixture without it would test a context the
-    runner never builds.
+    ⭐ The registry defaults to the real one, ⭐ because a rule reads it to know its own
+    id and the ids of its peers. ⭐⭐ It used to be justified differently ⭐⭐ — 「the
+    framework needs it to translate a finding's ``CHECK_*`` code back into the
+    ``S-xx`` id」 ⭐⭐ — ⭐⭐ and that translation is gone (spec 060 removed
+    ``rule_id_for``, ⭐⭐ because all four data rules share ``CHECK_DATA_INTEGRITY`` ⭐⭐
+    ⭐⭐ and the guess returned the wrong rule). ⭐⭐ The registry is still passed ⭐⭐
+    because a context without one is not a context the runner ever builds ⭐⭐ ⭐ — ⭐⭐
+    ⭐⭐ **but not for the reason this docstring used to give.** ⭐⭐⭐
     """
     for relative, content in files.items():
         target = tmp_path / relative
@@ -173,13 +178,60 @@ class TestApplyExemptions:
             ],
             files=[tmp_path / "backend/src/alphacouncil/api/app.py"],
         )
-        assert apply_exemptions(ctx, result).issues == []
+        assert apply_exemptions(ctx, result, "S-10").issues == []
 
     def test_an_unreasoned_exemption_becomes_a_finding(self, tmp_path: Path) -> None:
         path = tmp_path / "backend/src/alphacouncil/api/app.py"
         ctx = make_ctx(tmp_path, {"backend/src/alphacouncil/api/app.py": "x = 1  # noqa: S-10\n"})
         result = framework.CheckResult(files=[path])
-        assert codes(apply_exemptions(ctx, result)) == ["CHECK_EXEMPTION_UNREASONED"]
+        assert codes(apply_exemptions(ctx, result, "S-10")) == ["CHECK_EXEMPTION_UNREASONED"]
+
+    def test_an_exemption_cannot_be_written_against_another_rules_code(
+        self, tmp_path: Path
+    ) -> None:
+        """The bug this argument makes impossible.
+
+        An exemption reads ``# noqa: D-22`` — a *rule id*. Two rules sharing
+        ``CHECK_DATA_INTEGRITY``, and the removed ``rule_id_for`` resolved a finding's
+        code to a rule id **by taking the first registry match** — so a waiver aimed
+        at one rule silenced the other's findings.
+
+        ⭐⭐ **The registry below is the point of the test, ⭐⭐ and the first version
+        got it wrong in a way that made the test unkillable.** ⭐⭐ `make_ctx` defaults
+        to the **static** registry: 18 ``S-*`` rules, ⭐⭐⭐ **none of which emits
+        ``CHECK_DATA_INTEGRITY``** ⭐⭐⭐ ⭐ — ⭐⭐ so a code→rule lookup walks the whole
+        registry, finds nothing, leaves ``check_id`` alone, ⭐⭐⭐ ⭐⭐ and passes.
+        ⭐⭐⭐ **Mutation M2 survived it.** ⭐⭐⭐ ⭐⭐ The fixture now carries two rules
+        sharing one code, ⭐⭐ in the order that makes the guess wrong — ⭐⭐⭐ ⭐ which is
+        what the real registry looks like.
+        """
+        shared = "CHECK_DATA_INTEGRITY"
+        # ⭐ **D-22 first** ⭐ — ⭐⭐ a first-match lookup answers "D-22",
+        # ⭐⭐ ⭐⭐ ⭐⭐ which is the wrong rule for a D-02 finding.
+        registry = [
+            CheckMeta("D-22", "audit-detail-length", "t", "P1", shared),
+            CheckMeta("D-02", "decision-orphan", "t", "P1", shared),
+        ]
+        path = tmp_path / "backend/checks/data_rules/decision_orphan.py"
+        ctx = make_ctx(
+            tmp_path,
+            {"backend/checks/data_rules/decision_orphan.py": "x = 1  # noqa: D-22 -- wrong rule\n"},
+            registry=registry,
+        )
+        result = framework.CheckResult(
+            issues=[
+                framework.Issue(
+                    Severity.ERROR,
+                    shared,
+                    "m",
+                    "backend/checks/data_rules/decision_orphan.py:1",
+                )
+            ],
+            files=[path],
+        )
+        assert apply_exemptions(ctx, result, "D-02").issues != [], (
+            "D-02's finding was silenced by an exemption written for D-22"
+        )
 
 
 class TestContainsToken:
@@ -203,7 +255,7 @@ class TestContainsToken:
 class TestRegistry:
     """The registry is the contract between the document and the code."""
 
-    def test_eighteen_rules_with_no_gaps_and_no_repeats(self) -> None:
+    def test_nineteen_rules_with_no_gaps_and_no_repeats(self) -> None:
         """The id list is a statement about how many rules there are.
 
         It breaks when a rule is added, which is the point: a renamed count that kept
@@ -223,9 +275,14 @@ class TestRegistry:
         ⭐ So the count and the identity are asserted here, ⭐ and the run order is
         asserted **by priority** in the next test ⭐ - ⭐ which is the property that
         was actually being protected, ⭐ stated directly instead of by coincidence.
+
+        ⭐⭐ Eighteen → nineteen on 2026-10-06 (`S-19 foreign-keys-not-off`). ⭐⭐ ⭐ And the
+        ⭐⭐⭐ name is the mechanism: ⭐⭐⭐ a count kept in a method name goes stale
+        ⭐⭐⭐ silently ⭐⭐⭐ ⭐ — ⭐⭐⭐ `ruff` cannot see inside a name, ⭐⭐⭐ so only this
+        ⭐⭐⭐ assertion can notice, ⭐⭐⭐ ⭐ and it noticed. ⭐⭐⭐
         """
         ids = [rule.meta.check_id for rule in RULES]
-        assert sorted(ids) == [f"S-{n:02d}" for n in range(1, 19)]
+        assert sorted(ids) == [f"S-{n:02d}" for n in range(1, 20)]
         assert len(set(ids)) == len(ids), "a rule id appears twice in the registry"
 
     def test_the_priority_claim_has_a_mechanism(self) -> None:
@@ -266,8 +323,15 @@ class TestRegistry:
         # ⭐ And the reporter is what enforces severity order ⭐ - ⭐ asserted here
         # ⭐ because the registry's docstring used to claim it and it is the
         # ⭐ mechanism that claim was really about.
+        # ⭐⭐ The lambda's parameter was renamed `issue` → `pair` in spec 060 ⭐⭐ when
+        # ⭐⭐ findings became `(check_id, issue)` pairs ⭐⭐ — ⭐⭐ the *ordering* is
+        # ⭐⭐ unchanged, ⭐⭐ so the assertion is updated to the new source rather than
+        # ⭐⭐ weakened. ⭐⭐ **A source-text assertion is a brittle instrument** ⭐⭐ and
+        # ⭐⭐ this is the second time it has fired ⭐⭐ — ⭐⭐ it is kept as-is here
+        # ⭐⭐ because the invariant it guards (severity order in the printed report)
+        # ⭐⭐ is real, ⭐⭐ and replacing it with a semantic check is its own change.
         reporter = Path(framework.__file__).with_name("__main__.py")
-        sorts = "sorted(findings, key=lambda issue: list(Severity).index(issue.severity))"
+        sorts = "sorted(findings, key=lambda pair: list(Severity).index(pair[1].severity))"
         assert sorts in reporter.read_text(encoding="utf-8"), (
             "the reporter no longer sorts findings by severity ⭐ - ⭐ the registry "
             "docstring's claim depends on it"
@@ -1513,6 +1577,100 @@ class TestRunner:
         monkeypatch.setattr("checks.__main__.RULES", (broken,))
         assert main(["--root", str(tmp_path), "--only", "S-01"]) == 1
 
+    def test_a_finding_is_charged_to_the_rule_that_produced_it(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """**Two rules, one code, and the report must name the right one.**
+
+        `D-25` was the first data rule to ever *error*, and it exposed this:
+        `__main__.py` built ``owner = {rule.meta.code: rule.meta.check_id}`` —
+        **all four data rules share `CHECK_DATA_INTEGRITY`,** so the *last* one
+        won, and `D-25`'s finding was printed under
+        `[FAIL ] D-22 audit-detail-length`.
+
+        ⭐⭐ **A red gate naming the wrong file is worse than no gate:** ⭐⭐ the reader
+        opens the rule that passed, finds nothing wrong, and concludes the gate lies.
+
+        ⭐ This drives the **real** ``main()`` and reads the printed report ⭐ because
+        the first mutation attempt probed a **recomputation** of the counting loop
+        rather than the loop itself — **and so that mutation came back VOID, which is
+        how this test came to exist.**
+        """
+        (tmp_path / "backend").mkdir()
+        shared = "CHECK_SHARED_CODE"  # ⭐⭐ both rules emit the *same* code, as all four do
+
+        def one(_ctx: ScanContext) -> framework.CheckResult:
+            return framework.CheckResult(
+                issues=[framework.Issue(Severity.ERROR, shared, "from the first rule")]
+            )
+
+        def two(_ctx: ScanContext) -> framework.CheckResult:
+            return framework.CheckResult(issues=[])
+
+        first = _BrokenRule(CheckMeta("S-01", "no-raw-http", "t", "P0", shared), one)
+        second = _BrokenRule(CheckMeta("S-02", "no-boolean-state", "t", "P0", shared), two)
+        monkeypatch.setattr("checks.__main__.RULES", (first, second))
+        # ⭐⭐ `--strict`, ⭐⭐ because `python -m checks` alone means 「it ran」 ⭐⭐
+        # ⭐⭐ (`dev.py:108-111`) ⭐⭐ — ⭐⭐ and the first draft of this test asserted
+        # ⭐⭐ `== 1` without it ⭐⭐ and failed ⭐⭐ while the report
+        # ⭐⭐ was **already correct**, ⭐⭐
+        # ⭐⭐
+        # ⭐⭐
+        # ⭐⭐
+        assert main(["--root", str(tmp_path), "--strict"]) == 1
+        report = capsys.readouterr().err
+        assert "[FAIL ] S-01" in report, report
+        assert "[PASS ] S-02" in report, (
+            "the silent rule was charged for the other rule's finding ⭐⭐ — ⭐⭐ the "
+            "code-to-rule map took the last registered rule with a matching code"
+        )
+
+    def test_a_rule_that_reported_a_duplicate_is_not_told_it_was_clean(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """**And the half of the dedupe that is easy to get backwards.**
+
+        `_dedupe` collapses findings **across rules on purpose** — one unreasoned
+        suppression comment is found by every rule that opens the file, and listing
+        it nine times gets skimmed.
+
+        ⭐⭐ **So counting after the dedupe would report every rule but the first as
+        「clean」** ⭐⭐ — ⭐⭐ having reported it. ⭐⭐
+        """
+        (tmp_path / "backend").mkdir()
+        shared = "CHECK_SHARED_CODE"
+        message = "the same finding, from two rules"
+
+        def one(_ctx: ScanContext) -> framework.CheckResult:
+            return framework.CheckResult(
+                issues=[framework.Issue(Severity.ERROR, shared, message)]
+            )
+
+        def two(_ctx: ScanContext) -> framework.CheckResult:
+            return framework.CheckResult(
+                issues=[framework.Issue(Severity.ERROR, shared, message)]
+            )
+
+        first = _BrokenRule(CheckMeta("S-01", "no-raw-http", "t", "P0", shared), one)
+        second = _BrokenRule(CheckMeta("S-02", "no-boolean-state", "t", "P0", shared), two)
+        monkeypatch.setattr("checks.__main__.RULES", (first, second))
+        assert main(["--root", str(tmp_path), "--strict"]) == 1
+        report = capsys.readouterr().err
+        assert "[FAIL ] S-01" in report and "[FAIL ] S-02" in report, (
+            "both rules found it ⭐⭐ — ⭐⭐ counting after the cross-rule dedupe "
+            "silences every rule but the first"
+        )
+        # ⭐⭐ And the printed **detail** is deduped to one copy ⭐⭐ — ⭐⭐ because
+        # ⭐⭐ printing it twice is the skimming `_dedupe` exists to prevent, ⭐⭐
+        # ⭐⭐ and it is the same message from two rules ⭐⭐.
+        assert report.count("the same finding, from two rules") == 1, report
+
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # S-15 no-mojibake
@@ -1830,3 +1988,137 @@ class TestS14GitTracked:
         result = git_tracked.run(ctx)
         assert result.issues == []
         assert result.skipped == "git produced no usable listing here"
+
+
+class TestS19ForeignKeysNotOff:
+    """S-19 — a connection must enforce foreign keys, or append-only is a convention.
+
+    ⭐⭐ **This rule exists because four rows in the reader's own database point at
+    decisions that do not exist** ⭐⭐ (`D-25` reports them) ⭐⭐ — ⭐⭐ written 25ms
+    apart, ⭐⭐ so by a loop. ⭐⭐ Measured: both of the product's connection factories
+    report ``PRAGMA foreign_keys = 1`` ⭐⭐ and a bare ``sqlite3.connect()`` reports
+    **0** ⭐⭐ ⇒ ⭐⭐ **the only way to write an orphan is to not use a factory.**
+    """
+
+    PRODUCT = "backend/src/alphacouncil"
+
+    def test_a_bare_connect_is_reported(self, tmp_path: Path) -> None:
+        """⭐ The positive case, without which the rule is a comment.
+
+        ⭐⭐ **And this exact shape is how the reader's four orphan rows got there** ⭐⭐ —
+        ⭐⭐ so the fixture quotes it rather than inventing a paraphrase.
+        """
+        ctx = make_ctx(
+            tmp_path,
+            {
+                f"{self.PRODUCT}/storage/notes.py": (
+                    "import sqlite3\n\n\ndef open_it(path):\n    return sqlite3.connect(path)\n"
+                )
+            },
+        )
+        result = foreign_keys_not_off.run(ctx)
+        assert codes(result) == ["CHECK_FOREIGN_KEYS_OFF"]
+        assert "notes.py" in result.issues[0].message
+        assert "is **off**" in result.issues[0].message
+
+    def test_the_connection_alias_is_reported_too(self, tmp_path: Path) -> None:
+        """⭐⭐ `sqlite3.Connection(path)` opens a real database with the pragma off.
+
+        ⭐⭐ The first draft matched only ``connect`` ⭐⭐ ⭐ — ⭐⭐ and ``demo.py``
+        ⭐⭐ really does contain ``sqlite3.Connection`` twice, ⭐⭐ so a reader checking
+        ⭐⭐ that file would reasonably believe the alias is covered. ⭐⭐ It is not
+        ⭐⭐ the same method, ⭐⭐ and it is equally capable of writing an orphan.
+        """
+        ctx = make_ctx(
+            tmp_path,
+            {
+                f"{self.PRODUCT}/storage/notes.py": (
+                    "import sqlite3\n\n\ndef open_it(path):\n    return sqlite3.Connection(path)\n"
+                )
+            },
+        )
+        assert codes(foreign_keys_not_off.run(ctx)) == ["CHECK_FOREIGN_KEYS_OFF"]
+
+    def test_a_type_annotation_is_not_an_open(self, tmp_path: Path) -> None:
+        """⭐⭐ **The false positive that would have made this rule cry wolf.**
+
+        ⭐⭐ `def _fill(connection: sqlite3.Connection)` parses as an annotation, ⭐⭐
+        ⭐⭐ not a call ⭐⭐ ⭐ — ⭐⭐ and `demo.py` has two of them. ⭐⭐ A rule that
+        ⭐⭐ matched the *text* ``sqlite3.Connection`` would be red on the clean
+        ⭐⭐ repository ⭐⭐ ⭐ — ⭐⭐ and the fix for that is always to weaken the
+        ⭐⭐ rule, ⭐⭐ not to fix the fixture.
+        """
+        ctx = make_ctx(
+            tmp_path,
+            {
+                f"{self.PRODUCT}/demo.py": (
+                    "import sqlite3\n\n\n"
+                    "def _fill(connection: sqlite3.Connection) -> int:\n    return 1\n"
+                )
+            },
+        )
+        assert foreign_keys_not_off.run(ctx).issues == []
+
+    def test_the_function_handed_around_is_not_an_open(self, tmp_path: Path) -> None:
+        """⭐ `OPENER = sqlite3.connect` opens nothing.
+
+        ⭐⭐ Aliasing is how a codebase routes connections through a wrapper, ⭐⭐ and
+        ⭐⭐ the wrapper is where the pragma would be set ⭐⭐ ⭐ — ⭐⭐ **so a reference
+        ⭐⭐ is not a defect, ⭐⭐ and reporting one would send a reader to fix code
+        ⭐⭐ that is doing exactly the right thing.**
+        """
+        ctx = make_ctx(
+            tmp_path,
+            {
+                f"{self.PRODUCT}/storage/db.py": (
+                    "import sqlite3\n\nOPENER = sqlite3.connect\n"
+                )
+            },
+        )
+        assert foreign_keys_not_off.run(ctx).issues == []
+
+    def test_the_factory_itself_is_exempt(self, tmp_path: Path) -> None:
+        """⭐⭐ The one exempt file is exempt *for a stated reason*.
+
+        ⭐⭐ `storage/db.py` is where ``PRAGMA foreign_keys = ON`` is executed ⭐⭐ ⭐ —
+        ⭐⭐ exempting it for 「it is the special one」 ⭐⭐ would be a tautology ⭐⭐ ⭐ —
+        ⭐⭐ so the test asserts the reason mentions the pragma, ⭐⭐ which is the
+        ⭐⭐ sentence a reviewer six months out needs to read.
+        """
+        factory = "backend/src/alphacouncil/storage/db.py"
+        assert factory in foreign_keys_not_off.EXEMPT
+        assert "PRAGMA foreign_keys" in foreign_keys_not_off.EXEMPT[factory]
+        ctx = make_ctx(
+            tmp_path,
+            {
+                f"{self.PRODUCT}/storage/db.py": (
+                    "import sqlite3\n\n\ndef connect(path):\n    return sqlite3.connect(path)\n"
+                )
+            },
+        )
+        assert foreign_keys_not_off.run(ctx).issues == []
+
+    def test_every_exemption_is_a_file_the_rule_would_otherwise_read(self) -> None:
+        """⭐⭐⭐ **Why this test exists: two of the three original exemptions were dead.**
+
+        ⭐⭐ The first draft exempted ``storage/migrations.py`` ⭐⭐ ⭐ — ⭐⭐ **a file that
+        ⭐⭐ does not exist** ⭐⭐ (it is ``migrate.py``, ⭐⭐ named for the function
+        ⭐⭐ ``load_migrations`` ⭐⭐ ⭐ — ⭐⭐ ``F-226`` again ⭐⭐) ⭐⭐ ⭐ — ⭐⭐ and
+        ⭐⭐ ``checks/data.py``, ⭐⭐ which sits **outside** ``ctx.product`` ⭐⭐ and so
+        ⭐⭐ the rule can never reach it.
+
+        ⭐⭐⭐ **A dead exemption is worse than no exemption** ⭐⭐⭐ — ⭐⭐ an exemption
+        ⭐⭐ table is a claim about what was examined, ⭐⭐ and an entry that never
+        ⭐⭐ fires claims a file was read when it was not. ⭐⭐⇒ **every key must be a
+        ⭐⭐ real file that the traversal actually reaches** ⭐⭐ ⭐ — ⭐⭐ ⭐ and this
+        ⭐⭐ test is what keeps that true after the next edit.
+        """
+        ctx = ScanContext(repo_root=REPO_ROOT, registry=registry_meta())
+        product = {ctx.rel(p) for p in ctx.python_files(ctx.product)}
+        for key in foreign_keys_not_off.EXEMPT:
+            assert (REPO_ROOT / key).is_file(), f"{key} is exempted but does not exist"
+            assert key in product, (
+                f"{key} is exempted but is not under ctx.product, ⭐⭐ so the exemption "
+                "can never fire ⭐⭐ ⭐ — ⭐⭐ it claims a file was read when the rule "
+                "never opens it"
+            )

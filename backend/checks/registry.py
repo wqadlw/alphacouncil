@@ -28,6 +28,7 @@ from checks.rules import (
     check_append_only_triggers,
     check_doc_sync,
     check_error_codes,
+    foreign_keys_not_off,
     git_tracked,
     home_no_return_rate,
     immature_outcome_blank,
@@ -60,7 +61,7 @@ class Rule:
     run: Callable[[ScanContext], CheckResult]
 
 
-#: Eighteen rules, matching `.ai/checks/static/README.md` §3. ⭐ The number is
+#: Nineteen rules, matching `.ai/checks/static/README.md` §3. ⭐ The number is
 #: written out rather than counted ⭐ because `test_static_checks.py` asserts it, ⭐ and
 #: that test breaking on every new rule is the point ⭐ — ⭐ a renamed count that kept
 #: its old number would be a test describing something other than what it checks.
@@ -95,6 +96,14 @@ RULES: tuple[Rule, ...] = (
     # would mean two places decide that, which is the two-homes failure S-16's
     # docstring says it exists to catch.
     Rule(no_response_drift.META, no_response_drift.run),
+    # S-19 (spec 060). Reads the tree only ⭐⭐ — ⭐⭐ no app construction, ⭐⭐ so it
+    # sits with the S-01/S-02 group ⭐⭐ and *before* the three app-building rules ⭐⭐
+    # ⭐⭐ so that a syntax error cannot make it skip. ⭐⭐ **It is the code-level half of
+    # ⭐⭐ what `D-25` observes**: ⭐⭐ D-25 finds rows a connection with the pragma off
+    # ⭐⭐ could write, ⭐⭐ and is a `warning` ⭐⭐ because those rows are history;
+    # ⭐⭐ this is an `error` ⭐⭐ because the code that would write the next one is
+    # ⭐⭐ fixable today. ⭐⭐
+    Rule(foreign_keys_not_off.META, foreign_keys_not_off.run),
     # S-14 (spec 032). Last because it is the only rule that reads git rather
     # than the working tree, and it should not mask a syntax error.
     Rule(git_tracked.META, git_tracked.run),

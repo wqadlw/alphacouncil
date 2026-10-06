@@ -34,12 +34,45 @@ remaining job, ⭐ and it does it on every run whether or not there is a danglin
 
 ## The second line, and it is a real one
 
-# ⭐ The FK is enforced **by the product's connections**. ⭐ A restore from a backup, ⭐ a
-migration run ⭐ — ⭐ `connect_for_migration` ⭐ — ⭐ and this check's own handle ⭐ —
-# ⭐ ``sqlite3.connect(..., mode=ro)`` ⭐ — ⭐ all open with ``foreign_keys`` **off**, ⭐ because
-SQLite's default is off and only ``storage/db.py`` changes it. ⭐ So a database that reached
-disk by some path other than the product's own writer ⭐ **can hold the dangling row** ⭐ and
-# ⭐ the product's FK would never have noticed.
+# ⭐ The FK is enforced **by the product's connections**. ⭐ A restore from a backup, ⭐ or a
+# file that reached disk by some path other than the product's own writer, ⭐ **can hold the
+# dangling row** ⭐ and the product's FK would never have noticed.
+
+# ⭐⭐⭐ **Measured 2026-10-06 — ⭐ and this paragraph was wrong about one of its three
+# ⭐⭐ examples.** ⭐ It used to say:
+#
+# > A restore from a backup, a migration run — `connect_for_migration` — and this check's own
+# > handle — `sqlite3.connect(..., mode=ro)` — all open with `foreign_keys` **off**, because
+# > SQLite's default is off and only `storage/db.py` changes it.
+#
+# ⭐⭐ **Measured, on a freshly migrated database:**
+#
+# | how it was opened                     | `PRAGMA foreign_keys` |
+# |---------------------------------------|------------------------|
+# | `storage.db.connect`                  | **1** |
+# | `storage.db.connect_for_migration`    | **1** |
+# | ⭐ a bare `sqlite3.connect()`          | ⭐⭐ **0** |
+#
+# ⇒ ⭐⭐ **So `connect_for_migration` is NOT one of the ways to write a dangling row.** ⭐ A
+# ⭐ migration run cannot produce one, ⭐ and `dev.py demo`'s seeder — ⭐ which seeds through
+# ⭐ `connect_for_migration` — ⭐⭐ **cannot produce one either.**
+#
+# ⭐⭐⭐ **And this paragraph cost a real measurement.** ⭐ spec 060's first draft reasoned
+# ⭐⭐ that the four orphan `decision_review_state` rows in the reader's own database
+# ⭐⭐ (ids `…2{4.998,5.022,5.037,5.053}Z`, 25ms apart) had been written by a connection
+# ⭐⭐ with foreign keys off, ⭐⭐ **and it named `connect_for_migration` as that
+# ⭐⭐ connection** ⭐⭐ — ⭐ **on the strength of this paragraph**, ⭐ not on a measurement.
+# ⭐⭐ The paragraph was wrong, ⭐⭐ and the conclusion drawn from it was wrong with it.
+# ⭐⭐ The surviving conclusion is *narrower* and is now measured: ⭐⭐ **both of the product's
+# ⭐⭐ connection factories enforce the constraint, ⭐⭐ so those rows can only have come
+# ⭐⭐ from outside the product.**
+#
+# ⭐⭐ **What did not change is the sentence this file exists to make**, ⭐ and it is stated
+# ⭐⭐ here rather than in a changelog because it is the one a reader needs:
+# ⭐⭐ **a file that reached disk through a connection with `foreign_keys` off holds rows
+# ⭐⭐ this database would otherwise refuse to hold** ⭐⭐ — ⭐⭐ and nothing inside the
+# ⭐⭐ product would ever say so. ⭐⭐ `D-02` now says so about
+# ⭐⭐ `decision_review_state → decisions`, ⭐⭐ which is where four such rows were found.
 """
 
 from __future__ import annotations

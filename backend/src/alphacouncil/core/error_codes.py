@@ -209,6 +209,16 @@ class ErrorCode(StrEnum):
     # more \u2014 `git status` does not show ignored files.
     CHECK_UNTRACKED_SOURCE = "CHECK_UNTRACKED_SOURCE"
     CHECK_IGNORED_SOURCE = "CHECK_IGNORED_SOURCE"
+    # S-19 (spec 060). One code, because there is one defect: a connection that did not
+    # go through `storage.db`. ⭐⭐ Its own code is what makes this rule *checkable* from
+    # ⭐⭐ outside — ⭐⭐ `no_raw_http` and `no_print` are the same shape, ⭐⭐ and the
+    # ⭐⭐ difference is that here the defect is **absent** ⭐⭐ ⭐ — ⭐⭐⭐ a connection
+    # ⭐⭐ with the pragma off accepts every write and rejects none, ⭐⭐⭐ so the whole
+    # ⭐⭐⭐ suite passes and the reader's file quietly accumulates rows the schema says
+    # ⭐⭐⭐ cannot exist. ⭐⭐⭐ ⭐⭐⭐ It was found by `D-25` reading the reader's own
+    # ⭐⭐⭐ database ⭐⭐⭐ ⭐ and not by any test ⭐⭐⭐ ⭐ — ⭐⭐⭐ four
+    # ⭐⭐⭐ `decision_review_state` rows, 25ms apart, ⭐⭐⭐ ⭐⭐⭐ a loop.
+    CHECK_FOREIGN_KEYS_OFF = "CHECK_FOREIGN_KEYS_OFF"
     # S-15. Two codes, and the split is the whole rule: 「the bytes are not UTF-8」
     # and 「the bytes are UTF-8 and one of the characters in them is U+FFFD」 are
     # different defects with different repairs. Merging them would also merge them

@@ -59,7 +59,12 @@ from pathlib import Path
 
 import pytest
 from checks.data_registry import DATA_MODULE_BY_ID, DATA_RULES
-from checks.data_rules import audit_detail_length, counter_evidence_blank, dangling_target
+from checks.data_rules import (
+    audit_detail_length,
+    counter_evidence_blank,
+    dangling_target,
+    orphan_reference,
+)
 from checks.framework import CheckResult, Issue
 from checks.scan import ScanContext
 
@@ -72,7 +77,12 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 CTX = ScanContext(repo_root=REPO_ROOT)
 MARKET, CODE = "sh", "600000"
 STAMP = "2026-04-01T00:00:00.000Z"
-MODULES = (dangling_target, counter_evidence_blank, audit_detail_length)
+MODULES = (
+    dangling_target,
+    orphan_reference,
+    counter_evidence_blank,
+    audit_detail_length,
+)
 RULE_BY_ID = {rule.meta.check_id: rule for rule in DATA_RULES}
 
 
@@ -466,6 +476,187 @@ class TestD22AuditDetailLength:
             con.close()
         assert "length(detail) <= 500" in sql
         assert audit_detail_length.DETAIL_LIMIT < 500
+
+
+# ------------------------------------------------------------------------- D-25
+
+
+def schedule_for_missing_decision(path: Path, decision_id: str, due: str) -> None:
+    """Write a ``decision_review_state`` row for a decision that does not exist.
+
+    ⭐⭐ **This is the reader's own defect, reproduced.** ⭐⭐ Measured 2026-10-06: the
+    ⭐⭐ database holds four such rows, ids ``…T11:26:2{4.998,5.022,5.037,5.053}Z`` ⭐⭐
+    ⭐⭐ 25ms apart ⭐⭐ ⭐ — ⭐⭐ **a loop, not a person** ⭐⭐ ⭐ — ⭐⭐ and none of them
+    ⭐⭐ reachable through a connection with ``PRAGMA foreign_keys = 1``. ⭐⭐ So the
+    ⭐⭐ pragma is turned off here for the same reason
+    ⭐⭐ :func:`bypass_foreign_keys` turns it off: it is the only way to reach the
+    ⭐⭐ subject at all.
+    """
+    con = sqlite3.connect(path)
+    try:
+        con.execute("pragma foreign_keys = off")
+        con.execute(
+            "insert into decision_review_state (decision_id, due_at, reviewed_at,"
+            " created_at, updated_at) values (?, ?, null, ?, ?)",
+            (decision_id, due, STAMP, STAMP),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+class TestD25FindsAnOrphanWhereNoRuleLooked:
+    """⭐⭐ **Why this rule exists: `D-01` guards `decisions → instruments`, and nothing
+    guarded `decision_review_state → decisions` ⭐⭐ — ⭐⭐ and that is where the reader's
+    four orphan rows are.** ⭐⭐ (`D-01`'s own docstring already explained the mechanism;
+    ⭐⭐ only the second reference was missing.)"""
+
+    def test_an_orphan_review_state_row_is_reported(self, reader_db: Path) -> None:
+        schedule_for_missing_decision(reader_db, "2026-09-30T11:26:24.998Z", "2026-10-20")
+        result = orphan_reference.run(CTX)
+        assert codes_of(result) == ["CHECK_DATA_INTEGRITY"]
+        message = messages(result)[0]
+        assert "2026-09-30T11:26:24.998Z" in message, message
+        assert "decision_review_state" in message, message
+
+    def test_it_is_a_warning_and_not_an_error(self, reader_db: Path) -> None:
+        """⭐⭐⭐ **The severity is load-bearing and this pins it.**
+
+        ⭐⭐⭐ Measured: both of the product's connection factories report
+        ⭐⭐⭐ ``PRAGMA foreign_keys = 1`` ⭐⭐⭐ ⇒ ⭐⭐⭐ an orphan is **not reachable from
+        ⭐⭐⭐ product code**, ⭐⭐⭐ and nothing in this repository deletes decisions ⭐⭐⭐
+        ⭐⭐⭐ ⇒ ⭐⭐⭐ the rows cannot be produced again *or* removed. ⭐⭐⭐ An ``error``
+        ⭐⭐⭐ would therefore be red forever ⭐⭐⭐ ⭐ — ⭐⭐⭐ **and a permanently-red
+        ⭐⭐⭐ gate is a gate that gets ignored** ⭐⭐⭐ ⭐ — ⭐⭐⭐ which is the outcome
+        ⭐⭐⭐ `D-01`'s own fix text warns against. ⭐⭐⭐
+
+        ⭐⭐⭐ ⭐⭐⭐ So this asserts the *severity*, ⭐⭐⭐ ⭐ and ⭐⭐⭐ the code-level gate
+        ⭐⭐⭐ ⭐ for the mechanism is `S-19` ⭐⭐⭐ ⭐ — ⭐⭐⭐ ⭐⭐⭐ which is an ``error``
+        ⭐⭐⭐ ⭐⭐⭐ because it is about code. ⭐⭐⭐
+        """
+        schedule_for_missing_decision(reader_db, "2026-09-30T11:26:24.998Z", "2026-10-20")
+        result = orphan_reference.run(CTX)
+        assert severities(result) == ["warning"], severities(result)
+
+    def test_a_row_whose_parent_exists_is_clean(self, reader_db: Path) -> None:
+        """⭐⭐ The negative case, without which the rule proves nothing.
+
+        ⭐⭐ **Both calls are given the same `row_id` on purpose** ⭐⭐ ⭐ — ⭐⭐ the first
+        ⭐⭐ draft hardcoded ``STAMP`` here and left ``add_decision`` at its own default,
+        ⭐⭐ so the two ids differed, ⭐⭐ the foreign key refused the insert, ⭐⭐ and the
+        ⭐⭐ test failed on ``IntegrityError`` ⭐⭐ ⭐ — ⭐⭐ **which says nothing about the
+        ⭐⭐ rule.** ⭐⭐ ⭐ ⇒ a fixture that couples two helper calls must pass the id to
+        ⭐⭐ both, ⭐⭐ ⭐ never let one of them choose.
+        """
+        row_id = "2026-04-02T00:00:00.000Z"
+        add_instrument(reader_db)
+        add_decision(reader_db, row_id=row_id)
+        write(
+            reader_db,
+            "insert into decision_review_state (decision_id, due_at, reviewed_at,"
+            " created_at, updated_at) values (?, '2026-10-20', null, ?, ?)",
+            (row_id, STAMP, STAMP),
+        )
+        result = orphan_reference.run(CTX)
+        assert [i for i in issues_of(result) if i.severity.value == "warning"] == []
+        assert "no dangling rows" in " ".join(messages(result))
+
+    def test_a_null_key_is_not_an_orphan(self, reader_db: Path) -> None:
+        """⭐⭐⭐ **The false positive that would have made this rule useless.**
+
+        ⭐⭐⭐ A naive
+
+            where not exists (select 1 from parent where parent.x = child.y)
+
+        ⭐⭐⭐ reports **every row whose key is NULL** ⭐⭐ ⭐ — ⭐⭐⭐ and a freshly
+        ⭐⭐⭐ migrated database is full of them: ⭐⭐⭐ `thesis_id` is NULL on all five
+        ⭐⭐⭐ of the reader's decisions. ⭐⭐⭐ ⭐⭐⭐ ⭐ So a rule written that way is red
+        ⭐⭐⭐ ⭐ on an **empty** database ⭐⭐⭐ ⭐ — ⭐⭐⭐ which breaks README rule 1 and
+        ⭐⭐⭐ ⭐ trains the reader to ignore the gate. ⭐⭐⭐
+        """
+        add_instrument(reader_db)
+        add_decision(reader_db)
+        con = sqlite3.connect(f"file:{reader_db}?mode=ro", uri=True)
+        try:
+            assert con.execute("select thesis_id from decisions").fetchone()[0] is None
+        finally:
+            con.close()
+        result = orphan_reference.run(CTX)
+        assert [i for i in issues_of(result) if i.severity.value == "warning"] == []
+
+    def test_a_composite_key_is_joined_and_not_split(self, reader_db: Path) -> None:
+        """The composite key, joined rather than split.
+
+        ⭐ `pragma_foreign_key_list` returns **one row per column**, ⭐ and
+        `decisions(market, code) -> instruments` arrives as two rows sharing a constraint
+        id. ⭐⭐ **Splitting them** ⭐⭐ means asking 「is there an instrument with this
+        *code*, ⭐ in *any* market?」
+
+        ⭐⭐⭐ **The fixture is built so the two answers differ.** ⭐⭐⭐ An instrument exists
+        at `(sz, 600000)` ⭐⭐ and a decision exists for `(sh, 600000)` ⭐⭐ ⭐ so the *code*
+        matches ⭐⭐ and the *pair* does not. ⭐⭐⭐ **A split rule reports nothing here, ⭐⭐⭐
+        and this test fails.** ⭐⭐⭐
+
+        ⭐⭐⭐⭐ And the first draft of this test asserted the opposite ⭐⭐⭐⭐ ⭐⭐ — ⭐⭐ it
+        expected 「clean」 ⭐⭐ and the rule correctly said otherwise. ⭐⭐⭐⭐ **The rule was
+        right and the test was wrong:** ⭐⭐⭐⭐ `(sh, 600000)` ⭐⭐⭐⭐ really has no
+        instrument. ⭐⭐⭐ ⭐⭐⭐ ⭐ That is worth more than a passing assertion, ⭐⭐⭐ ⭐⭐
+        ⭐⭐⭐ ⭐ because a test that passes because the rule is broken ⭐⭐⭐ ⭐⭐ ⭐⭐ is the
+        ⭐⭐⭐ ⭐⭐ kind that survives every later mutation. ⭐⭐⭐ ⭐⭐
+        """
+        add_instrument(reader_db, market="sz", code="600000")
+        bypass_foreign_keys(reader_db, market=MARKET, code="600000")
+        result = orphan_reference.run(CTX)
+        warnings_ = [i for i in issues_of(result) if i.severity.value == "warning"]
+        assert len(warnings_) == 1, messages(result)
+        # ⭐⭐⭐ **Both columns in the message** ⭐⭐⭐ ⭐ — ⭐⭐⭐ a rule that reported only
+        # ⭐⭐⭐ ⭐ `code` would satisfy the count ⭐⭐⭐ ⭐ and hide the pairing.
+        assert "market, code" in warnings_[0].message, warnings_[0].message
+        assert f"({MARKET}, {CODE})" in warnings_[0].message, warnings_[0].message
+
+    def test_the_rule_sees_every_declared_reference(self, reader_db: Path) -> None:
+        """A rule that stopped reading the schema would report nothing.
+
+        ⭐ `D-25` reads `pragma_foreign_key_list` rather than a table list, ⭐ so the honest
+        assertion is **the number of references it found** ⭐ and not *four*, ⭐ which is a
+        fact about one reader's own database ⭐ and would start failing the moment the
+        reader added a fifth ⭐⭐ **by doing the very thing this product is for.**
+
+        ⭐⭐ The floor is **17** ⭐⭐ (measured 2026-10-06: 17 tables, 21 references) ⭐⭐ and
+        it is a floor rather than an equality ⭐⭐ so a migration that adds a reference does
+        not break this, ⭐⭐ and a rule that quietly stopped reading the pragma does.
+
+        ⭐⭐⭐ **It takes `reader_db` rather than 「whatever is configured」.** ⭐⭐⭐ The first
+        draft took no fixture at all ⭐⭐ and then depended on an earlier test having pointed
+        the environment at a temp directory pytest has since deleted ⭐⭐ — ⭐⭐ an
+        order-dependent test, ⭐⭐ one that fails alone and passes in a file. ⭐⭐⭐
+
+        ⭐⭐ The claim 「the reader's own database holds four orphans」 ⭐⭐ is measured by
+        `dev.py check-data` ⭐⭐ and **not asserted here, ⭐⭐ because that number belongs to
+        whoever runs it.**
+        """
+        con = db.connect(reader_db)
+        try:
+            declared = orphan_reference.references(con)
+        finally:
+            con.close()
+        assert len(declared) >= 17, (
+            f"only {len(declared)} declared reference(s) ⭐⭐ ⭐ a rule that stopped seeing "
+            "the schema would report nothing ⭐⭐ ⭐ and this would not notice"
+        )
+    def test_a_schema_with_no_foreign_keys_says_so_rather_than_passing_silently(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """⭐⭐ **Silence would read as 「clean」.** ⭐⭐ An empty file has no tables, ⭐⭐
+        ⭐⭐ hence no references, ⭐⭐ hence nothing to check ⭐⭐ ⭐ — ⭐⭐ ⭐ and a rule
+        ⭐⭐ ⭐ that returns an empty result there has claimed the reader's data is
+        ⭐⭐ ⭐ consistent ⭐⭐ ⭐ when it never read a row."""
+        bare = tmp_path / "bare.db"
+        sqlite3.connect(bare).close()
+        monkeypatch.setenv("ALPHACOUNCIL_DATABASE_PATH", str(bare))
+        _clear_settings_cache()
+        result = orphan_reference.run(CTX)
+        assert "declares no foreign keys" in " ".join(messages(result))
 
 
 # ----------------------------------------------------- the registry and the declarations

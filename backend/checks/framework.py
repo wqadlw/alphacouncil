@@ -69,7 +69,6 @@ from checks.exemptions import (
     Exemption,
     Suppressions,
     apply_exemptions,
-    rule_id_for,
     split_target,
 )
 from checks.models import (
@@ -104,7 +103,6 @@ __all__ = [
     "enclosing_function",
     "format_target",
     "parent_map",
-    "rule_id_for",
     "snake_tokens",
     "split_target",
 ]

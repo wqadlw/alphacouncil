@@ -34,7 +34,6 @@ __all__ = [
     "Exemption",
     "Suppressions",
     "apply_exemptions",
-    "rule_id_for",
     "split_target",
 ]
 
@@ -105,21 +104,9 @@ def split_target(target: str | None) -> tuple[str | None, int | None]:
     return (path, int(line)) if line.isdigit() else (target, None)
 
 
-def rule_id_for(ctx: ScanContext, code: str) -> str | None:
-    """Translate a finding's ``CHECK_*`` code into the rule id exemptions use.
-
-    An exemption reads ``# noqa: S-01`` because that is what the document calls
-    the rule; a finding carries ``CHECK_RAW_HTTP`` because that is what a log
-    line and a bug report need. The registry is the bridge, which is why it is
-    threaded through the scan context.
-    """
-    for meta in ctx.registry:
-        if meta.code == code:
-            return meta.check_id
-    return None
-
-
-def apply_exemptions(ctx: ScanContext, result: CheckResult) -> CheckResult:
+def apply_exemptions(
+    ctx: ScanContext, result: CheckResult, check_id: str
+) -> CheckResult:
     """Drop exempted findings and surface unreasoned exemptions.
 
     Runs *after* a rule has produced its raw findings, so a rule never needs to
@@ -130,10 +117,22 @@ def apply_exemptions(ctx: ScanContext, result: CheckResult) -> CheckResult:
     reported as an error. That combination is what makes "the reason is
     mandatory" a rule rather than a wish.
 
-    Called once per rule, so a file containing an unreasoned exemption yields
-    one copy of that finding per rule that opened it. The runner deduplicates
-    before reporting, and attributes counts by error code rather than by
-    accumulation, so the duplication never reaches a reader.
+    ⭐⭐⭐ **`check_id` is required, and it was previously *guessed* from the finding's
+    code ⭐⭐⭐ — which is unsound, and silently so.** ⭐⭐ An exemption reads
+    ``# noqa: D-22`` because that is what the document calls the rule; ⭐⭐ a finding
+    carries ``CHECK_DATA_INTEGRITY`` because that is what a bug report needs. ⭐⭐⭐
+
+    ⭐⭐ **But all four data rules share that one code** ⭐⭐ (S-05 requires a code to be a
+    registered *category*, ⭐⭐ so a code can never identify a rule ⭐⭐ — ⭐⭐ and
+    ⭐⭐ `rule_id_for` returned the **first** registry entry whose code matched ⭐⭐ —
+    ⭐⭐ so a ``# noqa: D-22`` in `decision_orphan.py` would have silenced D-02's finding
+    ⭐⭐ and left D-22's untouched). ⭐⭐⭐
+
+    ⭐⭐⭐ **Measured consequence:** the old `_write_human` mis-attributed D-02's finding
+    ⭐⭐⭐ to `D-22` ⭐⭐⭐ — ⭐⭐ **the same wrong answer, from the same wrong premise, in
+    ⭐⭐⭐ the second place that asked a shared code to name a rule.** ⭐⭐⭐ The guessing
+    ⭐⭐⭐ function is deleted rather than fixed ⭐⭐⭐ because every caller now has the real
+    ⭐⭐⭐ id in hand ⭐⭐⭐ and leaving it exported would leave the trap armed.
     """
     kept: list[Issue] = []
     for issue in result.issues:
@@ -142,8 +141,7 @@ def apply_exemptions(ctx: ScanContext, result: CheckResult) -> CheckResult:
         if path is None or not path.is_file():
             kept.append(issue)
             continue
-        rule_id = rule_id_for(ctx, issue.code) or issue.code
-        if ctx.suppressions(path).covers(rule_id, lineno):
+        if ctx.suppressions(path).covers(check_id, lineno):
             continue
         kept.append(issue)
 

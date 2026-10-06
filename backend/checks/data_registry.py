@@ -38,6 +38,7 @@ from checks.data_rules import (
     audit_detail_length,
     counter_evidence_blank,
     dangling_target,
+    orphan_reference,
 )
 from checks.framework import CheckMeta, CheckResult, ScanContext
 
@@ -53,10 +54,17 @@ class DataRule:
     run: Callable[[ScanContext], CheckResult]
 
 
-#: ⭐ Three, not twenty-four. ⭐ Measured 2026-10-04 ⭐ — ⭐ only two of the declared checks are
+#: ⭐ Five, not twenty-four. ⭐ Measured 2026-10-04 ⭐ — ⭐ only two of the declared checks are
 #: implementable as written, ⭐ and D-01 becomes a third once its sentence is corrected.
+#:
+#: ⭐⭐ **D-25 was added 2026-10-06 (spec 060)** ⭐⭐ — ⭐⭐ *not* `D-02`, ⭐⭐ which the
+#: ⭐⭐ README already declares as 「孤儿实体 · 没有对应标的的持仓记录」 ⭐⭐ and which has no
+#: ⭐⭐ table to read ⭐⭐ (measured: ⭐⭐ no `position`/`holding`/`portfolio` table exists ⭐⭐
+#: ⭐⭐ in any migration). ⭐⭐ D-01 guards `decisions → instruments`; ⭐⭐
+#: ⭐⭐ `decision_review_state → decisions` had no guard at all, ⭐⭐ and the rows were there.
 DATA_RULES: tuple[DataRule, ...] = (
     DataRule(dangling_target.META, dangling_target.run),
+    DataRule(orphan_reference.META, orphan_reference.run),
     DataRule(counter_evidence_blank.META, counter_evidence_blank.run),
     DataRule(audit_detail_length.META, audit_detail_length.run),
 )
